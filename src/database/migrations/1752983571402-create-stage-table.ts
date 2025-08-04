@@ -10,7 +10,7 @@ export class CreateStageTable1752983571402 implements MigrationInterface {
         "title" varchar(255) NOT NULL,
         "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
         "createdBy" varchar NOT NULL DEFAULT '',
-        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
       )
     `);
   }

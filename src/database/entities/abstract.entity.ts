@@ -13,7 +13,7 @@ import {
 } from 'typeorm';
 
 export abstract class AbstractEntity extends BaseEntity {
-  @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'PK_user_id' })
+  @PrimaryGeneratedColumn('uuid')
   id!: Uuid;
 
   @Order(9999)
