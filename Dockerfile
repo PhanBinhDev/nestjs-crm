@@ -57,7 +57,7 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 RUN mkdir -p src/generated && chown -R node:node src
-# RUN mkdir -p /app/secrets && chown -R node:node /app/secrets
+RUN mkdir -p /app/secrets && chown -R node:node /app/secrets
 RUN apk add --no-cache openssl
 
 
