@@ -3,8 +3,7 @@ export enum SemesterStatus {
   COMPLETED = 'Completed',
   UPCOMING = 'Upcoming',
 }
-export enum SemesterBlocks{
+export enum SemesterBlocks {
   BLOCK_1 = 'Block 1',
   BLOCK_2 = 'Block 2',
-
 }

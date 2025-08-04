@@ -19,7 +19,7 @@ export enum ActivityCategory {
 export enum ParticipantStatus {
   PENDING = 'pending',
   ACCEPTED = 'accepted',
-  REJECTED = 'rejected',
+  REJECTED = 'declined',
   JOINED = 'joined',
 }
 
@@ -30,10 +30,10 @@ export enum ParticipantRole {
 }
 
 export enum ActivityStatus {
-  NEW = 'NEW',
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
-  OVERDUE = 'OVERDUE',
+  NEW = 'new',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  OVERDUE = 'overdue',
 }
 
 export enum AssigneeRole {

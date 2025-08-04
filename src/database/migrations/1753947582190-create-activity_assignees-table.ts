@@ -6,12 +6,12 @@ export class CreateActivityAssigneesTable1753947582190
   name = 'CreateActivityAssigneesTable1753947582190';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-            CREATE TYPE "public"."activity_assignees_role_enum" AS ENUM('owner', 'collaborator', 'reviewer')
-        `);
-    await queryRunner.query(`
-            CREATE TYPE "public"."activity_assignees_status_enum" AS ENUM('pending', 'accepted', 'declined')
-        `);
+    // await queryRunner.query(`
+    //         CREATE TYPE "public"."activity_assignees_role_enum" AS ENUM('owner', 'collaborator', 'reviewer')
+    //     `);
+    // await queryRunner.query(`
+    //         CREATE TYPE "public"."activity_assignees_status_enum" AS ENUM('pending', 'accepted', 'declined')
+    //     `);
     await queryRunner.query(`
             CREATE TABLE "activity_assignees" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -25,7 +25,7 @@ export class CreateActivityAssigneesTable1753947582190
                 "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
                 "createdBy" character varying NOT NULL,
                 "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                CONSTRAINT "PK_user_id" PRIMARY KEY ("id")
+                CONSTRAINT "PK_activity_assignees" PRIMARY KEY ("id")
             )
         `);
     await queryRunner.query(`
