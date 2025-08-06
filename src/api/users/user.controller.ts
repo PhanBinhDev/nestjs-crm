@@ -1,5 +1,6 @@
 import { Uuid } from '@/common/types/common.type';
 import { UserRole } from '@/database/enum/user.enum';
+import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
 import { Roles } from '@/decorators/roles.decorator';
 import { RolesGuard } from '@/guards/roles.guard';
@@ -69,8 +70,12 @@ export class UserController {
     type: UserResDto,
   })
   @ApiParam({ name: 'id', type: 'String' })
-  updateUser(@Param('id', ParseUUIDPipe) id: Uuid, @Body() dto: UpdateUserDto) {
-    return this.userService.update(id, dto);
+  updateUser(
+    @Param('id', ParseUUIDPipe) id: Uuid,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser('role') currentUserRole: UserRole,
+  ) {
+    return this.userService.update(id, dto, currentUserRole);
   }
 
   @Post('import')

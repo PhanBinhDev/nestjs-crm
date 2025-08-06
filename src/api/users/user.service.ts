@@ -1,8 +1,13 @@
 import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
+import { UserRole } from '@/database/enum/user.enum';
 import { paginate } from '@/utils/offset-pagination';
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
@@ -18,6 +23,26 @@ export class UserService {
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
   ) {}
+
+  private canUpdateUser(currentRole: UserRole, targetRole: UserRole): boolean {
+    const roleHierarchy = {
+      [UserRole.TM]: 3,
+      [UserRole.CNBM]: 2,
+      [UserRole.GV]: 1,
+    };
+
+    return roleHierarchy[currentRole] >= roleHierarchy[targetRole];
+  }
+
+  private canAssignRole(currentRole: UserRole, newRole: UserRole): boolean {
+    const roleHierarchy = {
+      [UserRole.TM]: 3,
+      [UserRole.CNBM]: 2,
+      [UserRole.GV]: 1,
+    };
+
+    return roleHierarchy[currentRole] > roleHierarchy[newRole];
+  }
 
   async create(data: CreateUserDto): Promise<ResponseDto<UserResDto>> {
     const user = this.userRepository.create(data);
@@ -119,21 +144,46 @@ export class UserService {
     // return;
   }
 
-  async update(id: Uuid, dto: UpdateUserDto): Promise<ResponseDto<UserResDto>> {
-    const user = await this.userRepository.findOneByOrFail({ id });
+  async update(
+    id: Uuid,
+    dto: UpdateUserDto,
+    currentUserRole: UserRole,
+  ): Promise<ResponseDto<UserResDto>> {
+    const userToUpdate = await this.userRepository.findOneByOrFail({ id });
 
-    if (!user) {
-      return new ResponseDto({
-        data: null,
-        message: 'User not found',
-      });
+    if (!userToUpdate) {
+      throw new NotFoundException('Người dùng không tồn tại');
     }
 
-    Object.assign(user, dto);
-    await this.userRepository.save(user);
+    // Check role hierarchy
+    if (!this.canUpdateUser(currentUserRole, userToUpdate.role)) {
+      throw new ForbiddenException(
+        'Bạn không có quyền cập nhật thông tin của người dùng này',
+      );
+    }
+
+    // Special validation for role updates
+    if (dto.role && dto.role !== userToUpdate.role) {
+      // Only TM can change roles
+      if (currentUserRole !== UserRole.TM) {
+        throw new ForbiddenException(
+          'Chỉ Trưởng môn mới có quyền thay đổi vai trò',
+        );
+      }
+
+      // Cannot assign a role higher than your own
+      if (!this.canAssignRole(currentUserRole, dto.role)) {
+        throw new ForbiddenException(
+          'Không thể gán vai trò cao hơn vai trò của bạn',
+        );
+      }
+    }
+
+    Object.assign(userToUpdate, dto);
+    await this.userRepository.save(userToUpdate);
 
     return new ResponseDto({
-      data: plainToInstance(UserResDto, user, {
+      data: plainToInstance(UserResDto, userToUpdate, {
         excludeExtraneousValues: true,
       }),
       message: 'Cập nhật người dùng thành công',
