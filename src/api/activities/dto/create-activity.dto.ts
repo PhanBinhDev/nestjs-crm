@@ -9,8 +9,10 @@ import {
   IsDateString,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateActivityDto {
@@ -56,6 +58,7 @@ export class CreateActivityDto {
   })
   @IsOptional()
   @IsString()
+  @IsUUID()
   stageId?: string;
 
   @ApiProperty({
@@ -112,4 +115,35 @@ export class CreateActivityDto {
   @IsOptional()
   @IsEnum(ActivityCategory)
   category?: ActivityCategory;
+
+  // parentId
+  @ApiProperty({
+    example: 'parent-activity-uuid',
+    description: 'ID hoạt động cha (nếu có)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @IsUUID()
+  parentId?: string;
+
+  // estimateTime
+  @ApiProperty({
+    example: '120',
+    description: 'Thời gian ước tính hoàn thành (phút)',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  estimateTime?: number; // minutes
+
+  // semesterId:
+  @ApiProperty({
+    example: 'semester-uuid',
+    description: 'ID kỳ học (nếu có)',
+    required: false,
+  })
+  @IsString()
+  @IsUUID()
+  semesterId: string;
 }

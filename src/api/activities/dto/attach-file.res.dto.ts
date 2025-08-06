@@ -19,7 +19,6 @@ export class AttachFileResDto {
   @Expose()
   activityId: string;
 
-  // maping to Activity Relation
   @ApiProperty({
     description: 'Thông tin activity',
     type: ActivityResDto,

@@ -1,4 +1,5 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { AssigneeRole, AssignmentStatus } from '@/database/enum/activity.enum';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
@@ -10,14 +11,14 @@ export class ActivityAssigneeEntity extends AbstractEntity {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'activityId' })
-  activity: ActivityEntity;
+  activity: WrapperType<ActivityEntity>;
 
   @Column({ type: 'uuid' })
   activityId: string;
 
   @ManyToOne(() => UserEntity, { eager: true })
   @JoinColumn({ name: 'userId' })
-  user: UserEntity;
+  user: WrapperType<UserEntity>;
 
   @Column({ type: 'uuid' })
   userId: string;

@@ -110,6 +110,7 @@ export class ActivityResDto {
   @ClassField(() => ActivityParticipantResDto, {
     isArray: true,
   })
+  @Type(() => ActivityParticipantResDto)
   participants?: ActivityParticipantResDto[];
 
   @ApiProperty({ type: () => [ActivityFileResDto], required: false })
@@ -126,10 +127,6 @@ export class ActivityResDto {
   @Expose()
   @Type(() => ActivityAssigneeResDto)
   assignees?: ActivityAssigneeResDto[];
-
-  @ApiProperty({ example: 'semester-uuid', required: false })
-  @Expose()
-  semesterId?: string;
 
   @ApiProperty({ type: () => SemesterResDto, required: false })
   @Expose()

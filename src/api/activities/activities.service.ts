@@ -70,7 +70,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityResDto, res, {
         excludeExtraneousValues: true,
       }),
-      message: 'Activity created successfully',
+      message: 'Tạo hoạt động thành công',
     });
   }
 
@@ -80,10 +80,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
       .leftJoinAndSelect('activity.participants', 'participants')
-      .leftJoinAndSelect('participants.user', 'user')
+      .leftJoinAndSelect('participants.user', 'participantUser')
       .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('activity.feedbacks', 'feedbacks')
-      .leftJoinAndSelect('feedbacks.user', 'feedbackUser');
+      .leftJoinAndSelect('feedbacks.user', 'feedbackUser')
+      .leftJoinAndSelect('activity.assignees', 'assignees')
+      .leftJoinAndSelect('assignees.user', 'assigneeUser')
+      .leftJoinAndSelect('activity.semester', 'semester')
+      .leftJoinAndSelect('activity.parent', 'parent')
+      .leftJoinAndSelect('activity.subActivities', 'subActivities');
     if (query.q) {
       qb.andWhere(
         'activity.name ILIKE :search OR activity.description ILIKE :search',
@@ -129,7 +134,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
-      message: 'Activities retrieved successfully',
+      message: 'Lấy danh sách hoạt động thành công',
     });
   }
   async updateStatus(
@@ -143,7 +148,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
       }),
-      message: 'Activity status updated successfully',
+      message: 'Cập nhật trạng thái hoạt động thành công',
     });
   }
 
@@ -156,13 +161,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         'files',
         'feedbacks',
         'feedbacks.user',
+        'assignees',
+        'assignees.user',
       ],
     });
     return new ResponseDto<ActivityResDto>({
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
       }),
-      message: 'Activity retrieved successfully',
+      message: 'Lấy thông tin hoạt động thành công',
     });
   }
 
@@ -170,7 +177,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     await this.activityRepo.delete(id);
     //TODO: handle clear file manualy here
     return new ResponseNoDataDto({
-      message: 'Activity deleted successfully',
+      message: 'Xóa hoạt động thành công',
     });
   }
 
@@ -185,7 +192,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
       }),
-      message: 'Activity updated successfully',
+      message: 'Cập nhật hoạt động thành công',
     });
   }
 
@@ -211,7 +218,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         data: plainToInstance(ActivityResDto, updatedActivity, {
           excludeExtraneousValues: true,
         }),
-        message: 'File attached successfully',
+        message: 'Đính kèm tệp thành công',
       });
     });
   }
@@ -224,7 +231,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     if (files.length === 0) {
       return new ResponseDto<AttachFileResDto[]>({
         data: [],
-        message: 'No files found for this activity',
+        message: 'Không tìm thấy tệp nào cho hoạt động này',
       });
     }
 
@@ -232,7 +239,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(AttachFileResDto, files, {
         excludeExtraneousValues: true,
       }),
-      message: 'Files retrieved successfully',
+      message: 'Lấy danh sách tệp thành công',
     });
   }
 
@@ -241,7 +248,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       where: { id },
     });
     if (!activity) {
-      throw new NotFoundException('Activity not found');
+      throw new NotFoundException('Hoạt động không tồn tại');
     }
     let participant = await this.participantRepo.findOne({
       where: { activityId: id, userId: dto.userId },
@@ -271,7 +278,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityFeedbackResDto, feedbacks, {
         excludeExtraneousValues: true,
       }),
-      message: 'Feedbacks retrieved successfully',
+      message: 'Lấy danh sách phản hồi thành công',
     });
   }
   async createFeedback(
@@ -293,7 +300,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityFeedbackResDto, feedback, {
         excludeExtraneousValues: true,
       }),
-      message: 'Feedbacks retrieved successfully',
+      message: 'Tạo phản hồi thành công',
     });
   }
 
@@ -304,11 +311,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
     const assignees: ActivityAssigneeEntity[] = [];
 
-    // Kiểm tra activity tồn tại
+    console.log('Assigning users to activity:', id, userIds, dto);
+
     await this.activityRepo.findOneOrFail({ where: { id } });
 
     for (const userId of userIds) {
-      // Kiểm tra đã assign chưa
       let assignee = await this.activityAssigneeRepo.findOne({
         where: { activityId: id, userId },
       });
@@ -335,7 +342,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     return new ResponseDto<ActivityAssigneeEntity[]>({
       data: assignees,
-      message: 'User(s) assigned to activity successfully',
+      message: 'Gán người dùng vào hoạt động thành công',
     });
   }
 
@@ -350,7 +357,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityAssigneeResDto, assignees, {
         excludeExtraneousValues: true,
       }),
-      message: 'Assignees retrieved successfully',
+      message: 'Lấy danh sách người được giao thành công',
     });
   }
 
@@ -366,7 +373,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
     await this.activityAssigneeRepo.remove(assignee);
     return new ResponseNoDataDto({
-      message: 'Assignee removed successfully',
+      message: 'Xóa người được giao thành công',
     });
   }
 
@@ -379,7 +386,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       where: { activityId, userId },
     });
     if (!assignee) {
-      throw new NotFoundException('Assignee not found');
+      throw new NotFoundException('Người được giao không tồn tại');
     }
     // Cập nhật thông tin người thực hiện
     assignee.role = dto.role;
@@ -389,7 +396,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityAssigneeResDto, assignee, {
         excludeExtraneousValues: true,
       }),
-      message: 'Assignee updated successfully',
+      message: 'Cập nhật người được giao thành công',
     });
   }
 
@@ -415,7 +422,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
       }),
-      message: 'Activity linked to semester successfully',
+      message: 'Gán hoạt động vào kỳ học thành công',
     });
   }
 
@@ -430,7 +437,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
 
     if (!activity.semester || activity.semester.id !== semesterId) {
-      throw new NotFoundException('Activity is not linked to this semester');
+      throw new NotFoundException('Hoạt động không được gán vào kỳ học này');
     }
 
     // Xóa liên kết với kỳ học
@@ -438,7 +445,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     await this.activityRepo.save(activity);
 
     return new ResponseNoDataDto({
-      message: 'Activity unlinked from semester successfully',
+      message: 'Xóa liên kết với kỳ học thành công',
     });
   }
 }

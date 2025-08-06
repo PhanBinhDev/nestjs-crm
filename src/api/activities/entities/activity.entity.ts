@@ -1,5 +1,6 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { StagesEntity } from '@/api/stages/entities/stage.entity';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
   ActivityCategory,
@@ -72,28 +73,31 @@ export class ActivityEntity extends AbstractEntity {
   @Column({ type: 'uuid', nullable: false })
   semesterId: string;
 
-  @OneToMany('ActivityParticipantEntity', 'activity', {
-    cascade: true,
-    lazy: true,
-  })
-  participants: Promise<ActivityParticipantEntity[]>;
+  @OneToMany(
+    () => ActivityParticipantEntity,
+    (participant) => participant.activity,
+    {
+      cascade: true,
+    },
+  )
+  participants: WrapperType<ActivityParticipantEntity[]>;
 
-  @OneToMany('ActivityFileEntity', 'activity', { cascade: true, lazy: true })
-  files: Promise<ActivityFileEntity[]>;
-
-  @OneToMany('ActivityFeedbackEntity', 'activity', {
-    cascade: true,
-    lazy: true,
-  })
-  feedbacks: Promise<ActivityFeedbackEntity[]>;
-
-  @OneToMany('ActivityAssigneeEntity', 'activity', {
-    lazy: true,
+  @OneToMany(() => ActivityFileEntity, (file) => file.activity, {
     cascade: true,
   })
-  assignees: Promise<ActivityAssigneeEntity[]>;
+  files: WrapperType<ActivityFileEntity[]>;
+
+  @OneToMany(() => ActivityFeedbackEntity, (feedback) => feedback.activity, {
+    cascade: true,
+  })
+  feedbacks: WrapperType<ActivityFeedbackEntity[]>;
+
+  @OneToMany(() => ActivityAssigneeEntity, (assignee) => assignee.activity, {
+    cascade: true,
+  })
+  assignees: WrapperType<ActivityAssigneeEntity[]>;
 
   @ManyToOne(() => SemesterEntity, { nullable: false, eager: false })
   @JoinColumn({ name: 'semesterId' })
-  semester: SemesterEntity;
+  semester: WrapperType<SemesterEntity>;
 }

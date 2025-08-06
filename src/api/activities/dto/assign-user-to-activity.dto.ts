@@ -1,6 +1,7 @@
 import { Uuid } from '@/common/types/common.type';
 import { AssigneeRole } from '@/database/enum/activity.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsUUID, ValidateIf } from 'class-validator';
 
 export class AssignUserToActivityDto {
   @ApiProperty({
@@ -12,6 +13,11 @@ export class AssignUserToActivityDto {
     ],
     example: ['b1c2d3e4-f5a6-7890-1234-56789abcdef0'],
   })
+  @ValidateIf((o) => !Array.isArray(o.userId))
+  @IsUUID('4', { each: false })
+  @ValidateIf((o) => Array.isArray(o.userId))
+  @IsArray()
+  @IsUUID('4', { each: true })
   userId: Uuid | Uuid[];
 
   @ApiPropertyOptional({

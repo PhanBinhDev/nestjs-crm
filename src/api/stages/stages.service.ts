@@ -17,31 +17,70 @@ export class StagesService {
     private readonly stagesRepository: Repository<StagesEntity>,
   ) {}
 
+  // Thêm method để sắp xếp lại position
+  private async reorderStages(): Promise<void> {
+    const stages = await this.stagesRepository.find({
+      order: { position: 'ASC' },
+    });
+
+    // Gán lại position từ 0 đến n-1
+    for (let i = 0; i < stages.length; i++) {
+      if (stages[i].position !== i) {
+        await this.stagesRepository.update(stages[i].id, { position: i });
+      }
+    }
+  }
+
   async create(
     createStageDto: CreateStageDto,
   ): Promise<ResponseDto<StageResDto>> {
     let position = createStageDto.position;
 
+    // Nếu không truyền position, thêm vào cuối
     if (position === undefined || position === null) {
-      // Lấy position lớn nhất hiện tại
       const max = await this.stagesRepository
         .createQueryBuilder('stage')
         .select('MAX(stage.position)', 'max')
         .getRawOne();
-      position = (max?.max ?? 0) + 1;
+      position = (max?.max ?? -1) + 1;
     }
 
+    // Đảm bảo position không âm
+    position = Math.max(0, position);
+
+    // Kiểm tra xem position đã tồn tại chưa
+    const existingStages = await this.stagesRepository.find({
+      order: { position: 'ASC' },
+    });
+
+    // Nếu position nằm giữa các stage hiện có, dịch các stage phía sau
+    if (existingStages.some((stage) => stage.position === position)) {
+      await this.stagesRepository
+        .createQueryBuilder()
+        .update(StagesEntity)
+        .set({ position: () => '"position" + 1' })
+        .where('"position" >= :position', { position })
+        .execute();
+    }
+
+    // Tạo stage mới
     const stage = this.stagesRepository.create({
       ...createStageDto,
       position,
     });
     await this.stagesRepository.save(stage);
 
+    // Sau khi tạo, kiểm tra và điều chỉnh lại các position để đảm bảo liền kề
+    await this.reorderStages();
+
+    // Lấy stage vừa tạo với position đã được điều chỉnh
+    const savedStage = await this.stagesRepository.findOneBy({ id: stage.id });
+
     return new ResponseDto<StageResDto>({
-      data: plainToInstance(StageResDto, stage, {
+      data: plainToInstance(StageResDto, savedStage, {
         excludeExtraneousValues: true,
       }),
-      message: 'Stage created successfully',
+      message: 'Tạo trạng thái (stage) thành công',
     });
   }
 
@@ -51,7 +90,7 @@ export class StagesService {
       data: plainToInstance(StageResDto, stages, {
         excludeExtraneousValues: true,
       }),
-      message: 'Stages retrieved successfully',
+      message: 'Danh sách trạng thái (stages) được lấy thành công',
     });
   }
 
@@ -62,7 +101,7 @@ export class StagesService {
       data: plainToInstance(StageResDto, stage, {
         excludeExtraneousValues: true,
       }),
-      message: 'Stage retrieved successfully',
+      message: 'Lấy trạng thái (stage) thành công',
     });
   }
 
@@ -71,76 +110,86 @@ export class StagesService {
     updateStageDto: UpdateStageDto,
   ): Promise<ResponseDto<StageResDto>> {
     const stageEntity = await this.stagesRepository.findOne({ where: { id } });
-    if (!stageEntity) throw new NotFoundException('Stage not found');
+    if (!stageEntity) {
+      throw new NotFoundException('Trạng thái (stage) không tồn tại');
+    }
 
-    // Lấy tổng số stage hiện tại
-    const count = await this.stagesRepository.count();
-
-    // Nếu có truyền position và khác vị trí cũ thì cần cập nhật lại thứ tự
+    // Nếu có thay đổi position
     if (
       updateStageDto.position !== undefined &&
       updateStageDto.position !== null &&
       updateStageDto.position !== stageEntity.position
     ) {
-      let newPosition = updateStageDto.position;
+      const existingStages = await this.stagesRepository.find({
+        order: { position: 'ASC' },
+      });
 
-      // Giới hạn newPosition trong khoảng hợp lệ
-      if (newPosition < 0) newPosition = 0;
-      if (newPosition >= count) newPosition = count - 1;
+      // Đảm bảo position mới nằm trong khoảng hợp lệ
+      const newPosition = Math.max(
+        0,
+        Math.min(updateStageDto.position, existingStages.length - 1),
+      );
 
-      const oldPosition = stageEntity.position;
-
-      // Nếu kéo lên (vị trí nhỏ hơn)
-      if (newPosition < oldPosition) {
-        await this.stagesRepository
-          .createQueryBuilder()
-          .update(StagesEntity)
-          .set({ position: () => '"position" + 1' })
-          .where('"position" >= :newPosition AND "position" < :oldPosition', {
-            newPosition,
-            oldPosition,
-          })
-          .execute();
-      }
-      // Nếu kéo xuống (vị trí lớn hơn)
-      else if (newPosition > oldPosition) {
+      // Cập nhật position của các stage khác
+      if (newPosition > stageEntity.position) {
+        // Kéo xuống: Giảm position của các stage nằm giữa vị trí cũ và mới
         await this.stagesRepository
           .createQueryBuilder()
           .update(StagesEntity)
           .set({ position: () => '"position" - 1' })
-          .where('"position" <= :newPosition AND "position" > :oldPosition', {
+          .where('position > :oldPosition AND position <= :newPosition', {
+            oldPosition: stageEntity.position,
             newPosition,
-            oldPosition,
+          })
+          .execute();
+      } else if (newPosition < stageEntity.position) {
+        // Kéo lên: Tăng position của các stage nằm giữa vị trí mới và cũ
+        await this.stagesRepository
+          .createQueryBuilder()
+          .update(StagesEntity)
+          .set({ position: () => '"position" + 1' })
+          .where('position >= :newPosition AND position < :oldPosition', {
+            oldPosition: stageEntity.position,
+            newPosition,
           })
           .execute();
       }
 
+      // Cập nhật position của stage hiện tại
       stageEntity.position = newPosition;
     }
 
     // Cập nhật các trường khác
-    Object.assign(stageEntity, updateStageDto, {
-      position: stageEntity.position,
-    });
+    Object.assign(stageEntity, updateStageDto);
 
-    const savedStage = await this.stagesRepository.save(stageEntity);
+    // Lưu stage đã cập nhật
+    await this.stagesRepository.save(stageEntity);
+
+    // Đảm bảo các position liền kề
+    await this.reorderStages();
+
+    // Lấy stage đã được cập nhật
+    const updatedStage = await this.stagesRepository.findOneBy({ id });
 
     return new ResponseDto<StageResDto>({
-      data: plainToInstance(StageResDto, savedStage, {
+      data: plainToInstance(StageResDto, updatedStage, {
         excludeExtraneousValues: true,
       }),
-      message: 'Stage updated successfully',
+      message: 'Cập nhật trạng thái (stage) thành công',
     });
   }
 
-  // 97e4a9ed-1007-4744-bda4-bee0c31a0431
   async remove(id: Uuid): Promise<ResponseNoDataDto> {
     const stageEntity = await this.stagesRepository.findOne({ where: { id } });
     if (!stageEntity) throw new NotFoundException('Stage not found');
+
     await this.stagesRepository.remove(stageEntity);
 
+    // Sau khi xóa, reorder lại để đảm bảo liền kề
+    await this.reorderStages();
+
     return new ResponseNoDataDto({
-      message: 'Stage removed successfully',
+      message: 'Xóa trạng thái (stage) thành công',
     });
   }
 }
