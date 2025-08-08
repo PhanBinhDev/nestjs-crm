@@ -51,6 +51,20 @@ export class ActivitiesController {
     return this.activitiesService.findAll(query);
   }
 
+  @Get(':id/sub-activities')
+  @ApiAuth({
+    summary: 'Lấy danh sách sub-activities của activity',
+    type: ActivityResDto,
+    isArray: true,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity để lấy danh sách sub-activities',
+  })
+  getSubActivities(@Param('id') id: Uuid) {
+    return this.activitiesService.findSubActivities(id);
+  }
+
   @Patch(':id/status')
   @ApiAuth({
     summary: 'Cập nhật trạng thái công việc',

@@ -2,23 +2,13 @@ import { AuthService } from '@/api/auth/auth.service';
 import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { UserService } from '@/api/users/user.service';
-import { ResponseDto } from '@/common/dto/response/response.dto';
 import { AllConfigType } from '@/config/config.type';
 import { ErrorCode } from '@/constants/error-code.constant';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
-import {
-  Controller,
-  Delete,
-  Get,
-  Req,
-  Res,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Delete, Get, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags } from '@nestjs/swagger';
-import { plainToInstance } from 'class-transformer';
 import { CookieOptions, Request, Response } from 'express';
 
 @ApiTags('auth')
@@ -138,24 +128,6 @@ export class AuthController {
   })
   @Get('me')
   async getMe(@Req() req: Request) {
-    const user = req.user as UserEntity;
-
-    const email = user?.email;
-    if (!email) {
-      throw new UnauthorizedException('Email not found in user data');
-    }
-
-    const userData = await this.userService.findOneByEmail(email);
-
-    if (!userData) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return new ResponseDto<UserResDto>({
-      data: plainToInstance(UserResDto, userData, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'User retrieved successfully',
-    });
+    return this.authService.getMe(req);
   }
 }

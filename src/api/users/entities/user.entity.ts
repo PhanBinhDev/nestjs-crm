@@ -46,8 +46,9 @@ export class UserEntity extends AbstractEntity {
   })
   isActive: boolean;
 
-  @OneToMany('ActivityAssigneeEntity', 'user', {
-    lazy: true,
-  })
-  assignedActivities: Promise<ActivityAssigneeEntity[]>;
+  @OneToMany(
+    () => ActivityAssigneeEntity,
+    (activityAssignee) => activityAssignee.user,
+  )
+  assignedActivities: ActivityAssigneeEntity[];
 }

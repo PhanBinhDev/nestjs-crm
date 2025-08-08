@@ -27,6 +27,9 @@ export class PageOptionsDto {
   @StringFieldOptional()
   readonly q?: string;
 
+  @StringFieldOptional()
+  readonly sortBy?: string;
+
   @EnumFieldOptional(() => Order, { default: Order.ASC })
   readonly order?: Order = Order.ASC;
 

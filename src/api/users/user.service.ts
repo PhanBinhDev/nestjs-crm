@@ -6,6 +6,7 @@ import { paginate } from '@/utils/offset-pagination';
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +20,8 @@ import { UserEntity } from './entities/user.entity';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
@@ -58,6 +61,11 @@ export class UserService {
   async findOne(id: Uuid): Promise<ResponseDto<UserResDto | null>> {
     const user = await this.userRepository.findOne({
       where: { id, isActive: true },
+      relations: {
+        assignedActivities: {
+          activity: true,
+        },
+      },
     });
 
     if (!user)
@@ -85,17 +93,42 @@ export class UserService {
       });
     }
 
-    if (reqDto.order) {
-      query.orderBy(`user.name`, reqDto.order);
+    // Handle sorting with validation
+    const allowedSortFields = [
+      'name',
+      'email',
+      'phone',
+      'createdAt',
+      'updatedAt',
+    ];
+
+    if (reqDto.sortBy) {
+      this.logger.log('Requested sortBy:', reqDto.sortBy);
+      const sortField = allowedSortFields.includes(reqDto.sortBy)
+        ? reqDto.sortBy
+        : 'createdAt';
+
+      if (!allowedSortFields.includes(reqDto.sortBy)) {
+        this.logger.warn(
+          `Invalid sortBy field '${reqDto.sortBy}', defaulting to 'createdAt'`,
+        );
+      }
+
+      query.addOrderBy(`user.${sortField}`, reqDto.order || 'DESC');
+    } else {
+      // Default sorting by createdAt
+      query.addOrderBy('user.createdAt', reqDto.order || 'DESC');
     }
 
-    if (reqDto.role) {
-      query.andWhere('user.role = :role', { role: reqDto.role });
+    // Modified role filter to handle array
+    if (reqDto.role && reqDto.role.length > 0) {
+      query.andWhere('user.role IN (:...roles)', { roles: reqDto.role });
     }
 
-    if (reqDto.isActive !== undefined) {
-      query.andWhere('user.isActive = :isActive', {
-        isActive: reqDto.isActive,
+    // Modified isActive filter to handle array
+    if (reqDto.isActive !== undefined && reqDto.isActive.length > 0) {
+      query.andWhere('user.isActive IN (:...isActiveValues)', {
+        isActiveValues: reqDto.isActive,
       });
     }
 

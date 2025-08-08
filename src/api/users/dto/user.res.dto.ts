@@ -1,6 +1,30 @@
+import { ActivityResDto } from '@/api/activities/dto/activity.res.dto';
 import { UserRole } from '@/database/enum/user.enum';
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose } from 'class-transformer';
+import { Expose, Type } from 'class-transformer';
+
+export class ActivityAssigneeResDto {
+  @ApiProperty({ example: 'a0c83f2d-7fa2-4ad2-ac00-7b08e5cad3a8' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ example: 'a0c83f2d-7fa2-4ad2-ac00-7b08e5cad3a8' })
+  @Expose()
+  activityId: string;
+
+  @ApiProperty({ example: 'Hoạt động ABC' })
+  @Expose()
+  @Type(() => ActivityResDto)
+  activity: ActivityResDto;
+
+  @ApiProperty({ example: 'PENDING' })
+  @Expose()
+  status: string;
+
+  @ApiProperty({ example: 'LEADER' })
+  @Expose()
+  role: string;
+}
 
 export class UserResDto {
   @ApiProperty({ example: 'a0c83f2d-7fa2-4ad2-ac00-7b08e5cad3a8' })
@@ -38,4 +62,9 @@ export class UserResDto {
   @ApiProperty({ example: '2025-07-20T08:33:49.432Z' })
   @Expose()
   updatedAt: Date;
+
+  @ApiProperty({ type: [ActivityAssigneeResDto] })
+  @Expose()
+  @Type(() => ActivityAssigneeResDto)
+  assignedActivities?: ActivityAssigneeResDto[];
 }

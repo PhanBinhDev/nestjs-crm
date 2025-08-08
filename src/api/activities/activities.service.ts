@@ -137,6 +137,22 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy danh sách hoạt động thành công',
     });
   }
+
+  async findSubActivities(
+    parentId: Uuid,
+  ): Promise<ResponseDto<ActivityResDto[]>> {
+    const activities = await this.activityRepo.find({
+      where: { parentId },
+    });
+
+    return new ResponseDto<ActivityResDto[]>({
+      data: plainToInstance(ActivityResDto, activities, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách sub-activities thành công',
+    });
+  }
+
   async updateStatus(
     id: Uuid,
     dto: UpdateActivityStatusDto,

@@ -1,12 +1,18 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { UserService } from '@/api/users/user.service';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
-import { UserResDto } from '../users/dto/user.res.dto';
+import { plainToInstance } from 'class-transformer';
+import { Request } from 'express';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly userService: UserService,
+  ) {}
 
   generateJwt(user: UserEntity): string {
     const payload = {
@@ -23,7 +29,6 @@ export class AuthService {
 
   verifyAccessToken(token: string) {
     try {
-      console.log('Verifying access token:', token);
       const options: JwtVerifyOptions = {
         algorithms: ['RS256'],
       };
@@ -43,8 +48,25 @@ export class AuthService {
     }
   }
 
-  getMe(): Promise<ResponseDto<UserResDto>> {
-    // This method should be implemented to return the current user's information
-    throw new Error('Method not implemented.');
+  async getMe(req: Request): Promise<ResponseDto<UserResDto>> {
+    const user = req.user as UserEntity;
+
+    const email = user?.email;
+    if (!email) {
+      throw new UnauthorizedException('Email not found in user data');
+    }
+
+    const userData = await this.userService.findOneByEmail(email);
+
+    if (!userData) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return new ResponseDto<UserResDto>({
+      data: plainToInstance(UserResDto, userData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'User retrieved successfully',
+    });
   }
 }

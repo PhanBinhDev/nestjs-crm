@@ -5,13 +5,8 @@ import {
   ActivityStatus,
   ActivityType,
 } from '@/database/enum/activity.enum';
-import { ClassField } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { ActivityFeedbackResDto } from './activity-feedback.res.dto';
-import { ActivityFileResDto } from './activity-file.res.dto';
-import { ActivityParticipantResDto } from './activity-participant.res.dto';
-import { ActivityAssigneeResDto } from './assign.res.dto';
 
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
@@ -105,29 +100,6 @@ export class ActivityResDto {
   @Expose()
   status: ActivityStatus;
 
-  @ApiProperty({ type: () => [ActivityParticipantResDto], required: false })
-  @Expose()
-  @ClassField(() => ActivityParticipantResDto, {
-    isArray: true,
-  })
-  @Type(() => ActivityParticipantResDto)
-  participants?: ActivityParticipantResDto[];
-
-  @ApiProperty({ type: () => [ActivityFileResDto], required: false })
-  @Expose()
-  @Type(() => ActivityFileResDto)
-  files?: ActivityFileResDto[];
-
-  @ApiProperty({ type: () => [ActivityFeedbackResDto], required: false })
-  @Expose()
-  @Type(() => ActivityFeedbackResDto)
-  feedbacks?: ActivityFeedbackResDto[];
-
-  @ApiProperty({ type: () => [ActivityAssigneeResDto], required: false })
-  @Expose()
-  @Type(() => ActivityAssigneeResDto)
-  assignees?: ActivityAssigneeResDto[];
-
   @ApiProperty({ type: () => SemesterResDto, required: false })
   @Expose()
   @Type(() => SemesterResDto)
@@ -137,9 +109,4 @@ export class ActivityResDto {
   @Expose()
   @Type(() => ActivityResDto)
   parent?: ActivityResDto;
-
-  @ApiProperty({ type: () => [ActivityResDto], required: false })
-  @Expose()
-  @Type(() => ActivityResDto)
-  subActivities?: ActivityResDto[];
 }

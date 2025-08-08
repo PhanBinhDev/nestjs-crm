@@ -10,17 +10,19 @@ export async function paginate<T>(
     takeAll: boolean;
   }>,
 ): Promise<[T[], OffsetPaginationDto]> {
+  let count = -1;
+
+  // Get total count BEFORE applying skip/take
+  if (!options?.skipCount) {
+    count = await builder.getCount();
+  }
+
+  // Apply pagination AFTER getting count
   if (!options?.takeAll) {
     builder.skip(pageOptionsDto.offset).take(pageOptionsDto.limit);
   }
 
   const entities: T[] = await builder.getMany();
-
-  let count = -1;
-
-  if (!options?.skipCount) {
-    count = await builder.getCount();
-  }
 
   const metaDto = new OffsetPaginationDto(count, pageOptionsDto);
 

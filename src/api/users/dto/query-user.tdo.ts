@@ -1,16 +1,29 @@
 import { PageOptionsDto } from '@/common/dto/offset-pagination/page-options.dto';
 import { UserRole } from '@/database/enum/user.enum';
-import {
-  BooleanFieldOptional,
-  EnumFieldOptional,
-} from '@/decorators/field.decorators';
+import { TransformToArray } from '@/utils/transform.util';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
 
 export class QueryUserDto extends PageOptionsDto {
-  @EnumFieldOptional(() => UserRole, {
-    default: UserRole.GV,
+  @ApiPropertyOptional({
+    enum: UserRole,
+    isArray: true,
+    description: 'Filter by multiple roles',
+    example: [UserRole.TM, UserRole.CNBM],
   })
-  role?: UserRole;
+  @IsOptional()
+  @TransformToArray()
+  @IsEnum(UserRole, { each: true })
+  role?: UserRole[];
 
-  @BooleanFieldOptional()
-  isActive?: boolean;
+  @ApiPropertyOptional({
+    type: Boolean,
+    isArray: true,
+    description: 'Filter by active status (supports multiple values)',
+    example: [true, false],
+  })
+  @IsOptional()
+  @TransformToArray()
+  @IsBoolean({ each: true })
+  isActive?: boolean[];
 }
