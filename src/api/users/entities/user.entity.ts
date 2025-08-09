@@ -8,6 +8,11 @@ export class UserEntity extends AbstractEntity {
   constructor(data?: Partial<UserEntity>) {
     super();
     Object.assign(this, data);
+
+    if (!this.username && this.role) {
+      const randomNum = Math.floor(10000 + Math.random() * 90000);
+      this.username = `${this.role}${randomNum}`;
+    }
   }
 
   @Column({
@@ -16,6 +21,34 @@ export class UserEntity extends AbstractEntity {
     nullable: false,
   })
   name: string;
+
+  @Column({
+    type: 'varchar',
+    length: 100,
+    unique: true,
+    nullable: false,
+  })
+  username: string;
+
+  @Column({
+    type: 'date',
+    nullable: true,
+  })
+  dateOfBirth: Date;
+
+  @Column({
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  major: string;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  avatar: string;
 
   @Column({
     type: 'varchar',

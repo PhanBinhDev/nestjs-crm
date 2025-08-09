@@ -10,6 +10,13 @@ export class CreateUserDto {
   name: string;
 
   @ApiProperty({
+    example: 'john_doe',
+    required: false,
+  })
+  @IsString()
+  username?: string;
+
+  @ApiProperty({
     example: 'user@example.com',
   })
   @IsString()
@@ -23,7 +30,21 @@ export class CreateUserDto {
   @IsPhoneNumber('VN')
   phone: string;
 
-  @ApiProperty({ enum: UserRole })
+  @ApiProperty({
+    example: '1990-01-01',
+    required: false,
+  })
+  @IsString()
+  dateOfBirth?: string;
+
+  @ApiProperty({
+    example: 'https://example.com/avatar.jpg',
+    required: false,
+  })
+  @IsString()
+  avatar?: string;
+
+  @ApiProperty({ enum: UserRole, example: UserRole.GV })
   @IsEnum(UserRole)
   role: UserRole;
 }

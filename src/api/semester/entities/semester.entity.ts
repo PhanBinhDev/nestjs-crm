@@ -1,6 +1,7 @@
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { SemesterStatus } from '@/database/enum/semeter.enum';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, OneToMany } from 'typeorm';
+import { SemesterBlockEntity } from './semester-block.entity';
 
 @Entity('semesters')
 export class SemesterEntity extends AbstractEntity {
@@ -19,6 +20,9 @@ export class SemesterEntity extends AbstractEntity {
   @Column({ type: 'enum', enum: SemesterStatus })
   status: SemesterStatus;
 
-  @Column({ type: 'json', nullable: true })
-  blocks: [{ name: string }];
+  @OneToMany(() => SemesterBlockEntity, (block) => block.semester)
+  blocks: SemesterBlockEntity[];
+
+  @Column({ type: 'int' })
+  year: number;
 }

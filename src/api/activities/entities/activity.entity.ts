@@ -10,6 +10,7 @@ import {
 } from '@/database/enum/activity.enum';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { ActivityAssigneeEntity } from './activity-assignee.entity';
+import { ActivityChecklistEntity } from './activity-checklist.entity';
 import { ActivityFeedbackEntity } from './activity-feedback.entity';
 import { ActivityFileEntity } from './activity-file.entity';
 import { ActivityParticipantEntity } from './activity-participant.entity';
@@ -80,24 +81,29 @@ export class ActivityEntity extends AbstractEntity {
       cascade: true,
     },
   )
-  participants: WrapperType<ActivityParticipantEntity[]>;
+  participants: ActivityParticipantEntity[];
 
   @OneToMany(() => ActivityFileEntity, (file) => file.activity, {
     cascade: true,
   })
-  files: WrapperType<ActivityFileEntity[]>;
+  files: ActivityFileEntity[];
 
   @OneToMany(() => ActivityFeedbackEntity, (feedback) => feedback.activity, {
     cascade: true,
   })
-  feedbacks: WrapperType<ActivityFeedbackEntity[]>;
+  feedbacks: ActivityFeedbackEntity[];
 
   @OneToMany(() => ActivityAssigneeEntity, (assignee) => assignee.activity, {
     cascade: true,
   })
-  assignees: WrapperType<ActivityAssigneeEntity[]>;
+  assignees: ActivityAssigneeEntity[];
 
   @ManyToOne(() => SemesterEntity, { nullable: false, eager: false })
   @JoinColumn({ name: 'semesterId' })
   semester: WrapperType<SemesterEntity>;
+
+  @OneToMany(() => ActivityChecklistEntity, (checklist) => checklist.activity, {
+    cascade: true,
+  })
+  checklists: ActivityChecklistEntity[];
 }

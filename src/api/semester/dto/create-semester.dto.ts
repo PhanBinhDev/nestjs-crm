@@ -9,18 +9,7 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-
-export class BlockDto {
-  @ApiProperty({
-    description: 'Tên của block học tập',
-    example: 'Block 1',
-    required: true,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @Expose()
-  name: string;
-}
+import { SemesterBlockDto } from './create-block.dto';
 
 export class CreateSemesterDto {
   @ApiProperty({
@@ -64,6 +53,14 @@ export class CreateSemesterDto {
   description?: string;
 
   @ApiProperty({
+    description: 'Năm học của học kỳ (ví dụ: 2024)',
+    example: 2024,
+    required: true,
+  })
+  @Expose()
+  year: number;
+
+  @ApiProperty({
     description:
       'Trạng thái học kỳ: Ongoing (Đang diễn ra), Completed (Đã hoàn thành), Upcoming (Sắp diễn ra)',
     enum: SemesterStatus,
@@ -77,13 +74,13 @@ export class CreateSemesterDto {
   @ApiProperty({
     description:
       'Danh sách các block học tập trong học kỳ (thường có 2 block: Block 1 và Block 2)',
-    type: [BlockDto],
+    type: [SemesterBlockDto],
     example: [{ name: 'Block 1' }, { name: 'Block 2' }],
     required: false,
   })
   @IsOptional()
   @ValidateNested({ each: true })
-  @Type(() => BlockDto)
+  @Type(() => SemesterBlockDto)
   @Expose()
-  blocks?: BlockDto[];
+  blocks?: SemesterBlockDto[];
 }

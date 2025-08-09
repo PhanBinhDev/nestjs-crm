@@ -16,11 +16,11 @@ import {
 } from '@nestjs/common';
 import { ApiParam, ApiTags } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
+import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityFileResDto } from './dto/activity-file.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
-import { ActivityAssigneeResDto } from './dto/assign.res.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';

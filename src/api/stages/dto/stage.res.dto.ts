@@ -10,6 +10,10 @@ export class StageResDto {
   @Expose()
   title: string;
 
+  @ApiProperty({ example: '#FF5733', description: 'Mã màu của stage' })
+  @Expose()
+  color: string;
+
   @ApiProperty({ example: 1, description: 'Vị trí của stage trong danh sách' })
   @Expose()
   position: number;

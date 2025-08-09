@@ -16,4 +16,11 @@ export class StagesEntity extends AbstractEntity {
 
   @Column({ type: 'int', default: 0 })
   position: number;
+
+  @Column({
+    type: 'varchar',
+    length: 7,
+    nullable: true,
+  })
+  color: string;
 }

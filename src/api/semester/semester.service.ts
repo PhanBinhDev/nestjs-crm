@@ -14,9 +14,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
+import { SemesterBlockDto } from './dto/create-block.dto';
 import { CreateSemesterDto } from './dto/create-semester.dto';
 import { SemesterResDto } from './dto/semester.res.dto';
 import { UpdateSemesterDto } from './dto/update-semester.dto';
+import { SemesterBlockEntity } from './entities/semester-block.entity';
 import { SemesterEntity } from './entities/semester.entity';
 
 @Injectable()
@@ -24,23 +26,58 @@ export class SemesterService extends BaseService<SemesterEntity> {
   constructor(
     @InjectRepository(SemesterEntity)
     private readonly semesterRepo: Repository<SemesterEntity>,
+    @InjectRepository(SemesterBlockEntity)
+    private readonly semesterBlockRepo: Repository<SemesterBlockEntity>,
   ) {
     super(semesterRepo);
   }
 
+  async findBlockById(id: Uuid) {
+    const block = await this.semesterBlockRepo.findOneOrFail({ where: { id } });
+    return block;
+  }
+
+  async deleteBlock(id: Uuid) {
+    await this.semesterBlockRepo.delete(id);
+    return { message: 'Xóa block thành công' };
+  }
+
   async create(dto: CreateSemesterDto): Promise<ResponseDto<SemesterResDto>> {
     if (dto.startDate >= dto.endDate) {
-      throw new BadRequestException('Start date must be before end date');
+      throw new BadRequestException('Ngày bắt đầu phải trước ngày kết thúc');
     }
 
-    const semester = this.semesterRepo.create(dto);
-    const res = await this.semesterRepo.save(semester);
+    // Tạo semester
+    const { blocks, ...semesterData } = dto;
+    const semester = this.semesterRepo.create(semesterData);
+    const savedSemester = await this.semesterRepo.save(semester);
 
+    // Tạo blocks nếu có
+    if (blocks && blocks.length > 0) {
+      const blockEntities = blocks.map((block) => ({
+        ...block,
+        semester: savedSemester,
+        semesterId: savedSemester.id,
+      }));
+      await this.semesterBlockRepo.save(blockEntities);
+      // Lấy lại semester kèm blocks
+      const semesterWithBlocks = await this.semesterRepo.findOne({
+        where: { id: savedSemester.id },
+        relations: ['blocks'],
+      });
+      return new ResponseDto<SemesterResDto>({
+        data: plainToInstance(SemesterResDto, semesterWithBlocks, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo học kỳ thành công',
+      });
+    }
+    // Nếu không có blocks
     return new ResponseDto<SemesterResDto>({
-      data: plainToInstance(SemesterResDto, res, {
+      data: plainToInstance(SemesterResDto, savedSemester, {
         excludeExtraneousValues: true,
       }),
-      message: 'Semester created successfully',
+      message: 'Tạo học kỳ thành công',
     });
   }
 
@@ -49,6 +86,7 @@ export class SemesterService extends BaseService<SemesterEntity> {
   ): Promise<OffsetPaginatedDto<SemesterResDto>> {
     const qb = this.semesterRepo
       .createQueryBuilder('semester')
+      .leftJoinAndSelect('semester.blocks', 'blocks')
       .orderBy('semester.createdAt', 'DESC');
 
     const [semesters, metaDto] = await paginate<SemesterEntity>(qb, query, {
@@ -56,25 +94,36 @@ export class SemesterService extends BaseService<SemesterEntity> {
       takeAll: false,
     });
 
+    // Đảm bảo mỗi semester đều có blocks là mảng
+    const normalizedSemesters = semesters.map((s) => ({
+      ...s,
+      blocks: Array.isArray(s.blocks) ? s.blocks : [],
+    }));
     return new OffsetPaginatedDto({
-      data: plainToInstance(SemesterResDto, semesters, {
+      data: plainToInstance(SemesterResDto, normalizedSemesters, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
-      message: 'Semesters retrieved successfully',
+      message: 'Lấy danh sách học kỳ thành công',
     });
   }
 
   async findById(id: Uuid): Promise<ResponseDto<SemesterResDto>> {
     const semester = await this.semesterRepo.findOneOrFail({
       where: { id },
+      relations: ['blocks'],
     });
 
+    // Đảm bảo blocks là mảng
+    const normalizedSemester = {
+      ...semester,
+      blocks: Array.isArray(semester.blocks) ? semester.blocks : [],
+    };
     return new ResponseDto<SemesterResDto>({
-      data: plainToInstance(SemesterResDto, semester, {
+      data: plainToInstance(SemesterResDto, normalizedSemester, {
         excludeExtraneousValues: true,
       }),
-      message: 'Semester retrieved successfully',
+      message: 'Lấy thông tin học kỳ thành công',
     });
   }
 
@@ -82,7 +131,7 @@ export class SemesterService extends BaseService<SemesterEntity> {
     await this.semesterRepo.delete(id);
 
     return new ResponseNoDataDto({
-      message: 'Semester deleted successfully',
+      message: 'Xóa học kỳ thành công',
     });
   }
 
@@ -90,20 +139,51 @@ export class SemesterService extends BaseService<SemesterEntity> {
     id: Uuid,
     dto: UpdateSemesterDto,
   ): Promise<ResponseDto<SemesterResDto>> {
-    const semester = await this.semesterRepo.findOneOrFail({ where: { id } });
+    const semester = await this.semesterRepo.findOneOrFail({
+      where: { id },
+      relations: ['blocks'],
+    });
 
     if (dto.startDate && dto.endDate && dto.startDate >= dto.endDate) {
-      throw new BadRequestException('Start date must be before end date');
+      throw new BadRequestException('Ngày bắt đầu phải trước ngày kết thúc');
     }
 
+    // Cập nhật thông tin semester
     Object.assign(semester, dto);
     await this.semesterRepo.save(semester);
 
+    // Cập nhật blocks nếu có
+    if (dto.blocks) {
+      await this.semesterBlockRepo.delete({ semesterId: semester.id });
+      // Tạo lại blocks mới
+      const blockEntities = dto.blocks.map((block) => ({
+        ...block,
+        semester: semester,
+        semesterId: semester.id,
+      }));
+      await this.semesterBlockRepo.save(blockEntities);
+      // Lấy lại semester kèm blocks
+      const semesterWithBlocks = await this.semesterRepo.findOne({
+        where: { id: semester.id },
+        relations: ['blocks'],
+      });
+      return new ResponseDto<SemesterResDto>({
+        data: plainToInstance(SemesterResDto, semesterWithBlocks, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật học kỳ thành công',
+      });
+    }
+    // Nếu không có blocks
+    const normalizedSemester = {
+      ...semester,
+      blocks: Array.isArray(semester.blocks) ? semester.blocks : [],
+    };
     return new ResponseDto<SemesterResDto>({
-      data: plainToInstance(SemesterResDto, semester, {
+      data: plainToInstance(SemesterResDto, normalizedSemester, {
         excludeExtraneousValues: true,
       }),
-      message: 'Semester updated successfully',
+      message: 'Cập nhật học kỳ thành công',
     });
   }
 
@@ -111,17 +191,60 @@ export class SemesterService extends BaseService<SemesterEntity> {
     const semester = await this.semesterRepo.findOne({
       where: { status: SemesterStatus.ONGOING },
       order: { createdAt: 'DESC' },
+      relations: ['blocks'],
     });
 
     if (!semester) {
-      throw new NotFoundException('No active semester found');
+      throw new NotFoundException('Không tìm thấy học kỳ đang diễn ra');
     }
 
+    // Đảm bảo blocks là mảng
+    const normalizedSemester = {
+      ...semester,
+      blocks: Array.isArray(semester.blocks) ? semester.blocks : [],
+    };
     return new ResponseDto<SemesterResDto>({
-      data: plainToInstance(SemesterResDto, semester, {
+      data: plainToInstance(SemesterResDto, normalizedSemester, {
         excludeExtraneousValues: true,
       }),
-      message: 'Active semester retrieved successfully',
+      message: 'Lấy học kỳ đang diễn ra thành công',
+    });
+  }
+
+  async createBlock(
+    semesterId: Uuid,
+    dto: SemesterBlockDto,
+  ): Promise<ResponseDto<SemesterBlockEntity>> {
+    const semester = await this.semesterRepo.findOneOrFail({
+      where: { id: semesterId },
+      relations: ['blocks'],
+    });
+
+    if (!semester) {
+      throw new NotFoundException('Học kỳ không tồn tại');
+    }
+
+    // Kiểm tra xem block đã tồn tại chưa
+    const existingBlock = semester.blocks.find(
+      (block) => block.name === dto.name,
+    );
+    if (existingBlock) {
+      throw new BadRequestException('Block với tên này đã tồn tại');
+    }
+
+    // Tạo block mới
+    const newBlock = this.semesterBlockRepo.create({
+      ...dto,
+      semester,
+      semesterId: semester.id,
+    });
+    await this.semesterBlockRepo.save(newBlock);
+
+    return new ResponseDto<SemesterBlockEntity>({
+      data: plainToInstance(SemesterBlockEntity, newBlock, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tạo block học kỳ thành công',
     });
   }
 }

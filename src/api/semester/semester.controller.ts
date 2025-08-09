@@ -15,6 +15,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SemesterBlockDto } from './dto/create-block.dto';
 import { CreateSemesterDto } from './dto/create-semester.dto';
 import { SemesterResDto } from './dto/semester.res.dto';
 import { UpdateSemesterDto } from './dto/update-semester.dto';
@@ -100,5 +101,26 @@ export class SemesterController {
   })
   async remove(@Param('id', ParseUUIDPipe) id: Uuid) {
     return await this.semesterService.deleteSemester(id);
+  }
+
+  // create block
+  @Post(':id/blocks')
+  @ApiAuth({
+    summary: 'Tạo block học kỳ mới',
+    description: 'OK',
+    type: SemesterResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM)
+  @ApiParam({
+    name: 'id',
+    type: 'string',
+    description: 'ID của học kỳ để tạo block',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  async createBlock(
+    @Param('id', ParseUUIDPipe) semesterId: Uuid,
+    @Body() createBlockDto: SemesterBlockDto,
+  ) {
+    return await this.semesterService.createBlock(semesterId, createBlockDto);
   }
 }

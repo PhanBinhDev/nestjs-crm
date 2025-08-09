@@ -11,6 +11,15 @@ export class CreateStageDto {
   title: string;
 
   @ApiProperty({
+    description: 'Mã màu của stage (dùng cho hiển thị màu sắc)',
+    example: '#FF5733',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  color?: string;
+
+  @ApiProperty({
     description: 'Vị trí của stage trong danh sách (dùng cho kéo thả Kanban)',
     example: 1,
     required: false,
