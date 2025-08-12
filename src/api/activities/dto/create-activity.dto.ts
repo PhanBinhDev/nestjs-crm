@@ -4,6 +4,7 @@ import {
   ActivityType,
 } from '@/database/enum/activity.enum';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDateString,
@@ -13,7 +14,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
+import { ActivityChecklistDto } from './activity-checklist.dto';
 
 export class CreateActivityDto {
   @ApiProperty({
@@ -144,6 +147,17 @@ export class CreateActivityDto {
     required: false,
   })
   @IsString()
+  @IsOptional()
   @IsUUID()
-  semesterId: string;
+  semesterId?: string;
+
+  @ApiProperty({
+    type: [ActivityChecklistDto],
+    required: false,
+    description: 'Danh sách checklist cho hoạt động',
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ActivityChecklistDto)
+  checklist?: ActivityChecklistDto[];
 }
