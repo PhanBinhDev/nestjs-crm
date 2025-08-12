@@ -36,15 +36,15 @@ export class AuthService {
       return payload;
     } catch (err: any) {
       if (err.name === 'TokenExpiredError') {
-        throw new UnauthorizedException('Access token has expired');
+        throw new UnauthorizedException('Token đã hết hạn');
       }
       if (err.name === 'JsonWebTokenError') {
-        throw new UnauthorizedException('Invalid access token');
+        throw new UnauthorizedException('Token không hợp lệ');
       }
       if (err.name === 'NotBeforeError') {
-        throw new UnauthorizedException('Token not active yet');
+        throw new UnauthorizedException('Token chưa hoạt động');
       }
-      throw new UnauthorizedException('Access token verification failed');
+      throw new UnauthorizedException('Xác thực token không thành công');
     }
   }
 
@@ -53,20 +53,22 @@ export class AuthService {
 
     const email = user?.email;
     if (!email) {
-      throw new UnauthorizedException('Email not found in user data');
+      throw new UnauthorizedException(
+        'Email không tìm thấy trong dữ liệu người dùng',
+      );
     }
 
     const userData = await this.userService.findOneByEmail(email);
 
     if (!userData) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException('Người dùng không tìm thấy');
     }
 
     return new ResponseDto<UserResDto>({
       data: plainToInstance(UserResDto, userData, {
         excludeExtraneousValues: true,
       }),
-      message: 'User retrieved successfully',
+      message: 'Lấy thông tin người dùng thành công',
     });
   }
 }

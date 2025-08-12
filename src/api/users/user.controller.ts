@@ -34,7 +34,7 @@ export class UserController {
   @Post()
   @Roles(UserRole.CNBM, UserRole.TM)
   @ApiPublic({
-    summary: 'Create user',
+    summary: 'Tạo người dùng',
     type: CreateUserDto,
   })
   createUser(@Body() dto: CreateUserDto) {
@@ -43,20 +43,20 @@ export class UserController {
 
   @Get('all')
   @ApiAuth({
-    summary: 'Get all users',
-    description: 'Retrieve a paginated list of all users in the system.',
+    summary: 'Lấy tất cả người dùng',
+    description: 'Lấy danh sách người dùng với phân trang.',
     isPaginated: true,
     type: UserResDto,
   })
-  @Roles(UserRole.TM, UserRole.CNBM)
   @UseGuards(RolesGuard)
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
   findAll(@Query() query: QueryUserDto) {
     return this.userService.findAll(query);
   }
 
   @Get(':id')
   @ApiAuth({
-    summary: 'Get user by ID',
+    summary: 'Lấy người dùng theo ID',
     type: UserResDto,
   })
   @ApiParam({ name: 'id', type: 'String' })
@@ -66,7 +66,7 @@ export class UserController {
 
   @Patch(':id')
   @ApiAuth({
-    summary: 'Update user',
+    summary: 'Cập nhật người dùng',
     type: UserResDto,
   })
   @ApiParam({ name: 'id', type: 'String' })
@@ -79,7 +79,6 @@ export class UserController {
   }
 
   @Post('import')
-  @Roles(UserRole.CNBM, UserRole.TM)
   @UseInterceptors(FileInterceptor('file'))
   @ApiAuth({
     summary: 'Import users from file',

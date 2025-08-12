@@ -73,7 +73,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       statusCode,
       error: STATUS_CODES[statusCode],
-      message: 'Validation failed',
+      message: 'Dữ liệu không hợp lệ',
       details: this.extractValidationErrorDetails(r.message),
     };
 
@@ -137,11 +137,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const { status, message } = r.constraint?.startsWith('UQ')
       ? {
           status: HttpStatus.CONFLICT,
-          message: r.constraint ? 'Conflict error' : undefined,
+          message: r.constraint ? 'Lỗi xung đột' : undefined,
         }
       : {
           status: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: 'Database query failed',
+          message: 'Truy vấn không thành công',
         };
     const errorRes = {
       timestamp: new Date().toISOString(),
@@ -166,7 +166,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       statusCode: status,
       error: STATUS_CODES[status],
-      message: 'Entity not found',
+      message: 'Không tìm thấy thực thể yêu cầu',
     } as unknown as ErrorDto;
 
     this.logger.debug(error);
@@ -185,7 +185,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       statusCode,
       error: STATUS_CODES[statusCode],
-      message: error?.message || 'An unexpected error occurred',
+      message: error?.message || 'Đã xảy ra lỗi không mong muốn',
     };
 
     this.logger.error(error);

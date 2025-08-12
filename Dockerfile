@@ -58,8 +58,8 @@ WORKDIR /app
 
 RUN mkdir -p src/generated && chown -R node:node src
 RUN mkdir -p /app/secrets && chown -R node:node /app/secrets
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 RUN apk add --no-cache openssl
-
 
 # Copy the bundled code from the build stage to the production image
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules

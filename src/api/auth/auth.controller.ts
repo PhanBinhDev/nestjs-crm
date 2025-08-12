@@ -1,7 +1,6 @@
 import { AuthService } from '@/api/auth/auth.service';
 import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { UserEntity } from '@/api/users/entities/user.entity';
-import { UserService } from '@/api/users/user.service';
 import { AllConfigType } from '@/config/config.type';
 import { ErrorCode } from '@/constants/error-code.constant';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
@@ -17,7 +16,6 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService<AllConfigType>,
-    private readonly userService: UserService,
   ) {}
 
   /**
@@ -115,7 +113,7 @@ export class AuthController {
       path: cookieConfig.path,
     });
 
-    return res.json({
+    res.json({
       success: true,
       message: 'Logout successful',
     });
