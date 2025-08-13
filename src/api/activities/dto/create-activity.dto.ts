@@ -130,7 +130,6 @@ export class CreateActivityDto {
   @IsUUID()
   parentId?: string;
 
-  // estimateTime
   @ApiProperty({
     example: '120',
     description: 'Thời gian ước tính hoàn thành (phút)',

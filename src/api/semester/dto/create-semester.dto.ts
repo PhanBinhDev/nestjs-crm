@@ -57,6 +57,7 @@ export class CreateSemesterDto {
     example: 2024,
     required: true,
   })
+  @IsNotEmpty()
   @Expose()
   year: number;
 

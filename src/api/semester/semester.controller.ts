@@ -34,6 +34,8 @@ export class SemesterController {
   })
   @Roles(UserRole.CNBM, UserRole.TM)
   async create(@Body() createSemesterDto: CreateSemesterDto) {
+    console.log('Creating semester with data:', createSemesterDto);
+
     return await this.semesterService.create(createSemesterDto);
   }
 

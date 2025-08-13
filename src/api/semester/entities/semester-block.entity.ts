@@ -1,10 +1,13 @@
+import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
-import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, ManyToOne } from 'typeorm';
+import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { SemesterEntity } from './semester.entity';
 
 @Entity('semester_blocks')
-export class SemesterBlockEntity extends AbstractEntity {
+export class SemesterBlockEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: Uuid;
+
   @Column({ type: 'varchar', length: 255 })
   name: string;
 

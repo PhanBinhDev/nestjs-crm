@@ -47,12 +47,11 @@ export class SemesterService extends BaseService<SemesterEntity> {
       throw new BadRequestException('Ngày bắt đầu phải trước ngày kết thúc');
     }
 
-    // Tạo semester
     const { blocks, ...semesterData } = dto;
+
     const semester = this.semesterRepo.create(semesterData);
     const savedSemester = await this.semesterRepo.save(semester);
 
-    // Tạo blocks nếu có
     if (blocks && blocks.length > 0) {
       const blockEntities = blocks.map((block) => ({
         ...block,
@@ -60,7 +59,6 @@ export class SemesterService extends BaseService<SemesterEntity> {
         semesterId: savedSemester.id,
       }));
       await this.semesterBlockRepo.save(blockEntities);
-      // Lấy lại semester kèm blocks
       const semesterWithBlocks = await this.semesterRepo.findOne({
         where: { id: savedSemester.id },
         relations: ['blocks'],
@@ -72,7 +70,6 @@ export class SemesterService extends BaseService<SemesterEntity> {
         message: 'Tạo học kỳ thành công',
       });
     }
-    // Nếu không có blocks
     return new ResponseDto<SemesterResDto>({
       data: plainToInstance(SemesterResDto, savedSemester, {
         excludeExtraneousValues: true,
