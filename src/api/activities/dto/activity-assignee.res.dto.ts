@@ -1,3 +1,5 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
+import { WrapperType } from '@/common/types/types';
 import { AssigneeRole, AssignmentStatus } from '@/database/enum/activity.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
@@ -12,6 +14,11 @@ export class ActivityAssigneeResDto {
   @Expose()
   @Type(() => ActivityResDto)
   activity: ActivityResDto;
+
+  @ApiProperty({ example: 'Người được gán hoạt động' })
+  @Expose()
+  @Type(() => UserResDto)
+  user: WrapperType<UserResDto>;
 
   @ApiProperty({
     enum: AssignmentStatus,

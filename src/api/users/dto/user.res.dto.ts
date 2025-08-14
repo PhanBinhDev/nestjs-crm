@@ -20,6 +20,22 @@ export class UserResDto {
   @Expose()
   phone: string;
 
+  @ApiProperty({ example: 'johndoe' })
+  @Expose()
+  username: string;
+
+  @ApiProperty({ example: '1990-01-01T00:00:00.000Z' })
+  @Expose()
+  dateOfBirth: Date;
+
+  @ApiProperty({ example: 'Computer Science' })
+  @Expose()
+  major: string;
+
+  @ApiProperty({ example: 'https://example.com/avatar.jpg', required: false })
+  @Expose()
+  avatar?: string;
+
   @ApiProperty({ enum: UserRole, example: UserRole.CNBM })
   @Expose()
   role: UserRole;

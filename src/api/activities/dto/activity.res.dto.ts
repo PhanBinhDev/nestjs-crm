@@ -7,6 +7,7 @@ import {
 } from '@/database/enum/activity.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
+import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
 
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
@@ -109,4 +110,9 @@ export class ActivityResDto {
   @Expose()
   @Type(() => ActivityResDto)
   parent?: ActivityResDto;
+
+  @ApiProperty({ type: () => [ActivityAssigneeResDto], required: false })
+  @Expose()
+  @Type(() => ActivityAssigneeResDto)
+  assignees?: ActivityAssigneeResDto[];
 }
