@@ -47,3 +47,11 @@ export enum AssignmentStatus {
   ACCEPTED = 'accepted',
   DECLINED = 'declined',
 }
+
+export enum QueryType {
+  CREATED_BY_ME = 'created_by_me',
+  ASSIGNED_TO_ME = 'assigned_to_me',
+  OVERDUE = 'overdue',
+  TODAY = 'today',
+  COMPLETED = 'completed',
+}

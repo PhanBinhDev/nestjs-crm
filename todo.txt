@@ -1,0 +1,77 @@
+# TODO cho BE (backend) theo resource FE
+
+1. Activities (Công việc, hoạt động)
+- API lấy danh sách công việc theo các loại: được giao, hôm nay, quá hạn, sắp tới, tôi tạo, đã hoàn thành
+- API filter động theo queryType
+- API CRUD activity (create, read, update, delete)
+- API gán người thực hiện, feedback, file, participants, liên kết kỳ học
+- API lấy sub-activities
+- Phân quyền: Chỉ người tạo, trưởng bộ môn, trưởng môn được sửa/xóa; người được giao chỉ được cập nhật trạng thái; các vai trò khác chỉ được xem.
+- Business logic:
+  + Không cho xóa activity nếu đã có file, feedback, hoặc đang liên kết với kỳ học.
+  + Khi cập nhật trạng thái, gửi thông báo cho người liên quan.
+  + Tự động chuyển trạng thái quá hạn nếu endTime < now và chưa completed.
+  + Lưu lịch sử thay đổi trạng thái, người thực hiện.
+  + Kiểm tra trùng lịch khi tạo/cập nhật activity.
+
+2. Workspaces
+- API CRUD workspace
+- API phân quyền workspace: mỗi workspace có owner, admin, member, guest
+- API thêm/xóa/sửa thành viên workspace, phân quyền từng thành viên
+- Business logic:
+  + Chỉ owner/admin được thêm/xóa/sửa thành viên, đổi tên workspace.
+  + Member chỉ được xem và thao tác trong workspace được phân quyền.
+  + Guest chỉ được xem dữ liệu public.
+  + Khi xóa workspace, cần xác nhận và backup dữ liệu liên quan.
+
+3. My Teaching (Giảng dạy của tôi)
+- API lấy danh sách môn học phụ trách, lớp học phụ trách, lịch giảng dạy
+- Phân quyền: chỉ giáo viên, trưởng môn, chủ nhiệm bộ môn được xem/sửa thông tin giảng dạy của mình.
+
+4. Semester Management (Quản lý kỳ học)
+- API CRUD kỳ học
+- API lấy danh sách, kỳ học hiện tại, kế hoạch kỳ học
+- Business logic:
+  + Không cho xóa kỳ học nếu có activity hoặc lớp liên kết.
+  + Chỉ trưởng bộ môn, trưởng môn được tạo/sửa/xóa kỳ học.
+
+5. Subjects
+- API CRUD môn học
+- Phân quyền: chỉ trưởng bộ môn, trưởng môn được tạo/sửa/xóa môn học.
+
+6. Exams
+- API CRUD đề thi
+- API lịch thi, kết quả thi
+- Phân quyền: giáo viên được tạo/sửa đề thi của mình, trưởng môn duyệt đề thi, học sinh chỉ xem kết quả.
+
+7. Classes
+- API CRUD lớp học
+- Phân quyền: giáo viên, trưởng môn, chủ nhiệm bộ môn được tạo/sửa/xóa lớp học.
+
+8. Students
+- API CRUD học sinh
+- Phân quyền: giáo viên, trưởng môn, chủ nhiệm bộ môn được tạo/sửa/xóa học sinh.
+
+9. Teachers
+- API CRUD giáo viên
+- Phân quyền: chỉ trưởng bộ môn, trưởng môn được tạo/sửa/xóa giáo viên.
+
+10. Reports
+- API các loại báo cáo: học tập, giảng dạy, bộ môn, kỳ học, activities
+- Phân quyền: trưởng bộ môn, trưởng môn xem tất cả báo cáo; giáo viên xem báo cáo của mình.
+
+11. Department Management (Quản lý bộ môn)
+- API hoạt động bộ môn, họp bộ môn, chương trình giảng dạy
+- Phân quyền: trưởng bộ môn, trưởng môn được tạo/sửa/xóa; giáo viên chỉ được xem.
+
+12. Settings
+- API lấy/cập nhật cấu hình hệ thống
+- Phân quyền: chỉ admin hệ thống được sửa cấu hình.
+
+13. Phân quyền theo UserRole (GV, CNBM, TM)
+- Kiểm tra các API đã kiểm soát quyền đúng
+- Sử dụng guard, decorator kiểm tra quyền ở controller/service
+
+14. Workspace context
+- API lấy/set workspace hiện tại cho user
+- Business logic: mỗi user có thể thuộc nhiều workspace, cần lưu workspace hiện tại khi thao tác

@@ -1,4 +1,3 @@
-import { PageOptionsDto } from '@/common/dto/offset-pagination/page-options.dto';
 import { Uuid } from '@/common/types/common.type';
 import { UserRole } from '@/database/enum/user.enum';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
@@ -17,6 +16,7 @@ import {
 import { ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { SemesterBlockDto } from './dto/create-block.dto';
 import { CreateSemesterDto } from './dto/create-semester.dto';
+import { QuerySemesterDto } from './dto/query-semester.dto';
 import { SemesterResDto } from './dto/semester.res.dto';
 import { UpdateSemesterDto } from './dto/update-semester.dto';
 import { SemesterService } from './semester.service';
@@ -37,6 +37,16 @@ export class SemesterController {
     return await this.semesterService.create(createSemesterDto);
   }
 
+  @Get('active')
+  @ApiPublic({
+    summary: 'Lấy học kỳ hiện tại',
+    description: 'Lấy học kỳ đang diễn ra (dựa trên thời gian và status)',
+    type: SemesterResDto,
+  })
+  async findActiveSemester() {
+    return await this.semesterService.findActiveSemester();
+  }
+
   @Get()
   @ApiPublic({
     summary: 'Lấy danh sách tất cả học kỳ',
@@ -45,7 +55,7 @@ export class SemesterController {
     type: SemesterResDto,
     isPaginated: true,
   })
-  async findAll(@Query() query: PageOptionsDto) {
+  async findAll(@Query() query: QuerySemesterDto) {
     return await this.semesterService.findAll(query);
   }
 

@@ -20,6 +20,12 @@ import { UserEntity } from './entities/user.entity';
 
 @Injectable()
 export class UserService {
+  private roleHierarchy = {
+    [UserRole.TM]: 3,
+    [UserRole.CNBM]: 2,
+    [UserRole.GV]: 1,
+  };
+
   private readonly logger = new Logger(UserService.name);
 
   constructor(
@@ -28,23 +34,11 @@ export class UserService {
   ) {}
 
   private canUpdateUser(currentRole: UserRole, targetRole: UserRole): boolean {
-    const roleHierarchy = {
-      [UserRole.TM]: 3,
-      [UserRole.CNBM]: 2,
-      [UserRole.GV]: 1,
-    };
-
-    return roleHierarchy[currentRole] >= roleHierarchy[targetRole];
+    return this.roleHierarchy[currentRole] >= this.roleHierarchy[targetRole];
   }
 
   private canAssignRole(currentRole: UserRole, newRole: UserRole): boolean {
-    const roleHierarchy = {
-      [UserRole.TM]: 3,
-      [UserRole.CNBM]: 2,
-      [UserRole.GV]: 1,
-    };
-
-    return roleHierarchy[currentRole] > roleHierarchy[newRole];
+    return this.roleHierarchy[currentRole] > this.roleHierarchy[newRole];
   }
 
   async create(data: CreateUserDto): Promise<ResponseDto<UserResDto>> {
@@ -54,7 +48,7 @@ export class UserService {
       data: plainToInstance(UserResDto, user, {
         excludeExtraneousValues: true,
       }),
-      message: 'User created successfully',
+      message: 'Tạo người dùng thành công',
     });
   }
 
@@ -93,7 +87,6 @@ export class UserService {
       });
     }
 
-    // Handle sorting with validation
     const allowedSortFields = [
       'name',
       'email',
@@ -103,7 +96,6 @@ export class UserService {
     ];
 
     if (reqDto.sortBy) {
-      this.logger.log('Requested sortBy:', reqDto.sortBy);
       const sortField = allowedSortFields.includes(reqDto.sortBy)
         ? reqDto.sortBy
         : 'createdAt';
@@ -116,16 +108,13 @@ export class UserService {
 
       query.addOrderBy(`user.${sortField}`, reqDto.order || 'DESC');
     } else {
-      // Default sorting by createdAt
       query.addOrderBy('user.createdAt', reqDto.order || 'DESC');
     }
 
-    // Modified role filter to handle array
     if (reqDto.role && reqDto.role.length > 0) {
       query.andWhere('user.role IN (:...roles)', { roles: reqDto.role });
     }
 
-    // Modified isActive filter to handle array
     if (reqDto.isActive !== undefined && reqDto.isActive.length > 0) {
       query.andWhere('user.isActive IN (:...isActiveValues)', {
         isActiveValues: reqDto.isActive,
@@ -195,9 +184,7 @@ export class UserService {
       );
     }
 
-    // Special validation for role updates
     if (dto.role && dto.role !== userToUpdate.role) {
-      // Only TM can change roles
       if (currentUserRole !== UserRole.TM) {
         throw new ForbiddenException(
           'Chỉ Trưởng môn mới có quyền thay đổi vai trò',

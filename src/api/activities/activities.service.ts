@@ -5,6 +5,7 @@ import { Uuid } from '@/common/types/common.type';
 import {
   AssignmentStatus,
   ParticipantStatus,
+  QueryType,
 } from '@/database/enum/activity.enum';
 import { BaseService } from '@/services/base.service';
 import { paginate } from '@/utils/offset-pagination';
@@ -462,6 +463,65 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     return new ResponseNoDataDto({
       message: 'Xóa liên kết với kỳ học thành công',
+    });
+  }
+
+  async findFilteredActivities(
+    userId: Uuid,
+    query: QueryActivityDto,
+    type: QueryType,
+  ): Promise<OffsetPaginatedDto<ActivityResDto>> {
+    const qb = this.activityRepo.createQueryBuilder('activity');
+
+    switch (type) {
+      case QueryType.CREATED_BY_ME:
+        qb.where('activity.createdBy = :userId', { userId });
+        break;
+      case QueryType.ASSIGNED_TO_ME:
+        qb.leftJoin('activity.assignees', 'assignee').where(
+          'assignee.userId = :userId',
+          { userId },
+        );
+        break;
+      case QueryType.OVERDUE:
+        qb.leftJoin('activity.assignees', 'assignee')
+          .where('assignee.userId = :userId', { userId })
+          .andWhere('activity.endTime < :now', { now: new Date() })
+          .andWhere('activity.status != :completed', {
+            completed: 'completed',
+          });
+        break;
+      case QueryType.TODAY: {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        qb.leftJoin('activity.assignees', 'assignee')
+          .where('assignee.userId = :userId', { userId })
+          .andWhere('activity.startTime >= :today', { today })
+          .andWhere('activity.startTime < :tomorrow', { tomorrow });
+        break;
+      }
+      case QueryType.COMPLETED:
+        qb.leftJoin('activity.assignees', 'assignee')
+          .where('assignee.userId = :userId', { userId })
+          .andWhere('activity.status = :completed', { completed: 'completed' });
+        break;
+      default:
+        break;
+    }
+
+    qb.orderBy('activity.createdAt', 'DESC');
+    const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
+      skipCount: false,
+      takeAll: false,
+    });
+    return new OffsetPaginatedDto({
+      data: plainToInstance(ActivityResDto, activities, {
+        excludeExtraneousValues: true,
+      }),
+      meta: metaDto,
+      message: 'Lấy danh sách công việc thành công',
     });
   }
 }

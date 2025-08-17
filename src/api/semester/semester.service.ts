@@ -1,4 +1,3 @@
-import { PageOptionsDto } from '@/common/dto/offset-pagination/page-options.dto';
 import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
@@ -9,6 +8,7 @@ import { paginate } from '@/utils/offset-pagination';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,18 +16,23 @@ import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import { SemesterBlockDto } from './dto/create-block.dto';
 import { CreateSemesterDto } from './dto/create-semester.dto';
+import { QuerySemesterDto } from './dto/query-semester.dto';
 import { SemesterResDto } from './dto/semester.res.dto';
 import { UpdateSemesterDto } from './dto/update-semester.dto';
 import { SemesterBlockEntity } from './entities/semester-block.entity';
 import { SemesterEntity } from './entities/semester.entity';
+import { SemesterValidationService } from './validation/semester-validation.service';
 
 @Injectable()
 export class SemesterService extends BaseService<SemesterEntity> {
+  private logger = new Logger(SemesterService.name);
+
   constructor(
     @InjectRepository(SemesterEntity)
     private readonly semesterRepo: Repository<SemesterEntity>,
     @InjectRepository(SemesterBlockEntity)
     private readonly semesterBlockRepo: Repository<SemesterBlockEntity>,
+    private readonly validationService: SemesterValidationService,
   ) {
     super(semesterRepo);
   }
@@ -43,11 +48,36 @@ export class SemesterService extends BaseService<SemesterEntity> {
   }
 
   async create(dto: CreateSemesterDto): Promise<ResponseDto<SemesterResDto>> {
-    if (dto.startDate >= dto.endDate) {
-      throw new BadRequestException('Ngày bắt đầu phải trước ngày kết thúc');
+    const validationResult =
+      await this.validationService.validateSemesterCreation(dto);
+
+    if (!validationResult.isValid) {
+      const errorMessage = validationResult.errors.join('; ');
+      throw new BadRequestException({
+        message: errorMessage,
+        errors: validationResult.errors,
+      });
     }
 
     const { blocks, ...semesterData } = dto;
+
+    if (!semesterData.year) {
+      semesterData.year = new Date(semesterData.startDate).getFullYear();
+    }
+
+    if (!semesterData.status) {
+      const now = new Date();
+      const start = new Date(semesterData.startDate);
+      const end = new Date(semesterData.endDate);
+
+      if (now < start) {
+        semesterData.status = SemesterStatus.UPCOMING;
+      } else if (now >= start && now <= end) {
+        semesterData.status = SemesterStatus.ONGOING;
+      } else {
+        semesterData.status = SemesterStatus.COMPLETED;
+      }
+    }
 
     const semester = this.semesterRepo.create(semesterData);
     const savedSemester = await this.semesterRepo.save(semester);
@@ -59,10 +89,12 @@ export class SemesterService extends BaseService<SemesterEntity> {
         semesterId: savedSemester.id,
       }));
       await this.semesterBlockRepo.save(blockEntities);
+
       const semesterWithBlocks = await this.semesterRepo.findOne({
         where: { id: savedSemester.id },
         relations: ['blocks'],
       });
+
       return new ResponseDto<SemesterResDto>({
         data: plainToInstance(SemesterResDto, semesterWithBlocks, {
           excludeExtraneousValues: true,
@@ -79,12 +111,36 @@ export class SemesterService extends BaseService<SemesterEntity> {
   }
 
   async findAll(
-    query: PageOptionsDto,
+    query: QuerySemesterDto,
   ): Promise<OffsetPaginatedDto<SemesterResDto>> {
     const qb = this.semesterRepo
       .createQueryBuilder('semester')
       .leftJoinAndSelect('semester.blocks', 'blocks')
       .orderBy('semester.createdAt', 'DESC');
+
+    const allowedSortFields = ['name', 'year', 'startDate', 'endDate'];
+
+    if (query.sortBy) {
+      const sortField = allowedSortFields.includes(query.sortBy)
+        ? query.sortBy
+        : 'createdAt';
+
+      if (!allowedSortFields.includes(query.sortBy)) {
+        this.logger.warn(
+          `Invalid sortBy field '${query.sortBy}', defaulting to 'createdAt'`,
+        );
+      }
+
+      qb.addOrderBy(`semester.${sortField}`, query.order || 'DESC');
+    } else {
+      qb.addOrderBy('semester.createdAt', query.order || 'DESC');
+    }
+
+    if (query.status && query.status.length > 0) {
+      qb.andWhere('semester.status IN (:...statuses)', {
+        statuses: query.status,
+      });
+    }
 
     const [semesters, metaDto] = await paginate<SemesterEntity>(qb, query, {
       skipCount: false,
