@@ -98,4 +98,19 @@ export class UserController {
   removeUser(@Param('id', ParseUUIDPipe) id: Uuid) {
     return this.userService.remove(id);
   }
+
+  @Patch(':id/toggle-active')
+  @Roles(UserRole.CNBM, UserRole.TM)
+  @ApiAuth({
+    summary: 'Toggle active status of user',
+    type: UserResDto,
+  })
+  @ApiParam({ name: 'id', type: 'String' })
+  toggleActive(
+    @Param('id', ParseUUIDPipe) id: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+    @CurrentUser('role') currentUserRole: UserRole,
+  ) {
+    return this.userService.toggleActive(id, currentUserId, currentUserRole);
+  }
 }

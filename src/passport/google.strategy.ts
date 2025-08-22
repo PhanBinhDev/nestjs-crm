@@ -22,7 +22,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     done: VerifyCallback,
   ) {
     const email = profile.emails[0].value;
-    const user = await this.userService.findOneByEmail(email);
+    const user = await this.userService.findOneUserEmail(email);
 
     const res = {
       data: user,

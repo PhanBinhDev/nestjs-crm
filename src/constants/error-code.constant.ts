@@ -10,4 +10,5 @@ export enum ErrorCode {
   E001 = 'username_or_email_exists',
   E002 = 'not_found',
   E003 = 'email_not_exists',
+  E004 = 'account_not_active',
 }

@@ -77,9 +77,7 @@ export class UserService {
   }
 
   async findAll(reqDto: QueryUserDto): Promise<OffsetPaginatedDto<UserResDto>> {
-    const query = this.userRepository
-      .createQueryBuilder('user')
-      .where('user.isActive = :isActive', { isActive: true });
+    const query = this.userRepository.createQueryBuilder('user');
 
     if (reqDto.q) {
       query.andWhere('user.name ILIKE :search OR user.email ILIKE :search', {
@@ -140,6 +138,14 @@ export class UserService {
       where: {
         email,
         isActive: true,
+      },
+    });
+  }
+
+  async findOneUserEmail(email: string): Promise<UserEntity | null> {
+    return this.userRepository.findOne({
+      where: {
+        email,
       },
     });
   }
@@ -207,6 +213,32 @@ export class UserService {
         excludeExtraneousValues: true,
       }),
       message: 'Cập nhật người dùng thành công',
+    });
+  }
+
+  async toggleActive(
+    id: Uuid,
+    currentUserId: Uuid,
+    currentUserRole: UserRole,
+  ): Promise<ResponseDto<UserResDto>> {
+    if (id === currentUserId) {
+      throw new ForbiddenException(
+        'Bạn không thể tự thay đổi trạng thái của mình',
+      );
+    }
+    const user = await this.userRepository.findOneByOrFail({ id });
+    if (!this.canUpdateUser(currentUserRole, user.role)) {
+      throw new ForbiddenException(
+        'Bạn không có quyền thay đổi trạng thái người dùng này',
+      );
+    }
+    user.isActive = !user.isActive;
+    await this.userRepository.save(user);
+    return new ResponseDto({
+      data: plainToInstance(UserResDto, user, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật trạng thái người dùng thành công',
     });
   }
 }

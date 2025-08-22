@@ -1,10 +1,20 @@
 import { AuthService } from '@/api/auth/auth.service';
 import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { Uuid } from '@/common/types/common.type';
 import { AllConfigType } from '@/config/config.type';
 import { ErrorCode } from '@/constants/error-code.constant';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
-import { Controller, Delete, Get, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags } from '@nestjs/swagger';
@@ -89,6 +99,10 @@ export class AuthController {
       res.redirect(`${frontendUrl}/login?error=${ErrorCode.E003}`);
     }
 
+    if (response.data.isActive === false) {
+      res.redirect(`${frontendUrl}/login?error=${ErrorCode.E004}`);
+    }
+
     const origin = req.get('origin') || req.get('referer');
     const cookieConfig = this.getCookieConfig(origin);
 
@@ -97,6 +111,16 @@ export class AuthController {
     res.cookie('accessToken', accessToken, cookieConfig);
 
     res.redirect(frontendUrl);
+  }
+
+  @Post('dev-token')
+  @ApiPublic({
+    summary: 'Sinh token cho dev (public, chỉ dùng cho phát triển)',
+    description:
+      'Trả về access token cho userId truyền vào, chỉ dùng cho môi trường dev.',
+  })
+  async generateDevToken(@Body('userId') userId: Uuid) {
+    return this.authService.generateTokenForDev(userId);
   }
 
   @ApiPublic()
