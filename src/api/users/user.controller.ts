@@ -19,8 +19,9 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiParam, ApiTags, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ImportUsersResponseDto } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResDto } from './dto/user.res.dto';
@@ -82,12 +83,28 @@ export class UserController {
   @Roles(UserRole.CNBM, UserRole.TM)
   @UseInterceptors(FileInterceptor('file'))
   @ApiAuth({
-    summary: 'Import users from file',
-    description: 'Upload a file to import users in bulk.',
+    summary: 'Import users from Excel file',
+    description: 'Upload Excel file to import users in bulk. Returns import results with success/failure counts and detailed error messages.',
+    type: ImportUsersResponseDto,
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Excel file (.xlsx, .xls) with columns: Name, Email, Phone, Role, DateOfBirth (optional), Major (optional), Avatar (optional)',
+        },
+      },
+    },
   })
   importUsers(@UploadedFile() file: Express.Multer.File) {
     return this.userService.importUsers(file);
   }
+
+
 
   @Delete(':id')
   @Roles(UserRole.CNBM, UserRole.TM)
