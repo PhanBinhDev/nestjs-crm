@@ -2,6 +2,7 @@ import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { UserService } from '@/api/users/user.service';
 import { ResponseDto } from '@/common/dto/response/response.dto';
+import { Uuid } from '@/common/types/common.type';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
 import { plainToInstance } from 'class-transformer';
@@ -13,6 +14,25 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly userService: UserService,
   ) {}
+
+  async generateTokenForDev(userId: Uuid): Promise<{ accessToken: string }> {
+    // Lấy user từ DB để đảm bảo userId hợp lệ
+    const user = await this.userService.findOne(userId);
+    if (!user?.data) {
+      throw new UnauthorizedException('User không tồn tại');
+    }
+    const payload = {
+      id: user.data.id,
+      email: user.data.email,
+      role: user.data.role,
+      iat: Math.floor(Date.now() / 1000),
+    };
+    const options: JwtSignOptions = {
+      algorithm: 'RS256',
+    };
+    const accessToken = this.jwtService.sign(payload, options);
+    return { accessToken };
+  }
 
   generateJwt(user: UserEntity): string {
     const payload = {

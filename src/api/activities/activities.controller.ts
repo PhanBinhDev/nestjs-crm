@@ -1,5 +1,6 @@
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { Uuid } from '@/common/types/common.type';
+import { QueryType } from '@/database/enum/activity.enum';
 import { UserRole } from '@/database/enum/user.enum';
 import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth } from '@/decorators/http.decorators';
@@ -14,7 +15,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
@@ -39,6 +40,31 @@ export class ActivitiesController {
   @Roles(UserRole.CNBM, UserRole.TM)
   createActivity(@Body() dto: CreateActivityDto) {
     return this.activitiesService.create(dto);
+  }
+
+  @Get('filter')
+  @ApiAuth({
+    summary:
+      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành)',
+    type: ActivityResDto,
+    isArray: true,
+  })
+  @ApiQuery({
+    name: 'queryType',
+    enum: QueryType,
+    required: false,
+    description:
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed',
+  })
+  getFilteredActivities(
+    @CurrentUser('id') userId: Uuid,
+    
+    @Query('queryType') type: QueryType,
+  ) {
+    if (type)
+      return this.activitiesService.findFilteredActivities(userId, query, type);
+
+    return this.activitiesService.findAll(query);
   }
 
   @Get()
