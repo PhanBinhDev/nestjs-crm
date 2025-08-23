@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 
-import { CacheInterceptor, CacheModule } from '@nestjs/cache-manager';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivitiesModule } from './activities/activities.module';
 import { AuthModule } from './auth/auth.module';
 import { DeviceTokensModule } from './device-token/device-tokens.module';
@@ -25,16 +23,6 @@ import { UserModule } from './users/user.module';
     UploadModule,
     SemesterModule,
     NotificationsModule,
-    CacheModule.register({
-      isGlobal: true,
-      ttl: 5 * 60 * 1000,
-    }),
-  ],
-  providers: [
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: CacheInterceptor,
-    },
   ],
 })
 export class ApiModule {}
