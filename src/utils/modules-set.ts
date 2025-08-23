@@ -2,6 +2,7 @@ import { ApiModule } from '@/api/api.module';
 import { AuthModule } from '@/api/auth/auth.module';
 import authConfig from '@/api/auth/config/auth.config';
 import { BackgroundModule } from '@/background/background.module';
+import backgroundConfig from '@/background/config/background.config';
 import appConfig from '@/config/app.config';
 import databaseConfig from '@/database/config/database.config';
 import { TypeOrmConfigService } from '@/database/typeorm-config.service';
@@ -16,7 +17,7 @@ function generateModulesSet() {
   const imports: ModuleMetadata['imports'] = [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig],
+      load: [appConfig, databaseConfig, authConfig, backgroundConfig],
       envFilePath: ['.env'],
     }),
   ];

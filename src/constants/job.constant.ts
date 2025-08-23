@@ -1,5 +1,6 @@
 export enum QueueName {
   EMAIL = 'email',
+  NOTIFICATION = 'notification',
 }
 
 export enum QueuePrefix {
@@ -8,4 +9,5 @@ export enum QueuePrefix {
 
 export enum JobName {
   EMAIL_VERIFICATION = 'email-verification',
+  NOTIFICATION = 'notification',
 }

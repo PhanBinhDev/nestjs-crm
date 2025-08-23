@@ -163,17 +163,23 @@ export class UserService {
     });
   }
 
-  async importUsers(file: Express.Multer.File): Promise<ResponseDto<ImportUsersResponseDto>> {
+  async importUsers(
+    file: Express.Multer.File,
+  ): Promise<ResponseDto<ImportUsersResponseDto>> {
     if (!file) {
       throw new BadRequestException('Please upload an Excel file');
     }
 
     // Kiểm tra file extension
     const allowedExtensions = ['.xlsx', '.xls'];
-    const fileExtension = file.originalname.toLowerCase().substring(file.originalname.lastIndexOf('.'));
-    
+    const fileExtension = file.originalname
+      .toLowerCase()
+      .substring(file.originalname.lastIndexOf('.'));
+
     if (!allowedExtensions.includes(fileExtension)) {
-      throw new BadRequestException('Only Excel files (.xlsx, .xls) are supported');
+      throw new BadRequestException(
+        'Only Excel files (.xlsx, .xls) are supported',
+      );
     }
 
     try {
@@ -181,13 +187,22 @@ export class UserService {
       const workbook = XLSX.read(file.buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      
+
       // Chuyển đổi thành JSON với tên cột
-      const rawData = XLSX.utils.sheet_to_json(worksheet, { 
-        header: ['Name', 'Username', 'Email', 'Phone', 'Role', 'DateOfBirth', 'Major', 'Avatar'],
-        range: 1 // Bỏ qua header row
+      const rawData = XLSX.utils.sheet_to_json(worksheet, {
+        header: [
+          'Name',
+          'Username',
+          'Email',
+          'Phone',
+          'Role',
+          'DateOfBirth',
+          'Major',
+          'Avatar',
+        ],
+        range: 1, // Bỏ qua header row
       });
-      
+
       if (rawData.length === 0) {
         throw new BadRequestException('Excel file contains no data');
       }
@@ -212,7 +227,7 @@ export class UserService {
             Role: row.Role,
             DateOfBirth: row.DateOfBirth,
             Major: row.Major,
-            Avatar: row.Avatar
+            Avatar: row.Avatar,
           });
 
           // Map dữ liệu từ Excel vào DTO
@@ -228,8 +243,15 @@ export class UserService {
           };
 
           // Validate dữ liệu
-          if (!userData.name || !userData.email || !userData.phone || !userData.role) {
-            throw new Error('Missing required information (name, email, phone, role)');
+          if (
+            !userData.name ||
+            !userData.email ||
+            !userData.phone ||
+            !userData.role
+          ) {
+            throw new Error(
+              'Missing required information (name, email, phone, role)',
+            );
           }
 
           // Kiểm tra email đã tồn tại
@@ -245,7 +267,9 @@ export class UserService {
             email: userData.email,
             phone: userData.phone,
             role: userData.role,
-            dateOfBirth: userData.dateOfBirth ? new Date(userData.dateOfBirth) : undefined,
+            dateOfBirth: userData.dateOfBirth
+              ? new Date(userData.dateOfBirth)
+              : undefined,
             major: userData.major,
             avatar: userData.avatar,
             isActive: true,
@@ -254,7 +278,6 @@ export class UserService {
           await this.userRepository.save(newUser);
           successCount++;
           importResults.push(userData);
-
         } catch (error) {
           failureCount++;
           errors.push({
@@ -275,7 +298,6 @@ export class UserService {
         data: response,
         message: `Successfully imported ${successCount} users, ${failureCount} users failed`,
       });
-
     } catch (error) {
       this.logger.error('Error importing users:', error);
       throw new BadRequestException(`Error processing file: ${error.message}`);
@@ -288,9 +310,9 @@ export class UserService {
     }
 
     const roleMap: { [key: string]: UserRole } = {
-      'TM': UserRole.TM,
-      'CNBM': UserRole.CNBM,
-      'GV': UserRole.GV,
+      TM: UserRole.TM,
+      CNBM: UserRole.CNBM,
+      GV: UserRole.GV,
       'Trưởng môn': UserRole.TM,
       'Chủ nhiệm bộ môn': UserRole.CNBM,
       'Giảng viên': UserRole.GV,
@@ -301,7 +323,9 @@ export class UserService {
 
     const mappedRole = roleMap[roleString];
     if (!mappedRole) {
-      throw new Error(`Invalid role: ${roleString}. Supported roles: TM, CNBM, GV`);
+      throw new Error(
+        `Invalid role: ${roleString}. Supported roles: TM, CNBM, GV`,
+      );
     }
 
     return mappedRole;
@@ -321,7 +345,7 @@ export class UserService {
     // Check role hierarchy
     if (!this.canUpdateUser(currentUserRole, userToUpdate.role)) {
       throw new ForbiddenException(
-        'You do not have permission to update this user\'s information',
+        "You do not have permission to update this user's information",
       );
     }
 

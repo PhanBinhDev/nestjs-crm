@@ -1,5 +1,6 @@
-import { DEFAULT_PAGE_LIMIT } from '@/constants/app.constant';
+import { DEFAULT_PAGE_LIMIT, Order } from '@/constants/app.constant';
 import {
+  EnumFieldOptional,
   NumberFieldOptional,
   StringFieldOptional,
 } from '@/decorators/field.decorators';
@@ -20,4 +21,10 @@ export class PageOptionsDto {
 
   @StringFieldOptional()
   readonly q?: string;
+
+  @StringFieldOptional()
+  readonly sortBy?: string;
+
+  @EnumFieldOptional(() => Order, { default: Order.ASC })
+  readonly order?: Order = Order.ASC;
 }

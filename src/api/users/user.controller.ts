@@ -19,7 +19,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiParam, ApiTags, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ImportUsersResponseDto } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
@@ -83,7 +83,8 @@ export class UserController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiAuth({
     summary: 'Import users from Excel file',
-    description: 'Upload Excel file to import users in bulk. Returns import results with success/failure counts and detailed error messages.',
+    description:
+      'Upload Excel file to import users in bulk. Returns import results with success/failure counts and detailed error messages.',
     type: ImportUsersResponseDto,
   })
   @ApiConsumes('multipart/form-data')
@@ -94,7 +95,8 @@ export class UserController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'Excel file (.xlsx, .xls) with columns: Name, Email, Phone, Role, DateOfBirth (optional), Major (optional), Avatar (optional)',
+          description:
+            'Excel file (.xlsx, .xls) with columns: Name, Email, Phone, Role, DateOfBirth (optional), Major (optional), Avatar (optional)',
         },
       },
     },
@@ -103,13 +105,10 @@ export class UserController {
     return this.userService.importUsers(file);
   }
 
-
-
   @Delete(':id')
   @Roles(UserRole.CNBM, UserRole.TM)
   @ApiAuth({
-    summary: 'Delete user',
-    errorResponses: [400, 401, 403, 404, 500],
+    summary: 'Xóa người dùng',
   })
   @ApiParam({ name: 'id', type: 'String' })
   removeUser(@Param('id', ParseUUIDPipe) id: Uuid) {
