@@ -17,13 +17,11 @@ export class StagesService {
     private readonly stagesRepository: Repository<StagesEntity>,
   ) {}
 
-  // Thêm method để sắp xếp lại position
   private async reorderStages(): Promise<void> {
     const stages = await this.stagesRepository.find({
       order: { position: 'ASC' },
     });
 
-    // Gán lại position từ 0 đến n-1
     for (let i = 0; i < stages.length; i++) {
       if (stages[i].position !== i) {
         await this.stagesRepository.update(stages[i].id, { position: i });

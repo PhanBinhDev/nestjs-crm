@@ -1,6 +1,8 @@
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { Column, Entity } from 'typeorm';
 
+// Note: keep notification workspace-scoped when applicable
+
 @Entity('notifications')
 export class NotificationEntity extends AbstractEntity {
   @Column({ type: 'uuid' })
@@ -29,4 +31,7 @@ export class NotificationEntity extends AbstractEntity {
 
   @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  workspaceId?: string;
 }

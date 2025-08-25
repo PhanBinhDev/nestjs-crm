@@ -1,3 +1,4 @@
+import { CurrentUser } from '@/decorators/current-user.decorator';
 import {
   Controller,
   Post,
@@ -7,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { UserEntity } from '../users/entities/user.entity';
 import { UploadService } from './upload.service';
 
 @ApiTags('Upload')
@@ -28,8 +30,11 @@ export class UploadController {
     },
   })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.uploadService.saveFile(file);
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: UserEntity,
+  ) {
+    const url = await this.uploadService.saveFile(file, user.id);
     return {
       url,
       originalName: file.originalname,
@@ -59,8 +64,11 @@ export class UploadController {
     },
   })
   @UseInterceptors(FilesInterceptor('files'))
-  async uploadMultipleFiles(@UploadedFiles() files: Express.Multer.File[]) {
-    const urls = await this.uploadService.saveFiles(files);
+  async uploadMultipleFiles(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: UserEntity,
+  ) {
+    const urls = await this.uploadService.saveFiles(files, user.id);
     return files.map((file, idx) => ({
       url: urls[idx],
       originalName: file.originalname,

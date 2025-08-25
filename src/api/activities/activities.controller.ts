@@ -58,7 +58,7 @@ export class ActivitiesController {
   })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,
-    
+    @Query() query: QueryActivityDto,
     @Query('queryType') type: QueryType,
   ) {
     if (type)
