@@ -33,6 +33,7 @@ USER node
 FROM base AS builder
 WORKDIR /app
 
+COPY --chown=node:node serviceAccountKey.json ./serviceAccountKey.json
 COPY --chown=node:node package*.json pnpm-lock.yaml ./
 COPY --chown=node:node --from=development /app/node_modules ./node_modules
 COPY --chown=node:node --from=development /app/src ./src
@@ -65,6 +66,8 @@ RUN apk add --no-cache openssl
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/package.json ./
+COPY --chown=node:node serviceAccountKey.json ./serviceAccountKey.json
+
 
 
 USER node
