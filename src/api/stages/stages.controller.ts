@@ -8,9 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiParam, ApiTags } from '@nestjs/swagger';
 import { CreateStageDto } from './dto/create-stage.dto';
+import { QueryStageDto } from './dto/query-stage.dto';
 import { StageDto } from './dto/stage.dto';
 import { UpdateStageDto } from './dto/update-stage.dto';
 import { StagesService } from './stages.service';
@@ -23,8 +25,6 @@ export class StagesController {
   @Post()
   @ApiAuth({
     summary: 'Tạo stage mới',
-    auths: ['jwt'],
-    statusCode: 201,
     type: StageDto,
   })
   async create(@Body() createStageDto: CreateStageDto) {
@@ -38,8 +38,8 @@ export class StagesController {
     type: StageDto,
     isArray: true,
   })
-  async findAll() {
-    return await this.stagesService.findAll();
+  async findAll(@Query() query: QueryStageDto) {
+    return await this.stagesService.findAll(query);
   }
 
   @Get(':id')

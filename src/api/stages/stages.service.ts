@@ -1,17 +1,20 @@
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import { CreateStageDto } from './dto/create-stage.dto';
+import { QueryStageDto } from './dto/query-stage.dto';
 import { StageResDto } from './dto/stage.res.dto';
 import { UpdateStageDto } from './dto/update-stage.dto';
 import { StagesEntity } from './entities/stage.entity';
 
 @Injectable()
 export class StagesService {
+  private readonly logger = new Logger(StagesService.name);
+
   constructor(
     @InjectRepository(StagesEntity)
     private readonly stagesRepository: Repository<StagesEntity>,
@@ -82,8 +85,33 @@ export class StagesService {
     });
   }
 
-  async findAll(): Promise<ResponseDto<StageResDto[]>> {
-    const stages = await this.stagesRepository.find();
+  async findAll(query: QueryStageDto): Promise<ResponseDto<StageResDto[]>> {
+    const qb = this.stagesRepository.createQueryBuilder('stage');
+
+    if (query.q) {
+      qb.andWhere('stage.title ILIKE :search', { search: `%${query.q}%` });
+    }
+
+    const allowedSortFields = ['position', 'createdAt'];
+
+    // sort
+    if (query.sortBy) {
+      const sortField = allowedSortFields.includes(query.sortBy)
+        ? query.sortBy
+        : 'createdAt';
+
+      if (!allowedSortFields.includes(query.sortBy)) {
+        this.logger.warn(
+          `Invalid sortBy field '${query.sortBy}', defaulting to 'createdAt'`,
+        );
+      }
+
+      qb.addOrderBy(`stage.${sortField}`, query.order || 'DESC');
+    } else {
+      qb.addOrderBy('stage.position', query.order || 'DESC');
+    }
+
+    const stages = await qb.getMany();
     return new ResponseDto<StageResDto[]>({
       data: plainToInstance(StageResDto, stages, {
         excludeExtraneousValues: true,
