@@ -101,6 +101,10 @@ export class ActivityResDto {
   @Expose()
   status: ActivityStatus;
 
+  @ApiProperty({ example: 0 })
+  @Expose()
+  position: number;
+
   @ApiProperty({ type: () => SemesterResDto, required: false })
   @Expose()
   @Type(() => SemesterResDto)

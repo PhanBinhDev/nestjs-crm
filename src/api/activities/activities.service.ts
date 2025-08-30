@@ -14,9 +14,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
@@ -51,6 +51,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
     @InjectRepository(SemesterEntity)
     private readonly semesterRepo: Repository<SemesterEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {
     super(activityRepo);
   }
@@ -63,8 +65,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         );
       }
     }
-
-    const activity = this.activityRepo.create(dto);
+    const count = await this.activityRepo.count({
+      where: { stageId: dto.stageId },
+    });
+    const activity = this.activityRepo.create({ ...dto, position: count });
     const res = await this.activityRepo.save(activity);
 
     return new ResponseDto<ActivityResDto>({
@@ -202,14 +206,82 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     id: Uuid,
     dto: UpdateActivityDto,
   ): Promise<ResponseDto<ActivityResDto>> {
-    const activity = await this.activityRepo.findOneOrFail({ where: { id } });
-    Object.assign(activity, dto);
-    await this.activityRepo.save(activity);
-    return new ResponseDto<ActivityResDto>({
-      data: plainToInstance(ActivityResDto, activity, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật hoạt động thành công',
+    return await this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+
+      const activity = await activityRepo.findOneOrFail({ where: { id } });
+      const oldStageId = activity.stageId;
+      const oldPosition = activity.position;
+      const newStageId = dto.stageId ?? activity.stageId;
+      const newPosition = dto.position ?? activity.position;
+
+      // Kiểm tra các loại thay đổi
+      const hasStageChange = dto.stageId && dto.stageId !== oldStageId;
+      const hasPositionChange =
+        dto.position !== undefined && dto.position !== oldPosition;
+
+      if (hasStageChange) {
+        // Case 1: Chuyển sang stage khác (có thể kèm theo thay đổi position)
+        await Promise.all([
+          // Cập nhật column cũ: Giảm position của các items phía sau vị trí cũ
+          activityRepo
+            .createQueryBuilder()
+            .update(ActivityEntity)
+            .set({ position: () => 'position - 1' })
+            .where('stageId = :oldStageId', { oldStageId })
+            .andWhere('position > :oldPosition', { oldPosition })
+            .execute(),
+
+          // Cập nhật column mới: Tăng position của các items từ vị trí mới trở đi
+          activityRepo
+            .createQueryBuilder()
+            .update(ActivityEntity)
+            .set({ position: () => 'position + 1' })
+            .where('stageId = :newStageId', { newStageId })
+            .andWhere('position >= :newPosition', { newPosition })
+            .execute(),
+        ]);
+      } else if (hasPositionChange) {
+        // Case 2: Di chuyển trong cùng stage
+        if (oldPosition < newPosition) {
+          // Di chuyển xuống: Giảm position của các items ở giữa
+          await activityRepo
+            .createQueryBuilder()
+            .update(ActivityEntity)
+            .set({ position: () => 'position - 1' })
+            .where('stageId = :stageId', { stageId: newStageId })
+            .andWhere('position > :oldPosition', { oldPosition })
+            .andWhere('position <= :newPosition', { newPosition })
+            .execute();
+        } else {
+          // Di chuyển lên: Tăng position của các items ở giữa
+          await activityRepo
+            .createQueryBuilder()
+            .update(ActivityEntity)
+            .set({ position: () => 'position + 1' })
+            .where('stageId = :stageId', { stageId: newStageId })
+            .andWhere('position >= :newPosition', { newPosition })
+            .andWhere('position < :oldPosition', { oldPosition })
+            .execute();
+        }
+      }
+
+      // Case 3: hasStageChange = true đã cover cả trường hợp có position change
+      // Vì khi chuyển stage, ta luôn:
+      // 1. Dọn dẹp column cũ (giảm position các items phía sau)
+      // 2. Chuẩn bị chỗ trong column mới (tăng position từ vị trí insert)
+      // 3. Insert item vào đúng vị trí mong muốn
+
+      // Cập nhật activity với tất cả các thay đổi
+      Object.assign(activity, dto);
+      await activityRepo.save(activity);
+
+      return new ResponseDto<ActivityResDto>({
+        data: plainToInstance(ActivityResDto, activity, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật hoạt động thành công',
+      });
     });
   }
 

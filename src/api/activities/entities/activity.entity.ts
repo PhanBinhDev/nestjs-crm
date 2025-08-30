@@ -57,6 +57,9 @@ export class ActivityEntity extends AbstractEntity {
   @Column({ type: 'uuid', nullable: true })
   parentId?: string;
 
+  @Column({ type: 'int', default: 0 })
+  position: number;
+
   @ManyToOne(() => ActivityEntity, (activity) => activity.subActivities, {
     nullable: true,
   })

@@ -28,6 +28,14 @@ export class CreateActivityDto {
   name: string;
 
   @ApiProperty({
+    example: '1',
+    description: 'Vị trí của hoạt động trong cột',
+  })
+  @IsNotEmpty()
+  @IsNumber()
+  position: number;
+
+  @ApiProperty({
     enum: ActivityType,
     example: ActivityType.TASK,
     description: 'Loại: task hoặc event',
