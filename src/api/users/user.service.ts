@@ -400,4 +400,48 @@ export class UserService {
       message: 'Cập nhật trạng thái người dùng thành công',
     });
   }
+  async exportUsers(
+    fields?: string[],
+    limit?: number,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    let users = await this.userRepository.find();
+    if (limit && limit > 0) {
+      users = users.slice(0, limit);
+    }
+
+    const defaultFields = [
+      'name',
+      'username',
+      'email',
+      'phone',
+      'role',
+      'dateOfBirth',
+      'major',
+      'avatar',
+    ];
+    const exportFields = fields && fields.length > 0 ? fields : defaultFields;
+
+    const data = users.map((u) => {
+      const row: any = {};
+      for (const field of exportFields) {
+        if (field === 'dateOfBirth') {
+          row[field] = u.dateOfBirth
+            ? typeof u.dateOfBirth === 'string'
+              ? u.dateOfBirth
+              : u.dateOfBirth.toISOString().split('T')[0]
+            : '';
+        } else {
+          row[field] = u[field];
+        }
+      }
+      return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(data, { header: exportFields });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users');
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `users_export_${Date.now()}.xlsx`;
+    return { buffer, filename };
+  }
 }

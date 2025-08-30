@@ -4,6 +4,8 @@ import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
 import { Roles } from '@/decorators/roles.decorator';
 import { RolesGuard } from '@/guards/roles.guard';
+import { Response } from 'express';
+
 import {
   Body,
   Controller,
@@ -14,6 +16,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -53,6 +56,29 @@ export class UserController {
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
   findAll(@Query() query: QueryUserDto) {
     return this.userService.findAll(query);
+  }
+  @Get('export')
+  @ApiAuth({
+    summary: 'Export users to Excel file',
+    description: 'Exports selected fields of users to an Excel file.',
+  })
+  async exportUsers(
+    @Res() res: Response,
+    @Query('fields') fields?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const fieldList = fields ? fields.split(',') : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    const { buffer, filename } = await this.userService.exportUsers(
+      fieldList,
+      limitNum,
+    );
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Get(':id')
