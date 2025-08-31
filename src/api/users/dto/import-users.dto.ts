@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsPhoneNumber,
   IsString,
+  IsUrl,
 } from 'class-validator';
 
 export class ImportUserDto {
@@ -105,4 +106,14 @@ export class ImportUsersResponseDto {
     email: string;
     error: string;
   }>;
+}
+
+export class ImportUsersFromUrlDto {
+  @ApiProperty({
+    example: 'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
+    description: 'Google Sheets URL (must be converted to export format)',
+  })
+  @IsString()
+  @IsUrl()
+  url: string;
 }
