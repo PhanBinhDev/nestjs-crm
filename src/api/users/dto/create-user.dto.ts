@@ -37,6 +37,14 @@ export class CreateUserDto {
   @IsString()
   dateOfBirth?: string;
 
+  // major
+  @ApiProperty({
+    example: 'Computer Science',
+    required: false,
+  })
+  @IsString()
+  major?: string;
+
   @ApiProperty({
     example: 'https://example.com/avatar.jpg',
     required: false,
