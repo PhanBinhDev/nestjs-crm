@@ -24,7 +24,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CreateUserDto } from './dto/create-user.dto';
-import { ImportUserDto, ImportUsersResponseDto, ImportUsersFromUrlDto } from './dto/import-users.dto';
+import {
+  ImportUsersFromUrlDto,
+  ImportUsersResponseDto,
+} from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResDto } from './dto/user.res.dto';
@@ -134,7 +137,8 @@ export class UserController {
   @Post('import-url')
   @ApiAuth({
     summary: 'Import users from Google Sheets URL',
-    description: 'Import users from a Google Sheets URL (must be in export format: /export?format=xlsx). Returns import results with success/failure counts and detailed error messages.',
+    description:
+      'Import users from a Google Sheets URL (must be in export format: /export?format=xlsx). Returns import results with success/failure counts and detailed error messages.',
     type: ImportUsersResponseDto,
   })
   @ApiConsumes('application/json')
@@ -144,8 +148,10 @@ export class UserController {
       properties: {
         url: {
           type: 'string',
-          description: 'Google Sheets URL in export format (must end with /export?format=xlsx)',
-          example: 'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
+          description:
+            'Google Sheets URL in export format (must end with /export?format=xlsx)',
+          example:
+            'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
         },
       },
       required: ['url'],

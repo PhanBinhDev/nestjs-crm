@@ -11,10 +11,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
-import axios from 'axios';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ImportUserDto, ImportUsersResponseDto } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
@@ -312,9 +312,11 @@ export class UserService {
       // Validate URL format
       try {
         const urlObj = new URL(url);
-        if (!urlObj.hostname.includes('docs.google.com') || 
-            !urlObj.pathname.includes('/spreadsheets/') || 
-            urlObj.searchParams.get('format') !== 'xlsx') {
+        if (
+          !urlObj.hostname.includes('docs.google.com') ||
+          !urlObj.pathname.includes('/spreadsheets/') ||
+          urlObj.searchParams.get('format') !== 'xlsx'
+        ) {
           throw new BadRequestException(
             'Invalid Google Sheets URL. URL must be in export format: /export?format=xlsx',
           );
@@ -328,7 +330,7 @@ export class UserService {
         responseType: 'arraybuffer',
         timeout: 30000, // 30 seconds timeout
       });
-      
+
       if (response.status !== 200) {
         throw new BadRequestException(
           `Failed to download file from URL: ${response.statusText}`,
@@ -336,13 +338,14 @@ export class UserService {
       }
 
       const buffer = Buffer.from(response.data);
-      
+
       // Create a mock file object to reuse existing import logic
       const mockFile: Express.Multer.File = {
         fieldname: 'file',
         originalname: 'import_from_url.xlsx',
         encoding: '7bit',
-        mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        mimetype:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         buffer: buffer,
         size: buffer.length,
         stream: null,
