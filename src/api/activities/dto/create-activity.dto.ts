@@ -3,17 +3,22 @@ import {
   ActivityPiority,
   ActivityType,
 } from '@/database/enum/activity.enum';
+import {
+  BooleanFieldOptional,
+  DateFieldOptional,
+  EnumFieldOptional,
+  NumberFieldOptional,
+  StringFieldOptional,
+  URLFieldOptional,
+  UUIDFieldOptional,
+} from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  IsBoolean,
-  IsDateString,
   IsEnum,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { ActivityChecklistDto } from './activity-checklist.dto';
@@ -27,13 +32,11 @@ export class CreateActivityDto {
   @IsString()
   name: string;
 
-  @ApiProperty({
-    example: '1',
-    description: 'Vị trí của hoạt động trong cột',
+  @NumberFieldOptional({
+    example: 1,
+    description: 'Vị trí sắp xếp',
   })
-  @IsNotEmpty()
-  @IsNumber()
-  position: number;
+  position?: number;
 
   @ApiProperty({
     enum: ActivityType,
@@ -43,119 +46,76 @@ export class CreateActivityDto {
   @IsEnum(ActivityType)
   type: ActivityType;
 
-  @ApiProperty({
-    example: 'Thực hiện báo cáo chuyên đề về AI',
-    description: 'Mô tả chi tiết',
-    required: false,
+  @StringFieldOptional({
+    example: 'Mô tả chi tiết về hoạt động',
   })
-  @IsOptional()
-  @IsString()
   description?: string;
 
-  @ApiProperty({
-    enum: ActivityPiority,
-    example: ActivityPiority.HIGH,
-    description: 'Độ ưu tiên',
-    required: false,
+  @EnumFieldOptional(() => ActivityPiority, {
+    example: ActivityPiority.MEDIUM,
+    description: 'Độ ưu tiên: thấp, trung bình, cao',
   })
-  @IsOptional()
-  @IsEnum(ActivityPiority)
   priority?: ActivityPiority;
 
-  @ApiProperty({
+  @UUIDFieldOptional({
     example: 'stage-uuid',
-    description: 'ID trạng thái (stage)',
-    required: false,
+    description: 'ID giai đoạn (nếu có)',
   })
-  @IsOptional()
-  @IsString()
-  @IsUUID()
   stageId?: string;
 
-  @ApiProperty({
+  @DateFieldOptional({
     example: '2025-08-01T09:00:00Z',
     description: 'Thời gian bắt đầu',
-    required: false,
   })
-  @IsOptional()
-  @IsDateString()
   startTime?: string;
 
-  @ApiProperty({
+  @DateFieldOptional({
     example: '2025-08-01T11:00:00Z',
     description: 'Thời gian kết thúc',
-    required: false,
   })
-  @IsOptional()
-  @IsDateString()
   endTime?: string;
 
-  @ApiProperty({
-    example: 'Phòng 101',
-    description: 'Địa điểm',
-    required: false,
+  @StringFieldOptional({
+    example: 'Phòng A101, Tòa nhà B',
+    description: 'Địa điểm tổ chức',
   })
-  @IsOptional()
-  @IsString()
   location?: string;
 
-  @ApiProperty({
-    example: 'https://zoom.us/j/123456789',
-    description: 'Link online',
-    required: false,
+  @URLFieldOptional({
+    example: 'https://meet.google.com/abc-defg-hij',
+    description: 'Link họp online (nếu có)',
   })
-  @IsOptional()
-  @IsString()
   onlineLink?: string;
 
-  @ApiProperty({
-    example: true,
-    description: 'Bắt buộc hay tự chọn',
-    required: false,
+  @BooleanFieldOptional({
+    example: false,
+    description: 'Hoạt động có bắt buộc không',
   })
-  @IsOptional()
-  @IsBoolean()
   mandatory?: boolean;
 
-  @ApiProperty({
-    enum: ActivityCategory,
+  @EnumFieldOptional(() => ActivityCategory, {
     example: ActivityCategory.SEMINAR,
-    description: 'Loại hình hoạt động',
-    required: false,
+    description: 'Danh mục hoạt động',
   })
-  @IsOptional()
-  @IsEnum(ActivityCategory)
   category?: ActivityCategory;
 
-  // parentId
-  @ApiProperty({
+  @UUIDFieldOptional({
     example: 'parent-activity-uuid',
     description: 'ID hoạt động cha (nếu có)',
-    required: false,
   })
-  @IsOptional()
-  @IsString()
-  @IsUUID()
   parentId?: string;
 
-  @ApiProperty({
-    example: '120',
+  @NumberFieldOptional({
+    example: 120,
     description: 'Thời gian ước tính hoàn thành (phút)',
-    required: false,
   })
-  @IsOptional()
-  @IsNumber()
-  estimateTime?: number; // minutes
+  estimateTime?: number;
 
   // semesterId:
-  @ApiProperty({
+  @UUIDFieldOptional({
     example: 'semester-uuid',
     description: 'ID kỳ học (nếu có)',
-    required: false,
   })
-  @IsString()
-  @IsOptional()
-  @IsUUID()
   semesterId?: string;
 
   @ApiProperty({

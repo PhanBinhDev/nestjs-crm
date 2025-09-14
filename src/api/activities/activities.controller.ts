@@ -37,7 +37,6 @@ export class ActivitiesController {
 
   @Post()
   @ApiAuth({ summary: 'Tạo mới activity', type: ActivityResDto })
-  @Roles(UserRole.CNBM, UserRole.TM)
   createActivity(@Body() dto: CreateActivityDto) {
     return this.activitiesService.create(dto);
   }

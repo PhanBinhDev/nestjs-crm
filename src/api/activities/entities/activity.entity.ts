@@ -74,8 +74,8 @@ export class ActivityEntity extends AbstractEntity {
   @Column({ type: 'enum', enum: ActivityStatus, default: ActivityStatus.NEW })
   status: ActivityStatus;
 
-  @Column({ type: 'uuid', nullable: false })
-  semesterId: string;
+  @Column({ type: 'uuid', nullable: true })
+  semesterId?: string;
 
   @OneToMany(
     () => ActivityParticipantEntity,

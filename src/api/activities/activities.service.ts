@@ -68,7 +68,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const count = await this.activityRepo.count({
       where: { stageId: dto.stageId },
     });
-    const activity = this.activityRepo.create({ ...dto, position: count });
+    const activity = this.activityRepo.create({ ...dto, position: count + 1 });
     const res = await this.activityRepo.save(activity);
 
     return new ResponseDto<ActivityResDto>({

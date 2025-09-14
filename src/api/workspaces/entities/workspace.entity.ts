@@ -4,6 +4,7 @@ import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { WorkspaceMembers } from './workspace-members.entity';
+import { WorkspaceViewSettings } from './workspace-view-settings.entity';
 
 @Entity('workspaces')
 export class Workspaces extends AbstractEntity {
@@ -48,4 +49,9 @@ export class Workspaces extends AbstractEntity {
     cascade: true,
   })
   members: WorkspaceMembers[];
+
+  @OneToMany(() => WorkspaceViewSettings, (settings) => settings.workspace, {
+    cascade: true,
+  })
+  settingsView?: WorkspaceViewSettings[];
 }

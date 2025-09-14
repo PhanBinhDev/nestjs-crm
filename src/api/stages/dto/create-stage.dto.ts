@@ -1,5 +1,10 @@
+import { StageGroup } from '@/database/enum/stage.enum';
+import {
+  EnumFieldOptional,
+  NumberFieldOptional,
+} from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateStageDto {
   @ApiProperty({
@@ -19,14 +24,15 @@ export class CreateStageDto {
   @IsOptional()
   color?: string;
 
-  @ApiProperty({
-    description: 'Vị trí của stage trong danh sách (dùng cho kéo thả Kanban)',
+  @NumberFieldOptional({
+    description: 'Vị trí của stage trong danh sách',
     example: 1,
-    required: false,
-    default: 0,
   })
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  position?: number = 0;
+  position?: number;
+
+  @EnumFieldOptional(() => StageGroup, {
+    description: 'Nhóm của stage',
+    example: StageGroup.ACTIVE,
+  })
+  stageGroup?: StageGroup;
 }

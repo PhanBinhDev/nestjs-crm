@@ -1,3 +1,4 @@
+import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { Uuid } from '@/common/types/common.type';
 import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
 import {
@@ -29,6 +30,17 @@ export class StagesController {
   })
   async create(@Body() createStageDto: CreateStageDto) {
     return this.stagesService.create(createStageDto);
+  }
+
+  @Post('init-default')
+  @ApiAuth({
+    summary: 'Khởi tạo các stage mặc định nếu chưa có',
+  })
+  async initDefaultStages() {
+    await this.stagesService.initDefaultStages();
+    return new ResponseNoDataDto({
+      message: 'Khởi tạo các stage mặc định thành công',
+    });
   }
 
   @Get()

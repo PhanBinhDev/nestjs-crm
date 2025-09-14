@@ -1,7 +1,7 @@
+import { UserEntity } from '@/api/users/entities/user.entity';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity } from 'typeorm';
-
-// Note: keep notification workspace-scoped when applicable
+import { Column, Entity, ManyToOne } from 'typeorm';
 
 @Entity('notifications')
 export class NotificationEntity extends AbstractEntity {
@@ -34,4 +34,14 @@ export class NotificationEntity extends AbstractEntity {
 
   @Column({ type: 'uuid', nullable: true })
   workspaceId?: string;
+
+  @ManyToOne(() => UserEntity, (user) => user.notifications, {
+    onDelete: 'CASCADE',
+  })
+  user: WrapperType<UserEntity>;
+
+  @ManyToOne(() => UserEntity, (user) => user.sentNotifications, {
+    onDelete: 'SET NULL',
+  })
+  sender?: WrapperType<UserEntity>;
 }

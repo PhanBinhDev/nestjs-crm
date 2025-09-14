@@ -30,7 +30,9 @@ export class NotificationsService {
   async findAll(
     query: QueryNotificationDto,
   ): Promise<ResponseDto<NotificationResDto[]>> {
-    const qb = this.notificationRepo.createQueryBuilder('notification');
+    const qb = this.notificationRepo
+      .createQueryBuilder('notification')
+      .leftJoinAndSelect('notification.user', 'user');
 
     if (query.userId) {
       qb.andWhere('notification.userId = :userId', { userId: query.userId });

@@ -1,10 +1,26 @@
 import { Uuid } from '@/common/types/common.type';
+import { WorkspaceRole } from '@/database/enum/workspace.enum';
 import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth } from '@/decorators/http.decorators';
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { WorkspaceRoles } from '@/decorators/workspace-role.decorator.';
+import { WorkspaceAccessGuard } from '@/guards/workspace-access.guard';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
-import { WorkspaceResDto } from './dto/workspace.res.dto';
+import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
+import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
+import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspacesService } from './workspaces.service';
 
 @ApiTags('Workspaces')
@@ -15,7 +31,7 @@ export class WorkspacesController {
   @Post()
   @ApiAuth({
     summary: 'Tạo không gian làm việc',
-    type: WorkspaceResDto,
+    type: BaseWorkspaceResDto,
   })
   create(
     @Body() createWorkspaceDto: CreateWorkspaceDto,
@@ -26,40 +42,81 @@ export class WorkspacesController {
 
   @Get()
   @ApiAuth({
-    summary: 'Lấy danh sách không gian làm việc',
+    summary: 'Lấy danh sách không gian làm việc của user',
     isArray: true,
-    type: WorkspaceResDto,
+    type: BaseWorkspaceResDto,
   })
-  findAll() {
-    return this.workspacesService.findAll();
+  findAll(@CurrentUser('id') currentUserId: Uuid) {
+    return this.workspacesService.findAll(currentUserId);
   }
 
-  @Get('mine')
+  @UseGuards(WorkspaceAccessGuard)
+  @Get(':workspaceId')
   @ApiAuth({
-    summary:
-      'Lấy danh sách workspace mà user hiện tại có quyền truy cập (owner hoặc member)',
-    isArray: true,
-    type: WorkspaceResDto,
-  })
-  async findMine(@CurrentUser('id') currentUserId: Uuid) {
-    return this.workspacesService.findAccessibleByUser(currentUserId);
-  }
-
-  @Patch(':id')
-  @ApiAuth({
-    summary: 'Cập nhật không gian làm việc',
-    type: WorkspaceResDto,
+    summary: 'Lấy thông tin không gian làm việc theo ID',
+    type: WorkspaceDetailsResDto,
   })
   @ApiParam({
-    name: 'id',
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+    type: 'string',
+    format: 'uuid',
+  })
+  findOne(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+    @Query() query: QueryWorkspaceDetailDto,
+  ) {
+    return this.workspacesService.findOne(workspaceId, currentUserId, query);
+  }
+
+  @Get(':workspaceId/members')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Lấy danh sách thành viên của không gian làm việc',
+    isArray: true,
+    type: WorkspaceMemberResDto,
+  })
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+  })
+  findMembers(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.findMembers(workspaceId, currentUserId);
+  }
+
+  @Patch(':workspaceId')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Cập nhật không gian làm việc',
+    type: BaseWorkspaceResDto,
+  })
+  @ApiParam({
+    name: 'workspaceId',
     description: 'ID của không gian làm việc',
     type: 'string',
     format: 'uuid',
   })
   update(
-    @Param('id') id: Uuid,
+    @Param('workspaceId') workspaceId: Uuid,
     @Body() updateWorkspaceDto: CreateWorkspaceDto,
   ) {
-    return this.workspacesService.update(id, updateWorkspaceDto);
+    return this.workspacesService.update(workspaceId, updateWorkspaceDto);
+  }
+
+  @Delete(':workspaceId')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Xóa không gian làm việc',
+  })
+  @WorkspaceRoles(WorkspaceRole.OWNER)
+  async remove(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.remove(workspaceId, currentUserId);
   }
 }

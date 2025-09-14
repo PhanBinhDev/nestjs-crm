@@ -1,3 +1,5 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
+import { ClassField } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
@@ -9,6 +11,14 @@ export class NotificationResDto {
   @ApiProperty({ type: String })
   @Expose()
   userId: string;
+
+  @ClassField(() => UserResDto)
+  @Expose()
+  user: UserResDto;
+
+  @ClassField(() => UserResDto)
+  @Expose()
+  sender?: UserResDto;
 
   @ApiProperty({ type: String, required: false })
   @Expose()

@@ -1,4 +1,5 @@
 import { ActivityAssigneeEntity } from '@/api/activities/entities/activity-assignee.entity';
+import { NotificationEntity } from '@/api/notification/entities/notification.entity';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { UserRole } from '@/database/enum/user.enum';
 import { Column, Entity, OneToMany } from 'typeorm';
@@ -84,4 +85,10 @@ export class UserEntity extends AbstractEntity {
     (activityAssignee) => activityAssignee.user,
   )
   assignedActivities: ActivityAssigneeEntity[];
+
+  @OneToMany(() => NotificationEntity, (notification) => notification.user)
+  notifications: NotificationEntity[];
+
+  @OneToMany(() => NotificationEntity, (notification) => notification.sender)
+  sentNotifications: NotificationEntity[];
 }
