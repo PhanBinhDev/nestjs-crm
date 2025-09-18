@@ -1,8 +1,10 @@
 import { DeviceTokensService } from '@/api/device-token/device-tokens.service';
 import { UserService } from '@/api/users/user.service';
+import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagination.dto';
+import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
-import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
+import { buildPaginator } from '@/utils/cursor-pagination';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
@@ -29,13 +31,17 @@ export class NotificationsService {
 
   async findAll(
     query: QueryNotificationDto,
-  ): Promise<ResponseDto<NotificationResDto[]>> {
+    currentUser: Uuid,
+  ): Promise<CursorPaginatedDto<NotificationResDto>> {
     const qb = this.notificationRepo
       .createQueryBuilder('notification')
+      .andWhere('notification.userId = :userId', { userId: currentUser })
       .leftJoinAndSelect('notification.user', 'user');
 
-    if (query.userId) {
-      qb.andWhere('notification.userId = :userId', { userId: query.userId });
+    if (query.senderId) {
+      qb.andWhere('notification.senderId = :senderId', {
+        senderId: query.senderId,
+      });
     }
 
     if (query.isRead !== undefined) {
@@ -60,16 +66,33 @@ export class NotificationsService {
 
     qb.orderBy(`notification.${sortField}`, query.order || 'DESC');
 
-    if (query.limit) {
-      qb.take(query.limit);
-    }
+    const paginator = buildPaginator({
+      entity: NotificationEntity,
+      alias: 'notification',
+      query: {
+        limit: query.limit,
+        order: query.order,
+        afterCursor: query.afterCursor,
+        beforeCursor: query.beforeCursor,
+      },
+    });
 
-    const notifications = await qb.getMany();
+    const totalRecords = await qb.getCount();
 
-    return new ResponseDto({
-      data: plainToInstance(NotificationResDto, notifications, {
+    const { data, cursor } = await paginator.paginate(qb);
+
+    const metaDto = new CursorPaginationDto(
+      totalRecords,
+      cursor.afterCursor,
+      cursor.beforeCursor,
+      query,
+    );
+
+    return new CursorPaginatedDto<NotificationResDto>({
+      data: plainToInstance(NotificationResDto, data, {
         excludeExtraneousValues: true,
       }),
+      meta: metaDto,
       message: 'Lấy danh sách thông báo thành công',
     });
   }

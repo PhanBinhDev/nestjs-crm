@@ -1,9 +1,11 @@
 import { AuditResDto } from '@/common/dto/audit.res.dto';
+import { Uuid } from '@/common/types/common.type';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import {
   EnumField,
   StringField,
   StringFieldOptional,
+  UUIDField,
 } from '@/decorators/field.decorators';
 import { Expose } from 'class-transformer';
 
@@ -42,4 +44,11 @@ export class BaseWorkspaceResDto extends AuditResDto {
   })
   @Expose()
   avatar?: string;
+
+  @UUIDField({
+    description: 'ID của chủ sở hữu không gian làm việc',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @Expose()
+  ownerId: Uuid;
 }

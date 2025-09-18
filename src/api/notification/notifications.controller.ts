@@ -1,4 +1,5 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { Uuid } from '@/common/types/common.type';
 import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth } from '@/decorators/http.decorators';
 import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
@@ -16,11 +17,15 @@ export class NotificationsController {
   @Get()
   @ApiAuth({
     summary: 'Lấy danh sách thông báo',
-    isArray: true,
     type: NotificationResDto,
+    paginationType: 'cursor',
+    isPaginated: true,
   })
-  async findAll(@Query() query: QueryNotificationDto) {
-    return this.notificationService.findAll(query);
+  async findAll(
+    @Query() query: QueryNotificationDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.notificationService.findAll(query, userId);
   }
 
   @Patch('read')

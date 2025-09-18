@@ -131,7 +131,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
-      takeAll: false,
+      takeAll: true,
     });
 
     return new OffsetPaginatedDto({
