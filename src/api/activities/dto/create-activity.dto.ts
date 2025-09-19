@@ -6,30 +6,25 @@ import {
 import {
   BooleanFieldOptional,
   DateFieldOptional,
+  EnumField,
   EnumFieldOptional,
   NumberFieldOptional,
+  StringField,
   StringFieldOptional,
   URLFieldOptional,
+  UUIDField,
   UUIDFieldOptional,
 } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  ValidateNested,
-} from 'class-validator';
+import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ActivityChecklistDto } from './activity-checklist.dto';
 
 export class CreateActivityDto {
-  @ApiProperty({
-    example: 'Báo cáo chuyên đề',
-    description: 'Tên hoạt động/công việc',
+  @StringField({
+    example: 'Họp nhóm dự án',
+    description: 'Tên hoạt động',
   })
-  @IsNotEmpty()
-  @IsString()
   name: string;
 
   @NumberFieldOptional({
@@ -38,12 +33,10 @@ export class CreateActivityDto {
   })
   position?: number;
 
-  @ApiProperty({
-    enum: ActivityType,
+  @EnumField(() => ActivityType, {
     example: ActivityType.TASK,
-    description: 'Loại: task hoặc event',
+    description: 'Loại hoạt động',
   })
-  @IsEnum(ActivityType)
   type: ActivityType;
 
   @StringFieldOptional({
@@ -111,7 +104,6 @@ export class CreateActivityDto {
   })
   estimateTime?: number;
 
-  // semesterId:
   @UUIDFieldOptional({
     example: 'semester-uuid',
     description: 'ID kỳ học (nếu có)',
@@ -127,4 +119,21 @@ export class CreateActivityDto {
   @ValidateNested({ each: true })
   @Type(() => ActivityChecklistDto)
   checklist?: ActivityChecklistDto[];
+
+  @ApiProperty({
+    description: 'Danh sách công việc con',
+    type: [String],
+    required: false,
+    example: ['Chuẩn bị tài liệu', 'Gửi email mời'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subtask?: string[];
+
+  @UUIDField({
+    example: 'workspace-uuid',
+    description: 'ID không gian làm việc',
+  })
+  workspaceId: string;
 }

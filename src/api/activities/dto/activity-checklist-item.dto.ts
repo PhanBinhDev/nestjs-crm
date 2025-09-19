@@ -1,11 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { BooleanField, StringField } from '@/decorators/field.decorators';
 
 export class ActivityChecklistItemDto {
-  @ApiProperty({
+  @StringField({
     example: 'Chuẩn bị tài liệu',
-    description: 'Nội dung checklist item',
+    description: 'Nội dung công việc',
   })
-  @IsString()
   content: string;
+
+  @BooleanField({
+    example: false,
+    description: 'Trạng thái hoàn thành',
+  })
+  isDone: boolean;
 }

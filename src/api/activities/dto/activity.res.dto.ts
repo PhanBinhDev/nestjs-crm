@@ -1,13 +1,17 @@
 import { SemesterResDto } from '@/api/semester/dto/semester.res.dto';
+import { Uuid } from '@/common/types/common.type';
+import { WrapperType } from '@/common/types/types';
 import {
   ActivityCategory,
   ActivityPiority,
   ActivityStatus,
   ActivityType,
 } from '@/database/enum/activity.enum';
+import { ClassField, UUIDField } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
+import { ActivityChecklistResDto } from './activity-checklist.res.dto';
 
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
@@ -57,13 +61,12 @@ export class ActivityResDto {
   @Expose()
   estimateTime?: number;
 
-  @ApiProperty({
+  @UUIDField({
     example: 'parent-activity-uuid',
-    required: false,
-    description: 'ID activity cha (nếu là sub-activity)',
+    description: 'ID công việc cha (nếu có)',
   })
   @Expose()
-  parentId?: string;
+  parentId?: Uuid;
 
   @ApiProperty({ example: 'Phòng 101', required: false })
   @Expose()
@@ -105,6 +108,13 @@ export class ActivityResDto {
   @Expose()
   position: number;
 
+  @UUIDField({
+    example: 'workspace-uuid',
+    description: 'ID không gian làm việc',
+  })
+  @Expose()
+  workspaceId: Uuid;
+
   @ApiProperty({ type: () => SemesterResDto, required: false })
   @Expose()
   @Type(() => SemesterResDto)
@@ -119,4 +129,20 @@ export class ActivityResDto {
   @Expose()
   @Type(() => ActivityAssigneeResDto)
   assignees?: ActivityAssigneeResDto[];
+
+  @ClassField(() => ActivityResDto, {
+    isArray: true,
+    required: false,
+    description: 'Danh sách công việc con',
+  })
+  @Expose()
+  subActivities?: WrapperType<ActivityResDto>[];
+
+  @ClassField(() => ActivityChecklistResDto, {
+    isArray: true,
+    required: false,
+    description: 'Danh sách checklist cho hoạt động',
+  })
+  @Expose()
+  checklists?: ActivityChecklistResDto[];
 }

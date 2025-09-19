@@ -1,3 +1,4 @@
+import { ActivityEntity } from '@/api/activities/entities/activity.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
@@ -54,4 +55,8 @@ export class Workspaces extends AbstractEntity {
     cascade: true,
   })
   settingsView?: WorkspaceViewSettings[];
+
+  // Activity
+  @OneToMany(() => ActivityEntity, (activity) => activity.workspace)
+  activities?: ActivityEntity[];
 }

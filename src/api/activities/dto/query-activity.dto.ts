@@ -4,6 +4,7 @@ import {
   ActivityPiority,
   ActivityType,
 } from '@/database/enum/activity.enum';
+import { BooleanFieldOptional } from '@/decorators/field.decorators';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
@@ -59,4 +60,10 @@ export class QueryActivityDto extends PageOptionsDto {
   @IsOptional()
   @IsString()
   createdBy?: string;
+
+  @BooleanFieldOptional({
+    example: false,
+    description: 'Bao gồm các công việc con (sub-tasks)',
+  })
+  includeSubTasks?: boolean;
 }

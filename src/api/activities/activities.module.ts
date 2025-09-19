@@ -4,6 +4,10 @@ import { SemesterEntity } from '../semester/entities/semester.entity';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
+import {
+  ActivityChecklistEntity,
+  ActivityChecklistItemEntity,
+} from './entities/activity-checklist.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
@@ -17,6 +21,8 @@ import { ActivityEntity } from './entities/activity.entity';
       ActivityParticipantEntity,
       ActivityFeedbackEntity,
       ActivityAssigneeEntity,
+      ActivityChecklistEntity,
+      ActivityChecklistItemEntity,
       SemesterEntity,
     ]),
   ],

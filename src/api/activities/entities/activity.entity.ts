@@ -1,5 +1,6 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { StagesEntity } from '@/api/stages/entities/stage.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
@@ -52,7 +53,7 @@ export class ActivityEntity extends AbstractEntity {
   mandatory: boolean;
 
   @Column({ type: 'int', nullable: true })
-  estimateTime?: number; // minutes
+  estimateTime?: number;
 
   @Column({ type: 'uuid', nullable: true })
   parentId?: string;
@@ -65,6 +66,16 @@ export class ActivityEntity extends AbstractEntity {
   })
   @JoinColumn({ name: 'parentId' })
   parent?: ActivityEntity;
+
+  @Column({ type: 'uuid', nullable: false })
+  workspaceId: string;
+
+  @ManyToOne(() => Workspaces, (workspace) => workspace.activities, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'workspaceId' })
+  workspace: WrapperType<Workspaces>;
 
   @OneToMany(() => ActivityEntity, (activity) => activity.parent)
   subActivities: ActivityEntity[];

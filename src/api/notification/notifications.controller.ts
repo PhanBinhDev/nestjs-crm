@@ -38,8 +38,6 @@ export class NotificationsController {
     summary: 'Đánh dấu tất cả thông báo là đã đọc',
   })
   async markAllRead(@CurrentUser() user: UserEntity) {
-    console.log('user', user);
-
     return this.notificationService.markAllRead(user);
   }
 }

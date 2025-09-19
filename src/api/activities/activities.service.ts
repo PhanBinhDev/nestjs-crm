@@ -31,6 +31,10 @@ import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
+import {
+  ActivityChecklistEntity,
+  ActivityChecklistItemEntity,
+} from './entities/activity-checklist.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
@@ -51,6 +55,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
     @InjectRepository(SemesterEntity)
     private readonly semesterRepo: Repository<SemesterEntity>,
+    @InjectRepository(ActivityChecklistEntity)
+    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
+    @InjectRepository(ActivityChecklistItemEntity)
+    private readonly activityChecklistItemRepo: Repository<ActivityChecklistItemEntity>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {
@@ -58,24 +66,79 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   }
 
   async create(dto: CreateActivityDto): Promise<ResponseDto<ActivityResDto>> {
-    if (dto.type === 'event') {
-      if (!dto.startTime || !dto.endTime || !dto.location) {
-        throw new BadRequestException(
-          'Event phải có startTime, endTime, location',
-        );
+    return this.dataSource.transaction(async (manager) => {
+      if (dto.type === 'event' && !dto.location) {
+        throw new BadRequestException('Event phải có location');
       }
-    }
-    const count = await this.activityRepo.count({
-      where: { stageId: dto.stageId },
-    });
-    const activity = this.activityRepo.create({ ...dto, position: count + 1 });
-    const res = await this.activityRepo.save(activity);
 
-    return new ResponseDto<ActivityResDto>({
-      data: plainToInstance(ActivityResDto, res, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Tạo hoạt động thành công',
+      console.log('Creating activity with DTO:', dto);
+
+      // 2. Get repositories from transaction manager
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      // 3. Calculate position within stage
+      const count = await activityRepo.count({
+        where: { stageId: dto.stageId },
+      });
+
+      const activity = activityRepo.create({
+        ...dto,
+        position: count + 1,
+      });
+      const savedActivity = await activityRepo.save(activity);
+
+      // 5. Process subtasks if any
+      if (dto.subtask?.length > 0) {
+        const subActivities = dto.subtask.map((task) =>
+          activityRepo.create({
+            parentId: savedActivity.id,
+            name: task,
+            type: dto.type,
+            stageId: dto.stageId,
+            workspaceId: dto.workspaceId,
+          }),
+        );
+        await activityRepo.save(subActivities);
+      }
+
+      // 6. Process checklists if any
+      if (dto.checklist?.length > 0) {
+        for (const checklistDto of dto.checklist) {
+          const checklist = checklistRepo.create({
+            activityId: savedActivity.id,
+            name: checklistDto.name,
+          });
+          const savedChecklist = await checklistRepo.save(checklist);
+
+          if (checklistDto.items?.length > 0) {
+            const items = checklistDto.items.map((item) =>
+              checklistItemRepo.create({
+                checklistId: savedChecklist.id,
+                content: item.content,
+                isDone: item.isDone || false,
+              }),
+            );
+            await checklistItemRepo.save(items);
+          }
+        }
+      }
+
+      // 8. Return response with fully populated activity
+      const result = await activityRepo.findOne({
+        where: { id: savedActivity.id },
+        relations: ['subActivities'], // Add other relations if needed
+      });
+
+      return new ResponseDto<ActivityResDto>({
+        data: plainToInstance(ActivityResDto, result, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo hoạt động thành công',
+      });
     });
   }
 
@@ -92,8 +155,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.assignees', 'assignees')
       .leftJoinAndSelect('assignees.user', 'assigneeUser')
       .leftJoinAndSelect('activity.semester', 'semester')
-      .leftJoinAndSelect('activity.parent', 'parent')
-      .leftJoinAndSelect('activity.subActivities', 'subActivities');
+      .leftJoinAndSelect('activity.subActivities', 'subActivities')
+      .leftJoinAndSelect('activity.checklists', 'checklists')
+      .leftJoinAndSelect('checklists.items', 'items');
+
+    // if (!query.includeSubTasks) {
+    //   qb.andWhere('activity.parentId IS NULL');
+    // }
+
     if (query.q) {
       qb.andWhere(
         'activity.name ILIKE :search OR activity.description ILIKE :search',
