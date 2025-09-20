@@ -1,4 +1,5 @@
 import { WorkspaceMembers } from '@/api/workspaces/entities/workspace-members.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspace.entity'; // Thêm import này
 import { WorkspaceRole } from '@/database/enum/workspace.enum';
 import {
   CanActivate,
@@ -17,6 +18,8 @@ export class WorkspaceAccessGuard implements CanActivate {
     private reflector: Reflector,
     @InjectRepository(WorkspaceMembers)
     private membersRepository: Repository<WorkspaceMembers>,
+    @InjectRepository(Workspaces) // Thêm repository Workspaces
+    private workspaceRepository: Repository<Workspaces>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,7 +30,7 @@ export class WorkspaceAccessGuard implements CanActivate {
       ) || [];
 
     const request = context.switchToHttp().getRequest<Request>();
-    const userId = request.user.id as string;
+    const userId = request.user?.id as string;
 
     if (!userId) {
       throw new ForbiddenException('Không có quyền truy cập');
@@ -37,16 +40,11 @@ export class WorkspaceAccessGuard implements CanActivate {
     const body = request.body || {};
     const query = request.query || {};
 
-    console.log('params', params);
-    console.log('body', body);
-    console.log('query', query);
-
-    // Lấy workspaceId từ params hoặc body hoặc query
     const workspaceId =
       params.workspaceId || body.workspaceId || (query.workspaceId as string);
 
     if (!workspaceId) {
-      throw new ForbiddenException('Không tìm thấy workspace 2');
+      throw new ForbiddenException('Không tìm thấy workspace');
     }
 
     // Kiểm tra quyền của user trong workspace
@@ -57,20 +55,56 @@ export class WorkspaceAccessGuard implements CanActivate {
       },
     });
 
+    let isOwner = false;
     if (!membership) {
-      throw new ForbiddenException(
-        'Bạn không phải thành viên của workspace này',
-      );
+      const workspace = await this.workspaceRepository.findOne({
+        where: { id: workspaceId },
+      });
+
+      if (workspace && workspace.ownerId === userId) {
+        isOwner = true;
+
+        // Thêm owner vào bảng members nếu chưa có
+        const newMembership = this.membersRepository.create({
+          role: WorkspaceRole.OWNER,
+          userId,
+          workspaceId,
+        });
+
+        try {
+          // Lưu membership mới vào database
+          await this.membersRepository.save(newMembership);
+
+          // Cập nhật biến membership để sử dụng sau này
+          const savedMembership = await this.membersRepository.findOne({
+            where: { id: newMembership.id },
+          });
+
+          if (savedMembership) {
+            request['workspaceMember'] = savedMembership;
+          }
+        } catch (error) {
+          console.error('Error adding owner to workspace_members:', error);
+        }
+      } else {
+        throw new ForbiddenException(
+          'Bạn không phải thành viên của workspace này',
+        );
+      }
     }
 
-    if (requiredRoles.length === 0) {
+    if (
+      requiredRoles.length === 0 ||
+      isOwner ||
+      membership?.role === WorkspaceRole.OWNER
+    ) {
       return true;
     }
 
-    if (membership.role === WorkspaceRole.OWNER) {
+    if (membership && requiredRoles.includes(membership.role)) {
       return true;
     }
 
-    return requiredRoles.includes(membership.role);
+    throw new ForbiddenException('Bạn không có quyền thực hiện hành động này');
   }
 }

@@ -1,10 +1,11 @@
 import { PageOptionsDto } from '@/common/dto/offset-pagination/page-options.dto';
+import { Uuid } from '@/common/types/common.type';
 import {
   ActivityCategory,
   ActivityPiority,
   ActivityType,
 } from '@/database/enum/activity.enum';
-import { BooleanFieldOptional } from '@/decorators/field.decorators';
+import { BooleanFieldOptional, UUIDField } from '@/decorators/field.decorators';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
@@ -66,4 +67,10 @@ export class QueryActivityDto extends PageOptionsDto {
     description: 'Bao gồm các công việc con (sub-tasks)',
   })
   includeSubTasks?: boolean;
+
+  @UUIDField({
+    description: 'ID của workspace để lọc activities',
+    required: true,
+  })
+  workspaceId: Uuid;
 }

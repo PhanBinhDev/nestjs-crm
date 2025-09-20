@@ -147,6 +147,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
+      .andWhere('activity.workspaceId = :workspaceId', {
+        workspaceId: query.workspaceId,
+      })
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
       .leftJoinAndSelect('activity.files', 'files')
@@ -159,9 +162,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.checklists', 'checklists')
       .leftJoinAndSelect('checklists.items', 'items');
 
-    // if (!query.includeSubTasks) {
-    //   qb.andWhere('activity.parentId IS NULL');
-    // }
+    if (!query.includeSubTasks) {
+      qb.andWhere('activity.parentId IS NULL');
+    }
 
     if (query.q) {
       qb.andWhere(

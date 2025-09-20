@@ -91,16 +91,14 @@ export class WorkspacesService {
   }
 
   async findAll(userId: Uuid): Promise<ResponseDto<BaseWorkspaceResDto[]>> {
-    const workspaces = await this.workspaceRepository.find({
-      where: [
-        { ownerId: userId },
-        {
-          members: {
-            userId,
-          },
-        },
-      ],
-    });
+    const workspaces = await this.workspaceRepository
+      .createQueryBuilder('workspace')
+      .leftJoin('workspace.members', 'members')
+      .where('workspace.ownerId = :userId', { userId })
+      .orWhere('members.userId = :userId', { userId })
+      .distinct(true)
+      .getMany();
+
     return new ResponseDto<BaseWorkspaceResDto[]>({
       data: plainToInstance(BaseWorkspaceResDto, workspaces, {
         excludeExtraneousValues: true,
