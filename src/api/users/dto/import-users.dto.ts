@@ -110,7 +110,8 @@ export class ImportUsersResponseDto {
 
 export class ImportUsersFromUrlDto {
   @ApiProperty({
-    example: 'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
+    example:
+      'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
     description: 'Google Sheets URL (must be converted to export format)',
   })
   @IsString()
