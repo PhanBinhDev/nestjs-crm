@@ -1,37 +1,25 @@
-import { Uuid } from '@/common/types/common.type';
+import { UserEntity } from '@/api/users/entities/user.entity';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 
 @Entity('activity_log')
 export class ActivityLogEntity extends AbstractEntity {
-  @PrimaryGeneratedColumn('uuid')
-  declare id: Uuid;
-
-  @Column({ type: 'uuid' })
-  activityId: string;
-
   @Column({ type: 'varchar', length: 100 })
   action: string;
 
-  @Column({ type: 'uuid', nullable: true })
-  userId: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  message: string;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
   oldValue: any;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
   newValue: any;
 
-  // Relations - Sử dụng string reference để tránh circular dependency
   @ManyToOne('ActivityEntity', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'activityId' })
-  activity: any;
+  activity: WrapperType<ActivityLogEntity>;
 
   @ManyToOne('UserEntity', {
     onDelete: 'SET NULL',
@@ -39,5 +27,9 @@ export class ActivityLogEntity extends AbstractEntity {
     eager: true,
   })
   @JoinColumn({ name: 'userId' })
-  user: any;
+  user: WrapperType<UserEntity>;
+
+  @ManyToOne('ActivityLogEntity', { nullable: true })
+  @JoinColumn({ name: 'parentLogId' })
+  parentLog: WrapperType<ActivityLogEntity>;
 }

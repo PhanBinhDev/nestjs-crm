@@ -45,27 +45,6 @@ import { ActivityEntity } from './entities/activity.entity';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
-  async createLog(
-    activityId: string,
-    action: string,
-    userId?: string,
-    oldValue?: any,
-    newValue?: any,
-  ): Promise<void> {
-    try {
-      const log = this.activityLogRepository.create({
-        activityId,
-        action,
-        userId,
-        oldValue,
-        newValue,
-      });
-      await this.activityLogRepository.save(log);
-    } catch (error) {
-      console.error('Failed to create activity log:', error);
-    }
-  }
-
   async getActivityLogs(
     activityId: string,
     query: QueryActivityLogDto,
@@ -123,16 +102,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         throw new BadRequestException('Event phải có location');
       }
 
-      console.log('Creating activity with DTO:', dto);
-
-      // 2. Get repositories from transaction manager
       const activityRepo = manager.getRepository(ActivityEntity);
       const checklistRepo = manager.getRepository(ActivityChecklistEntity);
       const checklistItemRepo = manager.getRepository(
         ActivityChecklistItemEntity,
       );
 
-      // 3. Calculate position within stage
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
       });
@@ -143,7 +118,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
       const savedActivity = await activityRepo.save(activity);
 
-      // 5. Process subtasks if any
       if (dto.subtask?.length > 0) {
         const subActivities = dto.subtask.map((task) =>
           activityRepo.create({
@@ -157,7 +131,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         await activityRepo.save(subActivities);
       }
 
-      // 6. Process checklists if any
       if (dto.checklist?.length > 0) {
         for (const checklistDto of dto.checklist) {
           const checklist = checklistRepo.create({
@@ -179,10 +152,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // 8. Return response with fully populated activity
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
-        relations: ['subActivities'], // Add other relations if needed
+        relations: ['subActivities'],
       });
 
       return new ResponseDto<ActivityResDto>({
@@ -192,50 +164,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         message: 'Tạo hoạt động thành công',
       });
     });
-  }
-  async logActivity(params: {
-    activityId: string;
-    action: string;
-    userId?: string;
-    oldValue?: any;
-    newValue?: any;
-  }): Promise<ActivityLogEntity> {
-    const log = this.activityLogRepository.create({
-      activityId: params.activityId,
-      action: params.action,
-      userId: params.userId,
-      oldValue: params.oldValue,
-      newValue: params.newValue,
-    });
-
-    const savedLog = await this.activityLogRepository.save(log);
-
-    // Return với relations để có thông tin user
-    return await this.activityLogRepository.findOne({
-      where: { id: savedLog.id },
-      relations: ['user', 'activity'],
-    });
-  }
-  // Helper method để tự động tạo log khi có thay đổi
-  async createActivityLogForAction(
-    activityId: string,
-    action: string,
-    userId: string,
-    oldData?: any,
-    newData?: any,
-  ): Promise<void> {
-    try {
-      await this.logActivity({
-        activityId,
-        action,
-        userId,
-        oldValue: oldData,
-        newValue: newData,
-      });
-    } catch (error) {
-      // Log error nhưng không throw để không ảnh hưởng main flow
-      console.error('Failed to create activity log:', error);
-    }
   }
   async findAll(
     query: QueryActivityDto,
@@ -328,22 +256,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateStatus(
     id: Uuid,
     dto: UpdateActivityStatusDto,
-    userId?: string,
   ): Promise<ResponseDto<ActivityResDto>> {
     const activity = await this.activityRepo.findOneOrFail({ where: { id } });
-    const oldStatus = activity.status;
 
     activity.status = dto.status;
     await this.activityRepo.save(activity);
-
-    // Tự động log thay đổi status
-    await this.createLog(
-      id,
-      'STATUS_CHANGE',
-      userId,
-      { status: oldStatus },
-      { status: dto.status },
-    );
 
     return new ResponseDto<ActivityResDto>({
       data: plainToInstance(ActivityResDto, activity, {
@@ -385,24 +302,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateActivity(
     id: Uuid,
     dto: UpdateActivityDto,
-    userId?: string,
   ): Promise<ResponseDto<ActivityResDto>> {
     return await this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
       const activity = await activityRepo.findOneOrFail({ where: { id } });
-
-      // Lưu old values để log
-      const oldValues = {
-        name: activity.name,
-        description: activity.description,
-        priority: activity.priority,
-        startTime: activity.startTime,
-        endTime: activity.endTime,
-        location: activity.location,
-        mandatory: activity.mandatory,
-        stageId: activity.stageId,
-        position: activity.position,
-      };
 
       const oldStageId = activity.stageId;
       const oldPosition = activity.position;
@@ -457,22 +360,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       // Update activity
       Object.assign(activity, dto);
       await activityRepo.save(activity);
-
-      // Lưu new values để log
-      const newValues = {
-        name: activity.name,
-        description: activity.description,
-        priority: activity.priority,
-        startTime: activity.startTime,
-        endTime: activity.endTime,
-        location: activity.location,
-        mandatory: activity.mandatory,
-        stageId: activity.stageId,
-        position: activity.position,
-      };
-
-      // Tự động log việc update
-      await this.createLog(id, 'UPDATE', userId, oldValues, newValues);
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {

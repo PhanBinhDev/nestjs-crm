@@ -53,11 +53,8 @@ export class ActivitiesController {
 
   @Post()
   @ApiAuth({ summary: 'Tạo mới activity', type: ActivityResDto })
-  createActivity(
-    @Body() dto: CreateActivityDto,
-    @CurrentUser('id') userId: Uuid, // Thêm userId
-  ) {
-    return this.activitiesService.create(dto, userId);
+  createActivity(@Body() dto: CreateActivityDto) {
+    return this.activitiesService.create(dto);
   }
 
   @Get('filter')
@@ -120,12 +117,8 @@ export class ActivitiesController {
     description: 'ID của activity cần cập nhật trạng thái',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
-  updateStatus(
-    @Param('id') id: Uuid,
-    @Body() dto: UpdateActivityStatusDto,
-    @CurrentUser('id') userId: Uuid, // Thêm userId
-  ) {
-    return this.activitiesService.updateStatus(id, dto, userId);
+  updateStatus(@Param('id') id: Uuid, @Body() dto: UpdateActivityStatusDto) {
+    return this.activitiesService.updateStatus(id, dto);
   }
 
   @Get(':id')
@@ -166,12 +159,8 @@ export class ActivitiesController {
     description: 'ID của activity cần cập nhật',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
-  updateActivity(
-    @Param('id') id: Uuid,
-    @Body() dto: UpdateActivityDto,
-    @CurrentUser('id') userId: Uuid, // Thêm userId
-  ) {
-    return this.activitiesService.updateActivity(id, dto, userId);
+  updateActivity(@Param('id') id: Uuid, @Body() dto: UpdateActivityDto) {
+    return this.activitiesService.updateActivity(id, dto);
   }
 
   @Post(':id/files')
