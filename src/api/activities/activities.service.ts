@@ -20,12 +20,14 @@ import { DataSource, Repository } from 'typeorm';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { AttachFileResDto } from './dto/attach-file.res.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
@@ -33,11 +35,59 @@ import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
+  async createLog(
+    activityId: string,
+    action: string,
+    userId?: string,
+    oldValue?: any,
+    newValue?: any,
+  ): Promise<void> {
+    try {
+      const log = this.activityLogRepository.create({
+        activityId,
+        action,
+        userId,
+        oldValue,
+        newValue,
+      });
+      await this.activityLogRepository.save(log);
+    } catch (error) {
+      console.error('Failed to create activity log:', error);
+    }
+  }
+
+  async getActivityLogs(
+    activityId: string,
+    query: QueryActivityLogDto,
+  ): Promise<ActivityLogResDto[]> {
+    const qb = this.activityLogRepository
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.user', 'user')
+      .where('log.activityId = :activityId', { activityId })
+      .orderBy('log.createdAt', 'DESC');
+
+    // Apply filters
+    if (query.action) {
+      qb.andWhere('log.action = :action', { action: query.action });
+    }
+
+    if (query.userId) {
+      qb.andWhere('log.userId = :userId', { userId: query.userId });
+    }
+
+    const logs = await qb.getMany();
+
+    return plainToInstance(ActivityLogResDto, logs, {
+      excludeExtraneousValues: true,
+    });
+  }
+
   constructor(
     @InjectRepository(ActivityEntity)
     private readonly activityRepo: Repository<ActivityEntity>,
@@ -53,11 +103,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly semesterRepo: Repository<SemesterEntity>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    @InjectRepository(ActivityLogEntity)
+    private readonly activityLogRepository: Repository<ActivityLogEntity>,
   ) {
     super(activityRepo);
   }
 
-  async create(dto: CreateActivityDto): Promise<ResponseDto<ActivityResDto>> {
+  async create(
+    dto: CreateActivityDto,
+    userId?: string,
+  ): Promise<ResponseDto<ActivityResDto>> {
     if (dto.type === 'event') {
       if (!dto.startTime || !dto.endTime || !dto.location) {
         throw new BadRequestException(
@@ -71,6 +126,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const activity = this.activityRepo.create({ ...dto, position: count + 1 });
     const res = await this.activityRepo.save(activity);
 
+    // Tự động log việc tạo activity
+    await this.createLog(res.id, 'CREATE', userId, null, {
+      name: res.name,
+      type: res.type,
+      status: res.status,
+    });
+
     return new ResponseDto<ActivityResDto>({
       data: plainToInstance(ActivityResDto, res, {
         excludeExtraneousValues: true,
@@ -78,7 +140,50 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Tạo hoạt động thành công',
     });
   }
+  async logActivity(params: {
+    activityId: string;
+    action: string;
+    userId?: string;
+    oldValue?: any;
+    newValue?: any;
+  }): Promise<ActivityLogEntity> {
+    const log = this.activityLogRepository.create({
+      activityId: params.activityId,
+      action: params.action,
+      userId: params.userId,
+      oldValue: params.oldValue,
+      newValue: params.newValue,
+    });
 
+    const savedLog = await this.activityLogRepository.save(log);
+
+    // Return với relations để có thông tin user
+    return await this.activityLogRepository.findOne({
+      where: { id: savedLog.id },
+      relations: ['user', 'activity'],
+    });
+  }
+  // Helper method để tự động tạo log khi có thay đổi
+  async createActivityLogForAction(
+    activityId: string,
+    action: string,
+    userId: string,
+    oldData?: any,
+    newData?: any,
+  ): Promise<void> {
+    try {
+      await this.logActivity({
+        activityId,
+        action,
+        userId,
+        oldValue: oldData,
+        newValue: newData,
+      });
+    } catch (error) {
+      // Log error nhưng không throw để không ảnh hưởng main flow
+      console.error('Failed to create activity log:', error);
+    }
+  }
   async findAll(
     query: QueryActivityDto,
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
@@ -161,10 +266,23 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateStatus(
     id: Uuid,
     dto: UpdateActivityStatusDto,
+    userId?: string,
   ): Promise<ResponseDto<ActivityResDto>> {
     const activity = await this.activityRepo.findOneOrFail({ where: { id } });
+    const oldStatus = activity.status;
+
     activity.status = dto.status;
     await this.activityRepo.save(activity);
+
+    // Tự động log thay đổi status
+    await this.createLog(
+      id,
+      'STATUS_CHANGE',
+      userId,
+      { status: oldStatus },
+      { status: dto.status },
+    );
+
     return new ResponseDto<ActivityResDto>({
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
@@ -205,25 +323,37 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateActivity(
     id: Uuid,
     dto: UpdateActivityDto,
+    userId?: string,
   ): Promise<ResponseDto<ActivityResDto>> {
     return await this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
-
       const activity = await activityRepo.findOneOrFail({ where: { id } });
+
+      // Lưu old values để log
+      const oldValues = {
+        name: activity.name,
+        description: activity.description,
+        priority: activity.priority,
+        startTime: activity.startTime,
+        endTime: activity.endTime,
+        location: activity.location,
+        mandatory: activity.mandatory,
+        stageId: activity.stageId,
+        position: activity.position,
+      };
+
       const oldStageId = activity.stageId;
       const oldPosition = activity.position;
       const newStageId = dto.stageId ?? activity.stageId;
       const newPosition = dto.position ?? activity.position;
 
-      // Kiểm tra các loại thay đổi
+      // Logic di chuyển position (giữ nguyên như cũ)
       const hasStageChange = dto.stageId && dto.stageId !== oldStageId;
       const hasPositionChange =
         dto.position !== undefined && dto.position !== oldPosition;
 
       if (hasStageChange) {
-        // Case 1: Chuyển sang stage khác (có thể kèm theo thay đổi position)
         await Promise.all([
-          // Cập nhật column cũ: Giảm position của các items phía sau vị trí cũ
           activityRepo
             .createQueryBuilder()
             .update(ActivityEntity)
@@ -232,7 +362,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             .andWhere('position > :oldPosition', { oldPosition })
             .execute(),
 
-          // Cập nhật column mới: Tăng position của các items từ vị trí mới trở đi
           activityRepo
             .createQueryBuilder()
             .update(ActivityEntity)
@@ -242,9 +371,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             .execute(),
         ]);
       } else if (hasPositionChange) {
-        // Case 2: Di chuyển trong cùng stage
         if (oldPosition < newPosition) {
-          // Di chuyển xuống: Giảm position của các items ở giữa
           await activityRepo
             .createQueryBuilder()
             .update(ActivityEntity)
@@ -254,7 +381,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             .andWhere('position <= :newPosition', { newPosition })
             .execute();
         } else {
-          // Di chuyển lên: Tăng position của các items ở giữa
           await activityRepo
             .createQueryBuilder()
             .update(ActivityEntity)
@@ -266,15 +392,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // Case 3: hasStageChange = true đã cover cả trường hợp có position change
-      // Vì khi chuyển stage, ta luôn:
-      // 1. Dọn dẹp column cũ (giảm position các items phía sau)
-      // 2. Chuẩn bị chỗ trong column mới (tăng position từ vị trí insert)
-      // 3. Insert item vào đúng vị trí mong muốn
-
-      // Cập nhật activity với tất cả các thay đổi
+      // Update activity
       Object.assign(activity, dto);
       await activityRepo.save(activity);
+
+      // Lưu new values để log
+      const newValues = {
+        name: activity.name,
+        description: activity.description,
+        priority: activity.priority,
+        startTime: activity.startTime,
+        endTime: activity.endTime,
+        location: activity.location,
+        mandatory: activity.mandatory,
+        stageId: activity.stageId,
+        position: activity.position,
+      };
+
+      // Tự động log việc update
+      await this.createLog(id, 'UPDATE', userId, oldValues, newValues);
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {

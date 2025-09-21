@@ -1,4 +1,5 @@
 import { ActivityAssigneeEntity } from '@/api/activities/entities/activity-assignee.entity';
+import { ActivityLogEntity } from '@/api/activities/entities/activity-log.entity';
 import { NotificationEntity } from '@/api/notification/entities/notification.entity';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { UserRole } from '@/database/enum/user.enum';
@@ -91,4 +92,7 @@ export class UserEntity extends AbstractEntity {
 
   @OneToMany(() => NotificationEntity, (notification) => notification.sender)
   sentNotifications: NotificationEntity[];
+
+  @OneToMany(() => ActivityLogEntity, (log) => log.user)
+  activityLogs: ActivityLogEntity[];
 }

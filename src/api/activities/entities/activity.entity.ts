@@ -71,6 +71,7 @@ export class ActivityEntity extends AbstractEntity {
 
   @Column({ type: 'enum', enum: ActivityCategory, nullable: true })
   category?: ActivityCategory;
+
   @Column({ type: 'enum', enum: ActivityStatus, default: ActivityStatus.NEW })
   status: ActivityStatus;
 

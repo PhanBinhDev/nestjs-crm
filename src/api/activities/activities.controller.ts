@@ -15,30 +15,49 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityFileResDto } from './dto/activity-file.res.dto';
+import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 
-@ApiTags('Activities')
+@ApiTags('activities')
 @Controller('activities')
 export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
+  @Get(':id/logs')
+  @ApiAuth({
+    summary: 'Lấy danh sách log chi tiết của activity',
+    type: ActivityLogResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiOperation({ summary: 'Lấy danh sách log chi tiết của activity' })
+  async getActivityLogs(
+    @Param('id') activityId: Uuid,
+    @Query() query: QueryActivityLogDto,
+  ): Promise<ActivityLogResDto[]> {
+    return this.activitiesService.getActivityLogs(activityId, query);
+  }
 
   @Post()
   @ApiAuth({ summary: 'Tạo mới activity', type: ActivityResDto })
-  createActivity(@Body() dto: CreateActivityDto) {
-    return this.activitiesService.create(dto);
+  createActivity(
+    @Body() dto: CreateActivityDto,
+    @CurrentUser('id') userId: Uuid, // Thêm userId
+  ) {
+    return this.activitiesService.create(dto, userId);
   }
 
   @Get('filter')
@@ -101,8 +120,12 @@ export class ActivitiesController {
     description: 'ID của activity cần cập nhật trạng thái',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
-  updateStatus(@Param('id') id: Uuid, @Body() dto: UpdateActivityStatusDto) {
-    return this.activitiesService.updateStatus(id, dto);
+  updateStatus(
+    @Param('id') id: Uuid,
+    @Body() dto: UpdateActivityStatusDto,
+    @CurrentUser('id') userId: Uuid, // Thêm userId
+  ) {
+    return this.activitiesService.updateStatus(id, dto, userId);
   }
 
   @Get(':id')
@@ -143,8 +166,12 @@ export class ActivitiesController {
     description: 'ID của activity cần cập nhật',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
-  updateActivity(@Param('id') id: Uuid, @Body() dto: UpdateActivityDto) {
-    return this.activitiesService.updateActivity(id, dto);
+  updateActivity(
+    @Param('id') id: Uuid,
+    @Body() dto: UpdateActivityDto,
+    @CurrentUser('id') userId: Uuid, // Thêm userId
+  ) {
+    return this.activitiesService.updateActivity(id, dto, userId);
   }
 
   @Post(':id/files')
