@@ -2,11 +2,15 @@ import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
+import { ErrorCode } from '@/constants/error-code.constant';
 import {
+  ActivityLogActionEnum,
+  ActivityLogQueryType,
   AssignmentStatus,
   ParticipantStatus,
   QueryType,
 } from '@/database/enum/activity.enum';
+import { ValidationException } from '@/exceptions/validation.exception';
 import { BaseService } from '@/services/base.service';
 import { paginate } from '@/utils/offset-pagination';
 import {
@@ -18,6 +22,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, Repository } from 'typeorm';
 import { SemesterEntity } from '../semester/entities/semester.entity';
+import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
@@ -26,6 +31,7 @@ import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { AttachFileResDto } from './dto/attach-file.res.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
+import { CreateActivityLogDto } from './dto/create-activity-log.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
@@ -45,6 +51,33 @@ import { ActivityEntity } from './entities/activity.entity';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
+  constructor(
+    @InjectRepository(ActivityEntity)
+    private readonly activityRepo: Repository<ActivityEntity>,
+    @InjectRepository(ActivityFileEntity)
+    private readonly activityFileRepo: Repository<ActivityFileEntity>,
+    @InjectRepository(ActivityParticipantEntity)
+    private readonly participantRepo: Repository<ActivityParticipantEntity>,
+    @InjectRepository(ActivityFeedbackEntity)
+    private readonly activityFeedbackRepo: Repository<ActivityFeedbackEntity>,
+    @InjectRepository(ActivityAssigneeEntity)
+    private readonly activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
+    @InjectRepository(SemesterEntity)
+    private readonly semesterRepo: Repository<SemesterEntity>,
+    @InjectRepository(ActivityChecklistEntity)
+    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
+    @InjectRepository(ActivityChecklistItemEntity)
+    private readonly activityChecklistItemRepo: Repository<ActivityChecklistItemEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+    @InjectRepository(ActivityLogEntity)
+    private readonly activityLogRepository: Repository<ActivityLogEntity>,
+  ) {
+    super(activityRepo);
+  }
+
   async getActivityLogs(
     activityId: string,
     query: QueryActivityLogDto,
@@ -52,6 +85,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const qb = this.activityLogRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
+      .leftJoinAndSelect('log.parentLog', 'parentLog')
       .where('log.activityId = :activityId', { activityId })
       .orderBy('log.createdAt', 'DESC');
 
@@ -71,33 +105,19 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  constructor(
-    @InjectRepository(ActivityEntity)
-    private readonly activityRepo: Repository<ActivityEntity>,
-    @InjectRepository(ActivityFileEntity)
-    private readonly activityFileRepo: Repository<ActivityFileEntity>,
-    @InjectRepository(ActivityParticipantEntity)
-    private readonly participantRepo: Repository<ActivityParticipantEntity>,
-    @InjectRepository(ActivityFeedbackEntity)
-    private readonly activityFeedbackRepo: Repository<ActivityFeedbackEntity>,
-    @InjectRepository(ActivityAssigneeEntity)
-    private readonly activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
-    @InjectRepository(SemesterEntity)
-    private readonly semesterRepo: Repository<SemesterEntity>,
-    @InjectRepository(ActivityChecklistEntity)
-    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
-    @InjectRepository(ActivityChecklistItemEntity)
-    private readonly activityChecklistItemRepo: Repository<ActivityChecklistItemEntity>,
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
-    @InjectRepository(ActivityLogEntity)
-    private readonly activityLogRepository: Repository<ActivityLogEntity>,
-  ) {
-    super(activityRepo);
-  }
-
-  async create(dto: CreateActivityDto): Promise<ResponseDto<ActivityResDto>> {
+  async create(
+    dto: CreateActivityDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityResDto>> {
     return this.dataSource.transaction(async (manager) => {
+      const userCreator = await manager.getRepository(UserEntity).findOne({
+        where: { id: userId },
+      });
+
+      if (!userCreator) {
+        throw new ValidationException(ErrorCode.E003);
+      }
+
       if (dto.type === 'event' && !dto.location) {
         throw new BadRequestException('Event phải có location');
       }
@@ -107,6 +127,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const checklistItemRepo = manager.getRepository(
         ActivityChecklistItemEntity,
       );
+      // Add this line - get the activity log repository from the manager
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
@@ -117,20 +139,42 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         position: count + 1,
       });
       const savedActivity = await activityRepo.save(activity);
+      // Log activity creation
 
       if (dto.subtask?.length > 0) {
-        const subActivities = dto.subtask.map((task) =>
-          activityRepo.create({
+        const subActivities: ActivityEntity[] = [];
+        const logs: ActivityLogEntity[] = [];
+
+        for (const task of dto.subtask) {
+          const subActivity = activityRepo.create({
             parentId: savedActivity.id,
             name: task,
             type: dto.type,
             stageId: dto.stageId,
             workspaceId: dto.workspaceId,
-          }),
-        );
-        await activityRepo.save(subActivities);
+            createdBy: userId,
+          });
+          const savedSubActivity = await activityRepo.save(subActivity);
+          subActivities.push(savedSubActivity);
+
+          const log = activityLogRepo.create({
+            activity: savedSubActivity,
+            user: userCreator,
+            action: ActivityLogActionEnum.CREATED,
+            message: 'Tạo công việc phụ',
+            metadata: {
+              type: ActivityLogQueryType.SUB_TASK,
+            },
+          });
+          logs.push(log);
+        }
+
+        if (logs.length > 0) {
+          await activityLogRepo.save(logs);
+        }
       }
 
+      // TODO: Log tương tự như subtask cho checklist
       if (dto.checklist?.length > 0) {
         for (const checklistDto of dto.checklist) {
           const checklist = checklistRepo.create({
@@ -256,17 +300,36 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateStatus(
     id: Uuid,
     dto: UpdateActivityStatusDto,
+    userId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
-    const activity = await this.activityRepo.findOneOrFail({ where: { id } });
+    return this.dataSource.transaction(async () => {
+      const activity = await this.activityRepo.findOneOrFail({ where: { id } });
+      const user = await this.userRepo.findOneOrFail({ where: { id: userId } });
 
-    activity.status = dto.status;
-    await this.activityRepo.save(activity);
+      const newValue = activity.status;
+      const oldValue = dto.status;
 
-    return new ResponseDto<ActivityResDto>({
-      data: plainToInstance(ActivityResDto, activity, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật trạng thái hoạt động thành công',
+      const payload = {
+        action: ActivityLogActionEnum.UPDATED,
+        message: `Cập nhật trạng thái từ ${oldValue} sang ${newValue}`,
+        user,
+        newValue,
+        oldValue,
+        activity,
+      };
+
+      const activityLog = this.activityLogRepository.create(payload);
+      await this.activityLogRepository.save(activityLog);
+
+      activity.status = dto.status;
+      await this.activityRepo.save(activity);
+
+      return new ResponseDto<ActivityResDto>({
+        data: plainToInstance(ActivityResDto, activity, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật trạng thái hoạt động thành công',
+      });
     });
   }
 
@@ -291,7 +354,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
+  // TODO: log delete
   async deleteActivity(id: Uuid): Promise<ResponseNoDataDto> {
+    // CHECK NẾU MÀ NÓ CÓ PARENT ID -> nghĩa là đang delete sub task -> ghi log
+
     await this.activityRepo.delete(id);
     //TODO: handle clear file manualy here
     return new ResponseNoDataDto({
@@ -361,6 +427,20 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       Object.assign(activity, dto);
       await activityRepo.save(activity);
 
+      // TODO: check nếu có stageId nghĩa là change column -> ghi log
+      if (dto.stageId) {
+        // nó có update stage, chuyển cột
+        // ghi log
+        // await this.logActivity({
+        //   activity,
+        //   user,
+        //   action: 'update_stage',
+        //   message: `Cập nhật stage từ ${oldStageId} thành ${newStageId}`,
+        //   oldValue: oldStageId,
+        //   newValue: newStageId,
+        // });
+      }
+
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {
           excludeExtraneousValues: true,
@@ -368,6 +448,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         message: 'Cập nhật hoạt động thành công',
       });
     });
+  }
+
+  private async logActivity(dto: CreateActivityLogDto) {
+    const activityLog = this.activityLogRepository.create(dto);
+    await this.activityLogRepository.save(activityLog);
   }
 
   async attachFile(
@@ -578,17 +663,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     semesterId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
-    // Kiểm tra activity tồn tại
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
 
-    // Kiểm tra semester tồn tại
     const semester = await this.semesterRepo.findOneOrFail({
       where: { id: semesterId },
     });
 
-    // Gán activity vào kỳ học
     activity.semester = semester;
     await this.activityRepo.save(activity);
 

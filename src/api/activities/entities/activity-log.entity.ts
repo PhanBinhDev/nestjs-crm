@@ -2,6 +2,7 @@ import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_log')
 export class ActivityLogEntity extends AbstractEntity {
@@ -19,7 +20,7 @@ export class ActivityLogEntity extends AbstractEntity {
 
   @ManyToOne('ActivityEntity', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'activityId' })
-  activity: WrapperType<ActivityLogEntity>;
+  activity: WrapperType<ActivityEntity>;
 
   @ManyToOne('UserEntity', {
     onDelete: 'SET NULL',
@@ -32,4 +33,7 @@ export class ActivityLogEntity extends AbstractEntity {
   @ManyToOne('ActivityLogEntity', { nullable: true })
   @JoinColumn({ name: 'parentLogId' })
   parentLog: WrapperType<ActivityLogEntity>;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: any;
 }

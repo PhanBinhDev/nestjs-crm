@@ -55,3 +55,14 @@ export enum QueryType {
   TODAY = 'today',
   COMPLETED = 'completed',
 }
+
+export enum ActivityLogActionEnum {
+  CREATED = 'created',
+  UPDATED = 'updated',
+  DELETED = 'deleted',
+  ADDED = 'added',
+}
+
+export enum ActivityLogQueryType {
+  SUB_TASK = 'sub_task',
+}

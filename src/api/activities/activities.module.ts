@@ -1,6 +1,7 @@
+import { SemesterEntity } from '@/api/semester/entities/semester.entity';
+import { UserEntity } from '@/api/users/entities/user.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SemesterEntity } from '../semester/entities/semester.entity';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
@@ -26,6 +27,7 @@ import { ActivityEntity } from './entities/activity.entity';
       ActivityChecklistItemEntity,
       ActivityLogEntity,
       SemesterEntity,
+      UserEntity,
     ]),
   ],
   controllers: [ActivitiesController],
