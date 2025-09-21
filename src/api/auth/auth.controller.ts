@@ -90,7 +90,7 @@ export class AuthController {
       infer: true,
     });
 
-    const response = req.user as {
+    const response = req.user as unknown as {
       data: UserEntity;
       success: boolean;
     };
