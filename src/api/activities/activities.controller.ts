@@ -16,6 +16,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
@@ -151,8 +152,8 @@ export class ActivitiesController {
     name: 'id',
     description: 'ID của activity cần xóa',
   })
-  deleteActivity(@Param('id') id: Uuid) {
-    return this.activitiesService.deleteActivity(id);
+  deleteActivity(@Param('id') id: Uuid, @CurrentUser('id') userId: Uuid) {
+    return this.activitiesService.deleteActivity(id, userId);
   }
 
   @Patch(':id')
@@ -166,8 +167,12 @@ export class ActivitiesController {
     description: 'ID của activity cần cập nhật',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
-  updateActivity(@Param('id') id: Uuid, @Body() dto: UpdateActivityDto) {
-    return this.activitiesService.updateActivity(id, dto);
+  updateActivity(
+    @Param('id') id: Uuid,
+    @Body() dto: UpdateActivityDto,
+    @CurrentUser() user: UserEntity,
+  ) {
+    return this.activitiesService.updateActivity(id, dto, user.id);
   }
 
   @Post(':id/files')
