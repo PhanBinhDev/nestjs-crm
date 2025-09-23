@@ -139,8 +139,21 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         position: count + 1,
       });
       const savedActivity = await activityRepo.save(activity);
-      // Log activity creation
 
+      // Log activity creation - Main activity
+      const mainActivityLog = activityLogRepo.create({
+        activity: savedActivity,
+        user: userCreator,
+        action: ActivityLogActionEnum.CREATED,
+        message: 'Tạo hoạt động mới',
+        metadata: {
+          type: 'MAIN_ACTIVITY',
+          activityType: dto.type,
+        },
+      });
+      await activityLogRepo.save(mainActivityLog);
+
+      // Handle subtasks and logging
       if (dto.subtask?.length > 0) {
         const subActivities: ActivityEntity[] = [];
         const logs: ActivityLogEntity[] = [];
@@ -158,12 +171,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           subActivities.push(savedSubActivity);
 
           const log = activityLogRepo.create({
-            activity: savedSubActivity,
+            activity: savedActivity, // Log vào main activity thay vì sub activity
             user: userCreator,
             action: ActivityLogActionEnum.CREATED,
-            message: 'Tạo công việc phụ',
+            message: `Tạo công việc phụ: ${task}`,
             metadata: {
               type: ActivityLogQueryType.SUB_TASK,
+              subTaskId: savedSubActivity.id,
+              subTaskName: task,
             },
           });
           logs.push(log);
@@ -176,12 +191,29 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       // TODO: Log tương tự như subtask cho checklist
       if (dto.checklist?.length > 0) {
+        const checklistLogs: ActivityLogEntity[] = [];
+
         for (const checklistDto of dto.checklist) {
           const checklist = checklistRepo.create({
             activityId: savedActivity.id,
             name: checklistDto.name,
           });
           const savedChecklist = await checklistRepo.save(checklist);
+
+          // Log checklist creation
+          const checklistLog = activityLogRepo.create({
+            activity: savedActivity,
+            user: userCreator,
+            action: ActivityLogActionEnum.CREATED,
+            message: `Tạo checklist: ${checklistDto.name}`,
+            metadata: {
+              type: 'CHECKLIST',
+              checklistId: savedChecklist.id,
+              checklistName: checklistDto.name,
+              itemsCount: checklistDto.items?.length || 0,
+            },
+          });
+          checklistLogs.push(checklistLog);
 
           if (checklistDto.items?.length > 0) {
             const items = checklistDto.items.map((item) =>
@@ -192,7 +224,31 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               }),
             );
             await checklistItemRepo.save(items);
+
+            // Log checklist items creation
+            const itemsLog = activityLogRepo.create({
+              activity: savedActivity,
+              user: userCreator,
+              action: ActivityLogActionEnum.CREATED,
+              message: `Thêm ${checklistDto.items.length} mục vào checklist "${checklistDto.name}"`,
+              metadata: {
+                type: 'CHECKLIST_ITEMS',
+                checklistId: savedChecklist.id,
+                checklistName: checklistDto.name,
+                itemsCount: checklistDto.items.length,
+                items: checklistDto.items.map((item) => ({
+                  content: item.content,
+                  isDone: item.isDone || false,
+                })),
+              },
+            });
+            checklistLogs.push(itemsLog);
           }
+        }
+
+        // Save all checklist logs
+        if (checklistLogs.length > 0) {
+          await activityLogRepo.save(checklistLogs);
         }
       }
 
@@ -355,23 +411,88 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   }
 
   // TODO: log delete
-  async deleteActivity(id: Uuid): Promise<ResponseNoDataDto> {
-    // CHECK NẾU MÀ NÓ CÓ PARENT ID -> nghĩa là đang delete sub task -> ghi log
+  async deleteActivity(id: Uuid, userId: Uuid): Promise<ResponseNoDataDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const activityFileRepo = manager.getRepository(ActivityFileEntity);
+      const userRepo = manager.getRepository(UserEntity);
 
-    await this.activityRepo.delete(id);
-    //TODO: handle clear file manualy here
-    return new ResponseNoDataDto({
-      message: 'Xóa hoạt động thành công',
+      // Lấy thông tin activity cần xóa
+      const activity = await activityRepo.findOne({
+        where: { id },
+        relations: ['files', 'parent'],
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      // Lấy thông tin user thực hiện xóa
+      const user = await userRepo.findOneOrFail({ where: { id: userId } });
+
+      // CHECK NẾU MÀ NÓ CÓ PARENT ID -> nghĩa là đang delete sub task -> ghi log
+      if (activity.parentId) {
+        const deleteSubTaskLog = activityLogRepo.create({
+          activity: { id: activity.parentId } as ActivityEntity, // Log vào parent activity
+          user,
+          action: ActivityLogActionEnum.DELETED,
+          message: `Xóa công việc phụ: ${activity.name}`,
+          metadata: {
+            type: ActivityLogQueryType.SUB_TASK,
+            deletedSubTaskId: activity.id,
+            deletedSubTaskName: activity.name,
+          },
+        });
+        await activityLogRepo.save(deleteSubTaskLog);
+      } else {
+        // Nếu là main activity thì log vào chính nó
+        const deleteActivityLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.DELETED,
+          message: `Xóa hoạt động: ${activity.name}`,
+          metadata: {
+            // Fix: Sử dụng string literal thay vì enum không tồn tại
+            type: 'MAIN_ACTIVITY',
+            deletedActivityName: activity.name,
+          },
+        });
+        await activityLogRepo.save(deleteActivityLog);
+      }
+
+      // TODO: handle clear file manually here
+      if (activity.files && activity.files.length > 0) {
+        // Xóa các file records trong database
+        await activityFileRepo.delete({ activityId: id });
+        console.log(
+          `Đã xóa ${activity.files.length} file(s) liên quan đến activity ${id}`,
+        );
+      }
+
+      // Xóa activity
+      await activityRepo.delete(id);
+
+      return new ResponseNoDataDto({
+        message: activity.parentId
+          ? 'Xóa công việc phụ thành công'
+          : 'Xóa hoạt động thành công',
+      });
     });
   }
 
   async updateActivity(
     id: Uuid,
     dto: UpdateActivityDto,
+    userId: Uuid, // Thêm userId để biết ai thực hiện update
   ): Promise<ResponseDto<ActivityResDto>> {
     return await this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const userRepo = manager.getRepository(UserEntity);
+
       const activity = await activityRepo.findOneOrFail({ where: { id } });
+      const user = await userRepo.findOneOrFail({ where: { id: userId } });
 
       const oldStageId = activity.stageId;
       const oldPosition = activity.position;
@@ -428,17 +549,110 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       await activityRepo.save(activity);
 
       // TODO: check nếu có stageId nghĩa là change column -> ghi log
-      if (dto.stageId) {
-        // nó có update stage, chuyển cột
-        // ghi log
-        // await this.logActivity({
-        //   activity,
-        //   user,
-        //   action: 'update_stage',
-        //   message: `Cập nhật stage từ ${oldStageId} thành ${newStageId}`,
-        //   oldValue: oldStageId,
-        //   newValue: newStageId,
-        // });
+      if (dto.stageId && dto.stageId !== oldStageId) {
+        // Log stage change
+        const stageChangeLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.UPDATED,
+          message: `Chuyển hoạt động từ stage ${oldStageId} sang ${newStageId}`,
+          oldValue: oldStageId,
+          newValue: newStageId,
+          metadata: {
+            type: 'STAGE_CHANGE',
+            field: 'stageId',
+            oldStageId,
+            newStageId,
+          },
+        });
+        await activityLogRepo.save(stageChangeLog);
+      }
+
+      // Log other significant changes
+      const logPromises = [];
+
+      // Log name change
+      if (dto.name && dto.name !== activity.name) {
+        const nameChangeLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.UPDATED,
+          message: `Đổi tên hoạt động từ "${activity.name}" thành "${dto.name}"`,
+          oldValue: activity.name,
+          newValue: dto.name,
+          metadata: {
+            type: 'NAME_CHANGE',
+            field: 'name',
+          },
+        });
+        logPromises.push(activityLogRepo.save(nameChangeLog));
+      }
+
+      // Log priority change
+      if (dto.priority && dto.priority !== activity.priority) {
+        const priorityChangeLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.UPDATED,
+          message: `Thay đổi độ ưu tiên từ ${activity.priority} sang ${dto.priority}`,
+          oldValue: activity.priority,
+          newValue: dto.priority,
+          metadata: {
+            type: 'PRIORITY_CHANGE',
+            field: 'priority',
+          },
+        });
+        logPromises.push(activityLogRepo.save(priorityChangeLog));
+      }
+
+      // Log time changes
+      if (
+        dto.startTime &&
+        new Date(dto.startTime).getTime() !==
+          (activity.startTime instanceof Date
+            ? activity.startTime.getTime()
+            : new Date(activity.startTime).getTime())
+      ) {
+        const startTimeLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.UPDATED,
+          message: `Cập nhật thời gian bắt đầu`,
+          oldValue: activity.startTime,
+          newValue: dto.startTime,
+          metadata: {
+            type: 'TIME_CHANGE',
+            field: 'startTime',
+          },
+        });
+        logPromises.push(activityLogRepo.save(startTimeLog));
+      }
+
+      if (
+        dto.endTime &&
+        new Date(dto.endTime).getTime() !==
+          (activity.endTime instanceof Date
+            ? activity.endTime.getTime()
+            : new Date(activity.endTime).getTime())
+      ) {
+        const endTimeLog = activityLogRepo.create({
+          activity,
+          user,
+          action: ActivityLogActionEnum.UPDATED,
+          message: `Cập nhật thời gian kết thúc`,
+          oldValue: activity.endTime,
+          newValue: dto.endTime,
+          metadata: {
+            type: 'TIME_CHANGE',
+            field: 'endTime',
+          },
+        });
+        logPromises.push(activityLogRepo.save(endTimeLog));
+      }
+
+      // Execute all log saves
+      if (logPromises.length > 0) {
+        await Promise.all(logPromises);
       }
 
       return new ResponseDto<ActivityResDto>({

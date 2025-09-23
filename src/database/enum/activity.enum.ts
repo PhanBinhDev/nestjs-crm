@@ -65,4 +65,5 @@ export enum ActivityLogActionEnum {
 
 export enum ActivityLogQueryType {
   SUB_TASK = 'sub_task',
+  MAIN_ACTIVITY = 'main_activity',
 }
