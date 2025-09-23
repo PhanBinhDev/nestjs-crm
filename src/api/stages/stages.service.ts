@@ -446,21 +446,21 @@ export class StagesService {
         color: '#0000FF',
         stageGroup: StageGroup.ACTIVE,
         isBuiltIn: true,
-        groupPosition: 0,
+        groupPosition: 1,
       },
       {
         title: 'DONE',
         color: '#00FF00',
         stageGroup: StageGroup.DONE,
         isBuiltIn: true,
-        groupPosition: 0,
+        groupPosition: 2,
       },
       {
         title: 'COMPLETE',
         color: '#008000',
         stageGroup: StageGroup.CLOSED,
         isBuiltIn: true,
-        groupPosition: 0,
+        groupPosition: 3,
       },
     ];
 
@@ -476,6 +476,11 @@ export class StagesService {
         await this.stagesRepository.save(
           this.stagesRepository.create(groupStage),
         );
+      }
+
+      // update lại như cũ nếu có sự thay đổi
+      else {
+        await this.stagesRepository.update(existing.id, groupStage);
       }
     }
 
