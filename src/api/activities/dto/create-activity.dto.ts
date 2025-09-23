@@ -2,6 +2,7 @@ import {
   ActivityCategory,
   ActivityPiority,
   ActivityType,
+  AssigneeRole,
 } from '@/database/enum/activity.enum';
 import {
   BooleanFieldOptional,
@@ -18,6 +19,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ActivityAssigneeDto } from './activity-assignee.dto';
 import { ActivityChecklistDto } from './activity-checklist.dto';
 
 export class CreateActivityDto {
@@ -53,6 +55,7 @@ export class CreateActivityDto {
   @UUIDFieldOptional({
     example: 'stage-uuid',
     description: 'ID giai đoạn (nếu có)',
+    nullable: true,
   })
   stageId?: string;
 
@@ -95,6 +98,7 @@ export class CreateActivityDto {
   @UUIDFieldOptional({
     example: 'parent-activity-uuid',
     description: 'ID hoạt động cha (nếu có)',
+    nullable: true,
   })
   parentId?: string;
 
@@ -107,6 +111,7 @@ export class CreateActivityDto {
   @UUIDFieldOptional({
     example: 'semester-uuid',
     description: 'ID kỳ học (nếu có)',
+    nullable: true,
   })
   semesterId?: string;
 
@@ -136,4 +141,14 @@ export class CreateActivityDto {
     description: 'ID không gian làm việc',
   })
   workspaceId: string;
+
+  @ApiProperty({
+    type: [ActivityAssigneeDto],
+    required: false,
+    description: 'Danh sách người được gán cho hoạt động',
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ActivityAssigneeDto)
+  assignees?: ActivityAssigneeDto[];
 }

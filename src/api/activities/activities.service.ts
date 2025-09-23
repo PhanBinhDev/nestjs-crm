@@ -6,6 +6,7 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
+  AssigneeRole,
   AssignmentStatus,
   ParticipantStatus,
   QueryType,
@@ -134,9 +135,27 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         where: { stageId: dto.stageId },
       });
 
+      // Tạo assignees trước khi tạo activity
+      let assignees: ActivityAssigneeEntity[] = [];
+      if (dto.assignees?.length > 0) {
+        const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
+        assignees = dto.assignees.map((assigneeDto) =>
+          assigneeRepo.create({
+            userId: assigneeDto.userId,
+            role: assigneeDto.role || AssigneeRole.COLLABORATOR,
+            note: assigneeDto.note,
+            assignedAt: new Date(),
+            assignedBy: userId,
+            status: AssignmentStatus.PENDING,
+          }),
+        );
+      }
+
+      const { assignees: _, ...activityData } = dto;
       const activity = activityRepo.create({
-        ...dto,
+        ...activityData,
         position: count + 1,
+        assignees: assignees,
       });
       const savedActivity = await activityRepo.save(activity);
 
@@ -252,9 +271,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
-        relations: ['subActivities'],
+        relations: ['subActivities', 'assignees', 'assignees.user'],
       });
 
       return new ResponseDto<ActivityResDto>({

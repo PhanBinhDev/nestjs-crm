@@ -1,6 +1,7 @@
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateWorkspaceDto {
   @ApiProperty({ description: 'Tên workspace', type: String })
@@ -37,4 +38,24 @@ export class CreateWorkspaceDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @ApiProperty({
+    description: 'Danh sách ID của các thành viên được mời',
+    type: [String],
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value.split(',').map(id => id.trim());
+      }
+    }
+    return value;
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  assigneeIds?: string[];
 }

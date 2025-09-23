@@ -68,12 +68,14 @@ export class WorkspacesService {
     dto: CreateWorkspaceDto,
     ownerId: Uuid,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
+    // Tạo workspace
     const workspace = this.workspaceRepository.create({
       ...dto,
       ownerId,
     });
     await this.workspaceRepository.save(workspace);
 
+    // Thêm owner làm member với role OWNER
     await this.membersRepository.save(
       this.membersRepository.create({
         workspaceId: workspace.id,
@@ -81,6 +83,18 @@ export class WorkspacesService {
         role: WorkspaceRole.OWNER,
       }),
     );
+
+    // Thêm các members được mời nếu có
+    if (dto.assigneeIds && dto.assigneeIds.length > 0) {
+      const membersToAdd = dto.assigneeIds.map((userId) =>
+        this.membersRepository.create({
+          workspaceId: workspace.id,
+          userId,
+          role: WorkspaceRole.MEMBER,
+        }),
+      );
+      await this.membersRepository.save(membersToAdd);
+    }
 
     return new ResponseDto<BaseWorkspaceResDto>({
       data: plainToInstance(BaseWorkspaceResDto, workspace, {
