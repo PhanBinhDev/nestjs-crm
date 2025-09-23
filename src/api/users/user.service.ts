@@ -2,6 +2,10 @@ import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
 import { UserRole } from '@/database/enum/user.enum';
+import {
+  WorkspaceRole,
+  WorkspaceVisibility,
+} from '@/database/enum/workspace.enum';
 import { paginate } from '@/utils/offset-pagination';
 import {
   BadRequestException,
@@ -15,6 +19,8 @@ import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
+import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
+import { Workspaces } from '../workspaces/entities/workspace.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ImportUserDto, ImportUsersResponseDto } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
@@ -46,13 +52,40 @@ export class UserService {
   }
 
   async create(data: CreateUserDto): Promise<ResponseDto<UserResDto>> {
-    const user = this.userRepository.create(data);
-    await this.userRepository.save(user);
-    return new ResponseDto({
-      data: plainToInstance(UserResDto, user, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Tạo người dùng thành công',
+    return this.userRepository.manager.transaction(async (manager) => {
+      const userRepo = manager.getRepository(UserEntity);
+      const workspaceRepo = manager.getRepository(Workspaces);
+      const workspaceMemberRepo = manager.getRepository(WorkspaceMembers);
+
+      const existingUser = await userRepo.findOne({
+        where: { email: data.email },
+      });
+      if (existingUser) {
+        throw new BadRequestException('Email đã tồn tại trong hệ thống');
+      }
+      const user = userRepo.create(data);
+      await userRepo.save(user);
+
+      const workspace = workspaceRepo.create({
+        name: `${user.name} Workspace`,
+        owner: user,
+        visibility: WorkspaceVisibility.PRIVATE,
+      });
+      await workspaceRepo.save(workspace);
+
+      const workspaceMember = workspaceMemberRepo.create({
+        user,
+        workspace,
+        role: WorkspaceRole.OWNER,
+      });
+      await workspaceMemberRepo.save(workspaceMember);
+
+      return new ResponseDto({
+        data: plainToInstance(UserResDto, user, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo người dùng thành công',
+      });
     });
   }
 

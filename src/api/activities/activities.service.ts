@@ -265,12 +265,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           }
         }
 
-        // Save all checklist logs
         if (checklistLogs.length > 0) {
           await activityLogRepo.save(checklistLogs);
         }
       }
-
 
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
@@ -303,7 +301,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.semester', 'semester')
       .leftJoinAndSelect('activity.subActivities', 'subActivities')
       .leftJoinAndSelect('activity.checklists', 'checklists')
-      .leftJoinAndSelect('checklists.items', 'items');
+      .leftJoinAndSelect('checklists.items', 'items')
+      .leftJoinAndSelect('activity.stage', 'stage');
 
     if (!query.includeSubTasks) {
       qb.andWhere('activity.parentId IS NULL');

@@ -1,4 +1,5 @@
 import { SemesterResDto } from '@/api/semester/dto/semester.res.dto';
+import { StageResDto } from '@/api/stages/dto/stage.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import {
@@ -145,4 +146,10 @@ export class ActivityResDto {
   })
   @Expose()
   checklists?: ActivityChecklistResDto[];
+
+  @ClassField(() => StageResDto, {
+    description: 'Giai đoạn của công việc',
+  })
+  @Expose()
+  stage?: WrapperType<StageResDto>;
 }
