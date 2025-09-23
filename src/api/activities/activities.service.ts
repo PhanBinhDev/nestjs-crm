@@ -6,6 +6,7 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
+  ActivityType,
   AssigneeRole,
   AssignmentStatus,
   ParticipantStatus,
@@ -27,6 +28,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
+import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
@@ -34,6 +36,7 @@ import { AttachFileResDto } from './dto/attach-file.res.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityLogDto } from './dto/create-activity-log.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
@@ -46,6 +49,7 @@ import {
 } from './entities/activity-checklist.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { EventFeedbackEntity } from './entities/event-feedback.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -75,6 +79,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly dataSource: DataSource,
     @InjectRepository(ActivityLogEntity)
     private readonly activityLogRepository: Repository<ActivityLogEntity>,
+    @InjectRepository(EventFeedbackEntity)
+    private readonly eventFeedbackRepo: Repository<EventFeedbackEntity>,
   ) {
     super(activityRepo);
   }
@@ -781,6 +787,142 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }),
       meta: metaDto,
       message: 'Lấy danh sách công việc thành công',
+    });
+  }
+
+  // Event Feedback Methods
+  async createEventFeedback(
+    activityId: Uuid,
+    dto: CreateEventFeedbackDto,
+  ): Promise<ResponseDto<EventFeedbackResDto>> {
+    // Kiểm tra activity tồn tại và phải là event
+    const activity = await this.activityRepo.findOneOrFail({ 
+      where: { id: activityId } 
+    });
+
+    if (activity.type !== ActivityType.EVENT) {
+      throw new BadRequestException('Chỉ có thể đánh giá cho sự kiện (event), không phải công việc (task)');
+    }
+
+    // Kiểm tra đã có feedback với email này chưa
+    const existingFeedback = await this.eventFeedbackRepo.findOne({
+      where: { activityId, email: dto.email }
+    });
+
+    if (existingFeedback) {
+      throw new BadRequestException('Email này đã đánh giá sự kiện này rồi');
+    }
+
+    const feedback = this.eventFeedbackRepo.create({
+      activityId,
+      email: dto.email,
+      numPhone: dto.numPhone,
+      fullName: dto.fullName,
+      studentId: dto.studentId,
+      rating: dto.rating,
+      comments: dto.comments,
+      image: dto.image,
+    });
+
+    await this.eventFeedbackRepo.save(feedback);
+
+    return new ResponseDto<EventFeedbackResDto>({
+      data: plainToInstance(EventFeedbackResDto, feedback, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tạo đánh giá sự kiện thành công',
+    });
+  }
+
+  async getEventFeedbacksByActivityId(
+    activityId: Uuid,
+  ): Promise<ResponseDto<EventFeedbackResDto[]>> {
+    // Kiểm tra activity tồn tại và phải là event
+    const activity = await this.activityRepo.findOneOrFail({ 
+      where: { id: activityId } 
+    });
+
+    if (activity.type !== ActivityType.EVENT) {
+      throw new BadRequestException('Chỉ có thể lấy đánh giá cho sự kiện (event), không phải công việc (task)');
+    }
+
+    const feedbacks = await this.eventFeedbackRepo.find({
+      where: { activityId },
+      order: { submittedAt: 'DESC' }
+    });
+
+    return new ResponseDto<EventFeedbackResDto[]>({
+      data: plainToInstance(EventFeedbackResDto, feedbacks, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách đánh giá sự kiện thành công',
+    });
+  }
+
+  async getEventFeedbackById(
+    feedbackId: Uuid,
+  ): Promise<ResponseDto<EventFeedbackResDto>> {
+    const feedback = await this.eventFeedbackRepo.findOneOrFail({
+      where: { id: feedbackId },
+    });
+
+    return new ResponseDto<EventFeedbackResDto>({
+      data: plainToInstance(EventFeedbackResDto, feedback, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy đánh giá sự kiện thành công',
+    });
+  }
+
+  async getEventFeedbackStats(
+    activityId: Uuid,
+  ): Promise<ResponseDto<any>> {
+    // Kiểm tra activity tồn tại và phải là event
+    const activity = await this.activityRepo.findOneOrFail({ 
+      where: { id: activityId } 
+    });
+
+    if (activity.type !== ActivityType.EVENT) {
+      throw new BadRequestException('Chỉ có thể lấy thống kê đánh giá cho sự kiện (event), không phải công việc (task)');
+    }
+
+    // Lấy tất cả feedbacks để tính toán thống kê
+    const feedbacks = await this.eventFeedbackRepo.find({
+      where: { activityId },
+      select: ['rating']
+    });
+
+    const totalFeedbacks = feedbacks.length;
+    
+    if (totalFeedbacks === 0) {
+      return new ResponseDto({
+        data: {
+          totalFeedbacks: 0,
+          averageRating: 0,
+          ratingDistribution: {},
+        },
+        message: 'Lấy thống kê đánh giá sự kiện thành công',
+      });
+    }
+
+    // Tính điểm trung bình
+    const ratingValues = feedbacks.map(f => parseInt(f.rating));
+    const averageRating = ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
+
+    // Tính phân bố điểm
+    const ratingDistribution = feedbacks.reduce((acc, feedback) => {
+      const rating = feedback.rating;
+      acc[rating] = (acc[rating] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return new ResponseDto({
+      data: {
+        totalFeedbacks,
+        averageRating: Math.round(averageRating * 100) / 100, // Làm tròn 2 chữ số thập phân
+        ratingDistribution,
+      },
+      message: 'Lấy thống kê đánh giá sự kiện thành công',
     });
   }
 }
