@@ -21,12 +21,14 @@ import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityFileResDto } from './dto/activity-file.res.dto';
+import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
@@ -338,5 +340,61 @@ export class ActivitiesController {
     @Param('semesterId') semesterId: Uuid,
   ) {
     return this.activitiesService.unlinkActivityFromSemester(id, semesterId);
+  }
+
+  // Event Feedback Endpoints
+  @Post(':id/event-feedback')
+  @ApiAuth({
+    summary: 'Tạo đánh giá sự kiện',
+    type: CreateEventFeedbackDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity (event)',
+  })
+  async createEventFeedback(
+    @Param('id') id: Uuid,
+    @Body() dto: CreateEventFeedbackDto,
+  ) {
+    return this.activitiesService.createEventFeedback(id, dto);
+  }
+
+  @Get(':id/event-feedbacks')
+  @ApiAuth({
+    summary: 'Lấy danh sách đánh giá sự kiện',
+    type: EventFeedbackResDto,
+    isArray: true,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity (event)',
+  })
+  async getEventFeedbacksByActivityId(@Param('id') id: Uuid) {
+    return this.activitiesService.getEventFeedbacksByActivityId(id);
+  }
+
+  @Get('event-feedback/:feedbackId')
+  @ApiAuth({
+    summary: 'Lấy chi tiết đánh giá sự kiện',
+    type: EventFeedbackResDto,
+  })
+  @ApiParam({
+    name: 'feedbackId',
+    description: 'ID của event feedback',
+  })
+  async getEventFeedbackById(@Param('feedbackId') feedbackId: Uuid) {
+    return this.activitiesService.getEventFeedbackById(feedbackId);
+  }
+
+  @Get(':id/event-feedback-stats')
+  @ApiAuth({
+    summary: 'Lấy thống kê đánh giá sự kiện',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity (event)',
+  })
+  async getEventFeedbackStats(@Param('id') id: Uuid) {
+    return this.activitiesService.getEventFeedbackStats(id);
   }
 }

@@ -11,6 +11,7 @@ import {
 } from './entities/activity-checklist.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { EventFeedbackEntity } from './entities/event-feedback.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -26,6 +27,7 @@ import { ActivityEntity } from './entities/activity.entity';
       ActivityChecklistEntity,
       ActivityChecklistItemEntity,
       ActivityLogEntity,
+      EventFeedbackEntity,
       SemesterEntity,
       UserEntity,
     ]),
