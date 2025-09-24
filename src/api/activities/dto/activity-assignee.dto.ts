@@ -10,20 +10,11 @@ export class ActivityAssigneeDto {
   @IsUUID('4')
   userId: string;
 
-  @ApiPropertyOptional({
-    enum: AssigneeRole,
-    description: 'Vai trò của user trong activity',
-    example: AssigneeRole.COLLABORATOR,
-    default: AssigneeRole.COLLABORATOR,
-  })
+  // role và note được xử lý trong logic, không hiển thị trong schema
   @IsOptional()
   @IsEnum(AssigneeRole)
   role?: AssigneeRole;
 
-  @ApiPropertyOptional({
-    description: 'Ghi chú cho assignment',
-    example: 'Phụ trách phần báo cáo',
-  })
   @IsOptional()
   @IsString()
   note?: string;
