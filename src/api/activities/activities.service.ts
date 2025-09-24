@@ -28,7 +28,6 @@ import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
-import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
@@ -37,6 +36,7 @@ import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityLogDto } from './dto/create-activity-log.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
+import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
@@ -49,10 +49,10 @@ import {
 } from './entities/activity-checklist.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
-import { EventFeedbackEntity } from './entities/event-feedback.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
+import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
@@ -306,6 +306,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('assignees.user', 'assigneeUser')
       .leftJoinAndSelect('activity.semester', 'semester')
       .leftJoinAndSelect('activity.subActivities', 'subActivities')
+      .leftJoinAndSelect('subActivities.stage', 'subStage')
       .leftJoinAndSelect('activity.checklists', 'checklists')
       .leftJoinAndSelect('checklists.items', 'items')
       .leftJoinAndSelect('activity.stage', 'stage');
@@ -425,8 +426,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         'feedbacks.user',
         'assignees',
         'assignees.user',
+        'stage',
+        'subActivities',
+        'subActivities.stage',
       ],
     });
+
     return new ResponseDto<ActivityResDto>({
       data: plainToInstance(ActivityResDto, activity, {
         excludeExtraneousValues: true,
@@ -1007,17 +1012,19 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     dto: CreateEventFeedbackDto,
   ): Promise<ResponseDto<EventFeedbackResDto>> {
     // Kiểm tra activity tồn tại và phải là event
-    const activity = await this.activityRepo.findOneOrFail({ 
-      where: { id: activityId } 
+    const activity = await this.activityRepo.findOneOrFail({
+      where: { id: activityId },
     });
 
     if (activity.type !== ActivityType.EVENT) {
-      throw new BadRequestException('Chỉ có thể đánh giá cho sự kiện (event), không phải công việc (task)');
+      throw new BadRequestException(
+        'Chỉ có thể đánh giá cho sự kiện (event), không phải công việc (task)',
+      );
     }
 
     // Kiểm tra đã có feedback với email này chưa
     const existingFeedback = await this.eventFeedbackRepo.findOne({
-      where: { activityId, email: dto.email }
+      where: { activityId, email: dto.email },
     });
 
     if (existingFeedback) {
@@ -1049,17 +1056,19 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
   ): Promise<ResponseDto<EventFeedbackResDto[]>> {
     // Kiểm tra activity tồn tại và phải là event
-    const activity = await this.activityRepo.findOneOrFail({ 
-      where: { id: activityId } 
+    const activity = await this.activityRepo.findOneOrFail({
+      where: { id: activityId },
     });
 
     if (activity.type !== ActivityType.EVENT) {
-      throw new BadRequestException('Chỉ có thể lấy đánh giá cho sự kiện (event), không phải công việc (task)');
+      throw new BadRequestException(
+        'Chỉ có thể lấy đánh giá cho sự kiện (event), không phải công việc (task)',
+      );
     }
 
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
-      order: { submittedAt: 'DESC' }
+      order: { submittedAt: 'DESC' },
     });
 
     return new ResponseDto<EventFeedbackResDto[]>({
@@ -1085,26 +1094,26 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  async getEventFeedbackStats(
-    activityId: Uuid,
-  ): Promise<ResponseDto<any>> {
+  async getEventFeedbackStats(activityId: Uuid): Promise<ResponseDto<any>> {
     // Kiểm tra activity tồn tại và phải là event
-    const activity = await this.activityRepo.findOneOrFail({ 
-      where: { id: activityId } 
+    const activity = await this.activityRepo.findOneOrFail({
+      where: { id: activityId },
     });
 
     if (activity.type !== ActivityType.EVENT) {
-      throw new BadRequestException('Chỉ có thể lấy thống kê đánh giá cho sự kiện (event), không phải công việc (task)');
+      throw new BadRequestException(
+        'Chỉ có thể lấy thống kê đánh giá cho sự kiện (event), không phải công việc (task)',
+      );
     }
 
     // Lấy tất cả feedbacks để tính toán thống kê
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
-      select: ['rating']
+      select: ['rating'],
     });
 
     const totalFeedbacks = feedbacks.length;
-    
+
     if (totalFeedbacks === 0) {
       return new ResponseDto({
         data: {
@@ -1117,15 +1126,19 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     // Tính điểm trung bình
-    const ratingValues = feedbacks.map(f => parseInt(f.rating));
-    const averageRating = ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
+    const ratingValues = feedbacks.map((f) => parseInt(f.rating));
+    const averageRating =
+      ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 
     // Tính phân bố điểm
-    const ratingDistribution = feedbacks.reduce((acc, feedback) => {
-      const rating = feedback.rating;
-      acc[rating] = (acc[rating] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const ratingDistribution = feedbacks.reduce(
+      (acc, feedback) => {
+        const rating = feedback.rating;
+        acc[rating] = (acc[rating] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     return new ResponseDto({
       data: {
