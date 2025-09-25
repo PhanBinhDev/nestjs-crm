@@ -21,12 +21,12 @@ export class ActivityAssigneeEntity extends AbstractEntity {
   user: WrapperType<UserEntity>;
 
   @Column({ type: 'uuid' })
-  userId: string;
+  userId: string; // Bắt buộc - chỉ cần userId
 
   @Column({
     type: 'enum',
     enum: AssigneeRole,
-    default: AssigneeRole.COLLABORATOR,
+    default: AssigneeRole.COLLABORATOR, // Mặc định là COLLABORATOR
   })
   role: AssigneeRole;
 

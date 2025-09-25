@@ -141,15 +141,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         where: { stageId: dto.stageId },
       });
 
-      // Tạo assignees trước khi tạo activity
+      // Tạo assignees trước khi tạo activity (chỉ cần userId)
       let assignees: ActivityAssigneeEntity[] = [];
       if (dto.assignees?.length > 0) {
         const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
         assignees = dto.assignees.map((assigneeDto) =>
           assigneeRepo.create({
-            userId: assigneeDto.userId,
-            role: assigneeDto.role || AssigneeRole.COLLABORATOR,
-            note: assigneeDto.note,
+            userId: assigneeDto.userId, // Bắt buộc
+            role: assigneeDto.role || AssigneeRole.COLLABORATOR, // Mặc định COLLABORATOR
+            note: assigneeDto.note, // Tùy chọn
             assignedAt: new Date(),
             assignedBy: userId,
             status: AssignmentStatus.PENDING,
