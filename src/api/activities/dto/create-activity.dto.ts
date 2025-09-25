@@ -2,7 +2,6 @@ import {
   ActivityCategory,
   ActivityPiority,
   ActivityType,
-  AssigneeRole,
 } from '@/database/enum/activity.enum';
 import {
   BooleanFieldOptional,
@@ -145,7 +144,8 @@ export class CreateActivityDto {
   @ApiProperty({
     type: [ActivityAssigneeDto],
     required: false,
-    description: 'Danh sách người được gán cho hoạt động (chỉ cần userId, role mặc định collaborator)',
+    description:
+      'Danh sách người được gán cho hoạt động (chỉ cần userId, role mặc định collaborator)',
   })
   @IsOptional()
   @ValidateNested({ each: true })

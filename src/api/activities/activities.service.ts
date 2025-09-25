@@ -23,6 +23,7 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, Repository } from 'typeorm';
+import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
@@ -96,7 +97,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .where('log.activityId = :activityId', { activityId })
       .orderBy('log.createdAt', 'DESC');
 
-    // Apply filters
     if (query.action) {
       qb.andWhere('log.action = :action', { action: query.action });
     }
@@ -134,27 +134,45 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const checklistItemRepo = manager.getRepository(
         ActivityChecklistItemEntity,
       );
-      // Add this line - get the activity log repository from the manager
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const notificationRepo = manager.getRepository(NotificationEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
       });
 
-      // Tạo assignees trước khi tạo activity (chỉ cần userId)
       let assignees: ActivityAssigneeEntity[] = [];
       if (dto.assignees?.length > 0) {
         const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
         assignees = dto.assignees.map((assigneeDto) =>
           assigneeRepo.create({
-            userId: assigneeDto.userId, // Bắt buộc
-            role: assigneeDto.role || AssigneeRole.COLLABORATOR, // Mặc định COLLABORATOR
-            note: assigneeDto.note, // Tùy chọn
+            userId: assigneeDto.userId,
+            role: assigneeDto.role || AssigneeRole.COLLABORATOR,
+            note: assigneeDto.note,
             assignedAt: new Date(),
             assignedBy: userId,
             status: AssignmentStatus.PENDING,
           }),
         );
+
+        const notifications = await Promise.all(
+          dto.assignees.map(async (assigneeDto) => {
+            const userAssignee = await this.userRepo.findOne({
+              where: { id: assigneeDto.userId },
+            });
+
+            return notificationRepo.create({
+              userId: assigneeDto.userId,
+              title: `Có ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} mới`,
+              message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
+              sender: userCreator,
+              user: userAssignee,
+              workspaceId: dto.workspaceId,
+            });
+          }),
+        );
+
+        await notificationRepo.save(notifications);
       }
 
       const { assignees: _, ...activityData } = dto;
@@ -165,7 +183,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
       const savedActivity = await activityRepo.save(activity);
 
-      // Log activity creation - Main activity
       const mainActivityLog = activityLogRepo.create({
         activity: savedActivity,
         user: userCreator,
@@ -196,7 +213,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           subActivities.push(savedSubActivity);
 
           const log = activityLogRepo.create({
-            activity: savedActivity, // Log vào main activity thay vì sub activity
+            activity: savedActivity,
             user: userCreator,
             action: ActivityLogActionEnum.CREATED,
             message: `Tạo công việc phụ: ${task}`,
@@ -289,6 +306,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     });
   }
+
   async findAll(
     query: QueryActivityDto,
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
