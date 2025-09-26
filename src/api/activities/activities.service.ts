@@ -1312,7 +1312,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     // Tính điểm trung bình
-    const ratingValues = feedbacks.map((f) => parseInt(f.rating));
+    const ratingValues = feedbacks.map((f) => f.rating);
     const averageRating =
       ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 

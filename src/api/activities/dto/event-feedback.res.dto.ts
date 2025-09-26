@@ -1,4 +1,3 @@
-import { EventFeedbackRating } from '../entities/event-feedback.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { EventFeedbackFileResDto } from './event-feedback-file.res.dto';
@@ -34,11 +33,11 @@ export class EventFeedbackResDto {
   studentId: string;
 
   @ApiProperty({ 
-    enum: EventFeedbackRating,
-    example: EventFeedbackRating.FIVE
+    example: 5,
+    description: 'Điểm đánh giá từ 1-5 sao'
   })
   @Expose()
-  rating: EventFeedbackRating;
+  rating: number;
 
   @ApiProperty({ 
     example: 'Sự kiện rất hay và bổ ích!',

@@ -1,6 +1,5 @@
-import { EventFeedbackRating } from '../entities/event-feedback.entity';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class EventFeedbackFileDto {
@@ -56,13 +55,14 @@ export class CreateEventFeedbackDto {
   studentId: string;
 
   @ApiProperty({ 
-    enum: EventFeedbackRating,
-    example: EventFeedbackRating.FIVE,
+    example: 5,
     description: 'Điểm đánh giá từ 1-5 sao'
   })
   @IsNotEmpty()
-  @IsEnum(EventFeedbackRating)
-  rating: EventFeedbackRating;
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  rating: number;
 
   @ApiProperty({ 
     example: 'Sự kiện rất hay và bổ ích!',

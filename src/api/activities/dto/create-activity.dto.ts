@@ -141,6 +141,20 @@ export class CreateActivityDto {
   })
   workspaceId: string;
 
+  @NumberFieldOptional({
+    example: 5,
+    description: 'Số lượng giảng viên tham gia',
+    nullable: true,
+  })
+  instructorCount?: number;
+
+  @NumberFieldOptional({
+    example: 30,
+    description: 'Số lượng sinh viên tham gia',
+    nullable: true,
+  })
+  studentCount?: number;
+
   @ApiProperty({
     type: [ActivityAssigneeDto],
     required: false,
