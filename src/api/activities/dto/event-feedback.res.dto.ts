@@ -1,6 +1,7 @@
 import { EventFeedbackRating } from '../entities/event-feedback.entity';
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose } from 'class-transformer';
+import { Expose, Type } from 'class-transformer';
+import { EventFeedbackFileResDto } from './event-feedback-file.res.dto';
 
 export class EventFeedbackResDto {
   @ApiProperty()
@@ -56,4 +57,13 @@ export class EventFeedbackResDto {
   @ApiProperty()
   @Expose()
   submittedAt: Date;
+
+  @ApiProperty({
+    type: [EventFeedbackFileResDto],
+    required: false,
+    description: 'Danh sách file đính kèm'
+  })
+  @Expose()
+  @Type(() => EventFeedbackFileResDto)
+  files?: EventFeedbackFileResDto[];
 }
