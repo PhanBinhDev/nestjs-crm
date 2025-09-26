@@ -1,4 +1,5 @@
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
+import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
 import { QueryType } from '@/database/enum/activity.enum';
 import { UserRole } from '@/database/enum/user.enum';
@@ -16,6 +17,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
@@ -36,7 +38,10 @@ import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 @ApiTags('activities')
 @Controller('activities')
 export class ActivitiesController {
-  constructor(private readonly activitiesService: ActivitiesService) {}
+  constructor(
+    private readonly activitiesService: ActivitiesService,
+    private readonly dataSource: DataSource,
+  ) {}
   @Get(':id/logs')
   @ApiAuth({
     summary: 'Lấy danh sách log chi tiết của activity',
@@ -251,8 +256,9 @@ export class ActivitiesController {
   async assignUserToActivity(
     @Param('id') id: Uuid,
     @Body() dto: AssignUserToActivityDto,
+    @CurrentUser('id') currentUserId: Uuid,
   ) {
-    return this.activitiesService.assignUserToActivity(id, dto);
+    return this.activitiesService.assignUserToActivity(id, dto, currentUserId);
   }
 
   @Get(':id/assignees')
@@ -282,8 +288,16 @@ export class ActivitiesController {
     summary: 'Xóa người thực hiện khỏi activity',
     type: ResponseNoDataDto,
   })
-  async deleteAssignee(@Param('id') id: Uuid, @Param('userId') userId: Uuid) {
-    return this.activitiesService.deleteAssignee(id, userId);
+  async deleteAssignee(
+    @Param('id') activityId: Uuid,
+    @Param('userId') userId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    return this.activitiesService.deleteAssignee(
+      activityId,
+      userId,
+      currentUserId,
+    );
   }
 
   @Patch(':id/assignees/:userId')
@@ -300,11 +314,17 @@ export class ActivitiesController {
     description: 'ID của người dùng cần cập nhật thông tin',
   })
   async updateAssignee(
-    @Param('id') id: Uuid,
+    @Param('id') activityId: Uuid,
     @Param('userId') userId: Uuid,
     @Body() dto: AssignUserToActivityDto,
-  ) {
-    return this.activitiesService.updateAssignee(id, userId, dto);
+    @CurrentUser('id') currentUserId: Uuid,
+  ): Promise<ResponseDto<ActivityAssigneeResDto>> {
+    return this.activitiesService.updateAssignee(
+      activityId,
+      userId,
+      dto,
+      currentUserId,
+    );
   }
 
   @Patch(':id/semester/:semesterId')
