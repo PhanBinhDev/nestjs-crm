@@ -34,6 +34,10 @@ export class ActivityLogResDto {
 
   @ApiProperty({ required: false })
   @Expose()
+  message?: string;
+
+  @ApiProperty({ required: false })
+  @Expose()
   userId?: string;
 
   @ApiProperty({ required: false, type: Object })
@@ -43,6 +47,10 @@ export class ActivityLogResDto {
   @ApiProperty({ required: false, type: Object })
   @Expose()
   newValue?: any;
+
+  @ApiProperty({ required: false, type: Object })
+  @Expose()
+  metadata?: any;
 
   @ApiProperty()
   @Expose()

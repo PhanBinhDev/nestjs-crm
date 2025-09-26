@@ -828,40 +828,98 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async assignUserToActivity(
     id: Uuid,
     dto: AssignUserToActivityDto,
+    currentUserId: Uuid, // Thêm để biết ai thực hiện assign
   ): Promise<ResponseDto<ActivityAssigneeEntity[]>> {
-    const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
-    const assignees: ActivityAssigneeEntity[] = [];
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const activityAssigneeRepo = manager.getRepository(
+        ActivityAssigneeEntity,
+      );
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const userRepo = manager.getRepository(UserEntity);
 
-    await this.activityRepo.findOneOrFail({ where: { id } });
+      const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
+      const assignees: ActivityAssigneeEntity[] = [];
 
-    for (const userId of userIds) {
-      let assignee = await this.activityAssigneeRepo.findOne({
-        where: { activityId: id, userId },
+      console.log('Assigning users to activity:', id, userIds, dto);
+
+      const activity = await activityRepo.findOneOrFail({ where: { id } });
+      const currentUser = await userRepo.findOneOrFail({
+        where: { id: currentUserId },
       });
 
-      if (assignee) {
-        // Nếu đã có thì update role/note nếu truyền vào
-        if (dto.role) assignee.role = dto.role;
-        if (dto.note) assignee.note = dto.note;
-        assignee.assignedAt = new Date();
-      } else {
-        // Nếu chưa có thì tạo mới
-        assignee = this.activityAssigneeRepo.create({
-          activityId: id,
-          userId,
-          role: dto.role,
-          note: dto.note,
-          assignedAt: new Date(),
-          status: AssignmentStatus.PENDING,
-        });
-      }
-      await this.activityAssigneeRepo.save(assignee);
-      assignees.push(assignee);
-    }
+      const logs: ActivityLogEntity[] = [];
 
-    return new ResponseDto<ActivityAssigneeEntity[]>({
-      data: assignees,
-      message: 'Gán người dùng vào hoạt động thành công',
+      for (const userId of userIds) {
+        let assignee = await activityAssigneeRepo.findOne({
+          where: { activityId: id, userId },
+        });
+
+        const assignedUser = await userRepo.findOne({ where: { id: userId } });
+
+        if (assignee) {
+          // Nếu đã có thì update role/note nếu truyền vào
+          if (dto.role) assignee.role = dto.role;
+          if (dto.note) assignee.note = dto.note;
+          assignee.assignedAt = new Date();
+
+          // Log update assignee
+          const updateLog = activityLogRepo.create({
+            activity,
+            user: currentUser,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Cập nhật phân công cho ${assignedUser?.name || userId}`,
+            metadata: {
+              type: 'ASSIGNMENT_UPDATE',
+              assignedUserId: userId,
+              assignedUserName: assignedUser?.name,
+              role: dto.role,
+              note: dto.note,
+            },
+          });
+          logs.push(updateLog);
+        } else {
+          // Nếu chưa có thì tạo mới
+          assignee = activityAssigneeRepo.create({
+            activityId: id,
+            userId,
+            role: dto.role,
+            note: dto.note,
+            assignedAt: new Date(),
+            status: AssignmentStatus.PENDING,
+          });
+
+          // Log new assignment
+          const assignLog = activityLogRepo.create({
+            activity,
+            user: currentUser,
+            action: ActivityLogActionEnum.CREATED,
+            message: `Phân công cho ${assignedUser?.name || userId}`,
+            metadata: {
+              type: 'ASSIGNMENT_CREATE',
+              assignedUserId: userId,
+              assignedUserName: assignedUser?.name,
+              role: dto.role,
+              note: dto.note,
+              status: AssignmentStatus.PENDING,
+            },
+          });
+          logs.push(assignLog);
+        }
+
+        await activityAssigneeRepo.save(assignee);
+        assignees.push(assignee);
+      }
+
+      // Save all logs
+      if (logs.length > 0) {
+        await activityLogRepo.save(logs);
+      }
+
+      return new ResponseDto<ActivityAssigneeEntity[]>({
+        data: assignees,
+        message: 'Gán người dùng vào hoạt động thành công',
+      });
     });
   }
 
@@ -883,16 +941,58 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async deleteAssignee(
     activityId: Uuid,
     userId: Uuid,
+    currentUserId: Uuid, // Thêm parameter
   ): Promise<ResponseNoDataDto> {
-    const assignee = await this.activityAssigneeRepo.findOne({
-      where: { activityId, userId },
-    });
-    if (!assignee) {
-      throw new NotFoundException('Assignee not found');
-    }
-    await this.activityAssigneeRepo.remove(assignee);
-    return new ResponseNoDataDto({
-      message: 'Xóa người được giao thành công',
+    return this.dataSource.transaction(async (manager) => {
+      const activityAssigneeRepo = manager.getRepository(
+        ActivityAssigneeEntity,
+      );
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const userRepo = manager.getRepository(UserEntity);
+      const activityRepo = manager.getRepository(ActivityEntity);
+
+      const assignee = await activityAssigneeRepo.findOne({
+        where: { activityId, userId },
+      });
+      if (!assignee) {
+        throw new NotFoundException('Assignee not found');
+      }
+
+      const activity = await activityRepo.findOneOrFail({
+        where: { id: activityId },
+      });
+      const currentUser = await userRepo.findOneOrFail({
+        where: { id: currentUserId },
+      });
+      const assignedUser = await userRepo.findOne({ where: { id: userId } });
+
+      // Log before delete
+      const deleteLog = activityLogRepo.create({
+        activity,
+        user: currentUser,
+        action: ActivityLogActionEnum.DELETED,
+        message: `Xóa phân công của ${assignedUser?.name || userId}`,
+        oldValue: {
+          role: assignee.role,
+          note: assignee.note,
+          assignedAt: assignee.assignedAt,
+          status: assignee.status,
+        },
+        metadata: {
+          type: 'ASSIGNMENT_DELETE',
+          assignedUserId: userId,
+          assignedUserName: assignedUser?.name,
+          deletedRole: assignee.role,
+          deletedNote: assignee.note,
+        },
+      });
+      await activityLogRepo.save(deleteLog);
+
+      await activityAssigneeRepo.remove(assignee);
+
+      return new ResponseNoDataDto({
+        message: 'Xóa người được giao thành công',
+      });
     });
   }
 
@@ -900,22 +1000,66 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     userId: Uuid,
     dto: AssignUserToActivityDto,
+    currentUserId: Uuid, // Thêm parameter
   ): Promise<ResponseDto<ActivityAssigneeResDto>> {
-    const assignee = await this.activityAssigneeRepo.findOne({
-      where: { activityId, userId },
-    });
-    if (!assignee) {
-      throw new NotFoundException('Người được giao không tồn tại');
-    }
-    // Cập nhật thông tin người thực hiện
-    assignee.role = dto.role;
-    assignee.note = dto.note;
-    await this.activityAssigneeRepo.save(assignee);
-    return new ResponseDto<ActivityAssigneeResDto>({
-      data: plainToInstance(ActivityAssigneeResDto, assignee, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật người được giao thành công',
+    return this.dataSource.transaction(async (manager) => {
+      const activityAssigneeRepo = manager.getRepository(
+        ActivityAssigneeEntity,
+      );
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const userRepo = manager.getRepository(UserEntity);
+      const activityRepo = manager.getRepository(ActivityEntity);
+
+      const assignee = await activityAssigneeRepo.findOne({
+        where: { activityId, userId },
+      });
+      if (!assignee) {
+        throw new NotFoundException('Người được giao không tồn tại');
+      }
+
+      const activity = await activityRepo.findOneOrFail({
+        where: { id: activityId },
+      });
+      const currentUser = await userRepo.findOneOrFail({
+        where: { id: currentUserId },
+      });
+      const assignedUser = await userRepo.findOne({ where: { id: userId } });
+
+      // Store old values for logging
+      const oldRole = assignee.role;
+      const oldNote = assignee.note;
+
+      // Cập nhật thông tin người thực hiện
+      assignee.role = dto.role;
+      assignee.note = dto.note;
+      await activityAssigneeRepo.save(assignee);
+
+      // Log the update
+      const updateLog = activityLogRepo.create({
+        activity,
+        user: currentUser,
+        action: ActivityLogActionEnum.UPDATED,
+        message: `Cập nhật phân công của ${assignedUser?.name || userId}`,
+        oldValue: { role: oldRole, note: oldNote },
+        newValue: { role: dto.role, note: dto.note },
+        metadata: {
+          type: 'ASSIGNMENT_UPDATE',
+          assignedUserId: userId,
+          assignedUserName: assignedUser?.name,
+          changes: {
+            role: { from: oldRole, to: dto.role },
+            note: { from: oldNote, to: dto.note },
+          },
+        },
+      });
+      await activityLogRepo.save(updateLog);
+
+      return new ResponseDto<ActivityAssigneeResDto>({
+        data: plainToInstance(ActivityAssigneeResDto, assignee, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật người được giao thành công',
+      });
     });
   }
 
