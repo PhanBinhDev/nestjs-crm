@@ -3,7 +3,7 @@ import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
 import { WorkspaceRole } from '@/database/enum/workspace.enum';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, In, Repository } from 'typeorm';
 import { StagesService } from '../stages/stages.service';
@@ -21,16 +21,12 @@ export class WorkspacesService {
   constructor(
     @InjectRepository(Workspaces)
     private readonly workspaceRepository: Repository<Workspaces>,
-
     @InjectRepository(WorkspaceMembers)
     private readonly membersRepository: Repository<WorkspaceMembers>,
-
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
-
-    @InjectRepository(DataSource)
+    @InjectDataSource()
     private readonly dataSource: DataSource,
-
     private readonly stagesService: StagesService,
   ) {}
 
@@ -81,7 +77,10 @@ export class WorkspacesService {
     return await this.dataSource.transaction(async (manager) => {
       const { members, ...body } = dto;
 
-      const workspace = this.workspaceRepository.create(body);
+      const workspace = this.workspaceRepository.create({
+        ...body,
+        ownerId,
+      });
       const savedWorkspace = await manager.save(workspace);
 
       await this.stagesService.initDefaultStages(savedWorkspace.id, manager);

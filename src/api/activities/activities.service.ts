@@ -71,10 +71,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
     @InjectRepository(SemesterEntity)
     private readonly semesterRepo: Repository<SemesterEntity>,
-    @InjectRepository(ActivityChecklistEntity)
-    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
-    @InjectRepository(ActivityChecklistItemEntity)
-    private readonly activityChecklistItemRepo: Repository<ActivityChecklistItemEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
     @InjectDataSource()
@@ -83,8 +79,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityLogRepository: Repository<ActivityLogEntity>,
     @InjectRepository(EventFeedbackEntity)
     private readonly eventFeedbackRepo: Repository<EventFeedbackEntity>,
-    @InjectRepository(EventFeedbackFileEntity)
-    private readonly eventFeedbackFileRepo: Repository<EventFeedbackFileEntity>,
   ) {
     super(activityRepo);
   }

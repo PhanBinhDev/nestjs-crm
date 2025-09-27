@@ -1,41 +1,50 @@
+import { AuditResDto } from '@/common/dto/audit.res.dto';
+import { Uuid } from '@/common/types/common.type';
 import { StageGroup } from '@/database/enum/stage.enum';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  BooleanField,
+  EnumField,
+  NumberField,
+  StringField,
+} from '@/decorators/field.decorators';
 import { Expose } from 'class-transformer';
 
-export class StageResDto {
-  @ApiProperty()
-  @Expose()
-  id: string;
-
-  @ApiProperty()
+export class StageResDto extends AuditResDto {
+  @StringField({ description: 'Tên stage' })
   @Expose()
   title: string;
 
-  @ApiProperty({ example: '#FF5733', description: 'Mã màu của stage' })
-  @Expose()
-  color: string;
-
-  @ApiProperty({ example: 1, description: 'Vị trí của stage trong danh sách' })
+  @NumberField({ description: 'Vị trí của stage trong danh sách' })
   @Expose()
   position: number;
 
-  @ApiProperty({ enum: StageGroup })
+  @StringField({ description: 'Mã màu của stage' })
+  @Expose()
+  color: string;
+
+  @EnumField(() => StageGroup, { description: 'Nhóm của stage' })
   @Expose()
   stageGroup: StageGroup;
 
-  @ApiProperty()
-  @Expose()
-  isBuiltIn: boolean;
-
-  @ApiProperty()
+  @NumberField({ description: 'Vị trí của nhóm trong danh sách' })
   @Expose()
   groupPosition: number;
 
-  @ApiProperty()
+  @StringField({ description: 'ID của workspace mà stage thuộc về' })
   @Expose()
-  createdAt: Date;
+  workspaceId: Uuid;
 
-  @ApiProperty()
+  @BooleanField({ description: 'Stage có phải là built-in hay không' })
   @Expose()
-  updatedAt: Date;
+  isBuiltIn: boolean;
+
+  @BooleanField({
+    description: 'Stage có phải là trạng thái hoàn thành hay không',
+  })
+  @Expose()
+  isCompleted: boolean;
+
+  @StringField({ description: 'Người cập nhật' })
+  @Expose()
+  updatedBy: string;
 }

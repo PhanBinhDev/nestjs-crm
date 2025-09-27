@@ -126,7 +126,6 @@ export class StagesService {
     updateStageDto: UpdateStageDto,
   ): Promise<ResponseDto<StageResDto>> {
     return await this.dataSource.transaction(async (manager) => {
-      // 1. Get existing stage
       const stageEntity = await manager.findOne(StagesEntity, {
         where: { id },
       });
