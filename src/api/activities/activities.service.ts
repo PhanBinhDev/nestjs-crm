@@ -97,6 +97,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
       .leftJoinAndSelect('log.parentLog', 'parentLog')
+      .leftJoinAndSelect('log.activity', 'activity')
       .where('log.activityId = :activityId', { activityId })
       .orderBy('log.createdAt', 'DESC');
 
@@ -110,9 +111,75 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const logs = await qb.getMany();
 
-    return plainToInstance(ActivityLogResDto, logs, {
-      excludeExtraneousValues: true,
-    });
+    const transformedLogs = await Promise.all(
+      logs.map(async (log) => {
+        const transformedLog = plainToInstance(ActivityLogResDto, log, {
+          excludeExtraneousValues: true,
+        });
+
+        if (log.activity?.stageId) {
+          try {
+            const stageResult = await this.dataSource
+              .createQueryBuilder()
+              .select('stage.title', 'title')
+              .from('stages', 'stage')
+              .where('stage.id = :stageId', { stageId: log.activity.stageId })
+              .getRawOne();
+
+            transformedLog.stageName = stageResult?.title || null;
+          } catch (error) {
+            console.error('Error getting stage name:', error);
+            transformedLog.stageName = null;
+          }
+        } else {
+          transformedLog.stageName = null;
+        }
+
+        if (
+          log.metadata?.type === 'STAGE_CHANGE' &&
+          (log.metadata.oldStageId || log.metadata.newStageId)
+        ) {
+          try {
+            const stageQuery = this.dataSource
+              .createQueryBuilder()
+              .select(['stage.id AS id', 'stage.title AS title'])
+              .from('stages', 'stage')
+              .where('stage.id IN (:...ids)', {
+                ids: [log.metadata.oldStageId, log.metadata.newStageId].filter(
+                  Boolean,
+                ),
+              });
+
+            const stages = await stageQuery.getRawMany();
+
+            const oldStage = stages.find(
+              (s) => s.id === log.metadata.oldStageId,
+            );
+            const newStage = stages.find(
+              (s) => s.id === log.metadata.newStageId,
+            );
+
+            if (transformedLog.metadata) {
+              transformedLog.metadata = {
+                ...transformedLog.metadata,
+                oldStageName: oldStage?.title || null,
+                newStageName: newStage?.title || null,
+              };
+            }
+
+            if (oldStage && newStage) {
+              transformedLog.message = `Chuyển hoạt động từ stage ${oldStage.title} sang ${newStage.title}`;
+            }
+          } catch (error) {
+            console.error('Error resolving stage names:', error);
+          }
+        }
+
+        return transformedLog;
+      }),
+    );
+
+    return transformedLogs;
   }
 
   async create(
