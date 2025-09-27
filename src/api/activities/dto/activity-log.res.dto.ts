@@ -8,15 +8,7 @@ class UserInfoDto {
 
   @ApiProperty()
   @Expose()
-  name: string;
-
-  @ApiProperty()
-  @Expose()
-  email: string;
-
-  @ApiProperty({ required: false })
-  @Expose()
-  avatar?: string;
+  name: string; // Chỉ lấy tên user thôi
 }
 
 export class ActivityLogResDto {
@@ -59,7 +51,11 @@ export class ActivityLogResDto {
   @ApiProperty({ type: UserInfoDto, required: false })
   @Expose()
   @Type(() => UserInfoDto)
-  user?: UserInfoDto;
+  user?: UserInfoDto; // Chỉ có id và name
+
+  @ApiProperty({ required: false })
+  @Expose()
+  stageName?: string; // Được set trực tiếp từ Service
 
   @ApiProperty({ description: 'Thời gian tương đối như "2 giờ trước"' })
   @Transform(({ obj }) => {
