@@ -10,7 +10,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { Workspaces } from '../workspaces/entities/workspace.entity';
 import { CreateStageDto } from './dto/create-stage.dto';
 import { QueryStageDto } from './dto/query-stage.dto';
 import { StageResDto } from './dto/stage.res.dto';
@@ -21,157 +22,599 @@ import { StagesEntity } from './entities/stage.entity';
 export class StagesService {
   private readonly logger = new Logger(StagesService.name);
 
+  private readonly STAGE_GROUP_ORDER = [
+    StageGroup.NOT_STARTED,
+    StageGroup.ACTIVE,
+    StageGroup.DONE,
+    StageGroup.CLOSED,
+  ];
+
   constructor(
     @InjectRepository(StagesEntity)
     private readonly stagesRepository: Repository<StagesEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
-  // Hàm tạo stage mới với các ràng buộc
   async create(
     createStageDto: CreateStageDto,
   ): Promise<ResponseDto<StageResDto>> {
-    const { stageGroup = StageGroup.ACTIVE, title } = createStageDto;
+    return await this.dataSource.transaction(async (manager) => {
+      const {
+        stageGroup = StageGroup.ACTIVE,
+        title,
+        workspaceId,
+      } = createStageDto;
 
-    // Kiểm tra title không được trùng với các stage khác (không phân biệt viết hoa/thường)
-    const existingStage = await this.stagesRepository
-      .createQueryBuilder('stage')
-      .where('LOWER(stage.title) = LOWER(:title)', { title })
-      .getOne();
-    if (existingStage) {
-      throw new BadRequestException(
-        `Tên stage "${title}" đã tồn tại trong hệ thống`,
+      await this.validateWorkspaceExists(manager, workspaceId);
+      await this.checkDuplicateTitle(manager, title, workspaceId);
+      this.validateStageGroupConstraints(stageGroup);
+
+      const groupPosition = await this.calculateGroupPosition(
+        manager,
+        workspaceId,
+        stageGroup,
       );
+      const position = await this.calculateGlobalPosition(
+        manager,
+        createStageDto,
+        stageGroup,
+      );
+
+      // 5. Create and save the stage
+      const stage = manager.create(StagesEntity, {
+        ...createStageDto,
+        position,
+        stageGroup,
+        groupPosition,
+        isBuiltIn: false,
+      });
+
+      const savedStage = await manager.save(stage);
+
+      // 6. Reorder stages in group to ensure consistency
+      await this.reorderStagesInGroup(manager, workspaceId, stageGroup);
+
+      return new ResponseDto<StageResDto>({
+        data: plainToInstance(StageResDto, savedStage, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo trạng thái (stage) thành công',
+      });
+    });
+  }
+
+  async findAll(query: QueryStageDto): Promise<ResponseDto<StageResDto[]>> {
+    const qb = this.stagesRepository
+      .createQueryBuilder('stage')
+      .where('stage.workspaceId = :workspaceId', {
+        workspaceId: query.workspaceId,
+      });
+
+    // Apply filters
+    this.applyFilters(qb, query);
+
+    // Apply sorting
+    this.applySorting(qb, query);
+
+    const stages = await qb.getMany();
+
+    return new ResponseDto<StageResDto[]>({
+      data: plainToInstance(StageResDto, stages, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Danh sách trạng thái (stages) được lấy thành công',
+    });
+  }
+
+  async findOne(id: Uuid): Promise<ResponseDto<StageResDto>> {
+    const stage = await this.stagesRepository.findOne({ where: { id } });
+
+    if (!stage) {
+      throw new NotFoundException('Stage not found');
     }
 
-    // Kiểm tra ràng buộc: không cho phép tạo thêm stage trong nhóm CLOSED
+    return new ResponseDto<StageResDto>({
+      data: plainToInstance(StageResDto, stage, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy trạng thái (stage) thành công',
+    });
+  }
+
+  async update(
+    id: Uuid,
+    updateStageDto: UpdateStageDto,
+  ): Promise<ResponseDto<StageResDto>> {
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Get existing stage
+      const stageEntity = await manager.findOne(StagesEntity, {
+        where: { id },
+      });
+      if (!stageEntity) {
+        throw new NotFoundException('Trạng thái (stage) không tồn tại');
+      }
+
+      // 2. Validate updates
+      await this.validateStageUpdate(manager, stageEntity, updateStageDto);
+
+      // 3. Handle different update scenarios
+      const oldStageGroup = stageEntity.stageGroup;
+      const newStageGroup = updateStageDto.stageGroup || oldStageGroup;
+
+      if (newStageGroup !== oldStageGroup) {
+        // Handle stage group change
+        await this.handleStageGroupChange(
+          manager,
+          stageEntity,
+          updateStageDto,
+          newStageGroup,
+        );
+      } else if (this.isPositionUpdate(updateStageDto, stageEntity)) {
+        // Handle position change within same group
+        await this.handlePositionUpdate(manager, stageEntity, updateStageDto);
+      } else {
+        // Simple field updates
+        Object.assign(stageEntity, updateStageDto);
+        await manager.save(stageEntity);
+      }
+
+      // 4. Get updated stage
+      const updatedStage = await manager.findOne(StagesEntity, {
+        where: { id: stageEntity.id },
+      });
+
+      return new ResponseDto<StageResDto>({
+        data: plainToInstance(StageResDto, updatedStage, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật trạng thái (stage) thành công',
+      });
+    });
+  }
+
+  async remove(id: Uuid): Promise<ResponseNoDataDto> {
+    return await this.dataSource.transaction(async (manager) => {
+      const stageEntity = await manager.findOne(StagesEntity, {
+        where: { id },
+      });
+
+      if (!stageEntity) {
+        throw new NotFoundException('Stage not found');
+      }
+
+      if (stageEntity.isBuiltIn) {
+        throw new BadRequestException(
+          'Không thể xóa stage mặc định của hệ thống',
+        );
+      }
+
+      const { stageGroup, workspaceId } = stageEntity;
+
+      await manager.remove(stageEntity);
+
+      // Reorder remaining stages
+      await this.reorderStagesInGroup(manager, workspaceId, stageGroup);
+      await this.updateGlobalPositions(manager, workspaceId);
+
+      return new ResponseNoDataDto({
+        message: 'Xóa trạng thái (stage) thành công',
+      });
+    });
+  }
+
+  async initDefaultStages(
+    workspaceId: Uuid,
+    manager: EntityManager,
+  ): Promise<void> {
+    const workspace = await manager.findOne(Workspaces, {
+      where: { id: workspaceId },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
+    }
+
+    const defaultStages = this.getDefaultStagesConfig();
+
+    for (let i = 0; i < defaultStages.length; i++) {
+      const stageConfig = { ...defaultStages[i], position: i };
+
+      const existing = await manager.findOne(StagesEntity, {
+        where: {
+          workspaceId,
+          stageGroup: stageConfig.stageGroup,
+          isBuiltIn: true,
+        },
+      });
+
+      if (!existing) {
+        await manager.save(
+          manager.create(StagesEntity, {
+            ...stageConfig,
+            workspaceId,
+          }),
+        );
+      } else {
+        await manager.update(StagesEntity, existing.id, stageConfig);
+      }
+    }
+
+    await this.updateGlobalPositions(manager, workspaceId);
+  }
+
+  private async validateWorkspaceExists(
+    manager: EntityManager,
+    workspaceId: Uuid,
+  ): Promise<void> {
+    const workspace = await manager.findOne(Workspaces, {
+      where: { id: workspaceId },
+    });
+
+    if (!workspace) {
+      throw new BadRequestException('Workspace không tồn tại');
+    }
+  }
+
+  private async checkDuplicateTitle(
+    manager: EntityManager,
+    title: string,
+    workspaceId: Uuid,
+    excludeId?: Uuid,
+  ): Promise<void> {
+    const qb = manager
+      .createQueryBuilder(StagesEntity, 'stage')
+      .where('LOWER(stage.title) = LOWER(:title)', { title })
+      .andWhere('stage.workspaceId = :workspaceId', { workspaceId });
+
+    if (excludeId) {
+      qb.andWhere('stage.id != :id', { id: excludeId });
+    }
+
+    const existingStage = await qb.getOne();
+
+    if (existingStage) {
+      throw new BadRequestException(
+        `Tên stage "${title}" đã tồn tại trong workspace này`,
+      );
+    }
+  }
+
+  private validateStageGroupConstraints(stageGroup: StageGroup): void {
     if (stageGroup === StageGroup.CLOSED) {
       throw new BadRequestException(
         'Không thể tạo thêm stage trong nhóm Closed',
       );
     }
+  }
 
-    // Tính position tổng thể
-    const allStages = await this.stagesRepository.find({
-      order: { position: 'ASC' },
-    });
+  private async calculateGroupPosition(
+    manager: EntityManager,
+    workspaceId: Uuid,
+    stageGroup: StageGroup,
+  ): Promise<number> {
+    const lastStageInGroup = await manager
+      .createQueryBuilder(StagesEntity, 'stage')
+      .where('stage.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('stage.stageGroup = :stageGroup', { stageGroup })
+      .orderBy('stage.groupPosition', 'DESC')
+      .take(1)
+      .getOne();
 
-    // Tính vị trí trong nhóm
-    let groupPosition = 0;
-    const stagesInGroup = await this.stagesRepository.find({
-      where: { stageGroup },
+    return lastStageInGroup ? lastStageInGroup.groupPosition + 1 : 0;
+  }
+
+  private async calculateGlobalPosition(
+    manager: EntityManager,
+    createStageDto: CreateStageDto,
+    stageGroup: StageGroup,
+  ): Promise<number> {
+    const { position: requestedPosition, workspaceId } = createStageDto;
+
+    if (requestedPosition === undefined) {
+      return await this.calculatePositionByGroup(
+        manager,
+        workspaceId,
+        stageGroup,
+      );
+    }
+
+    return await this.validateAndAdjustPosition(
+      manager,
+      workspaceId,
+      requestedPosition,
+      stageGroup,
+    );
+  }
+
+  private async calculatePositionByGroup(
+    manager: EntityManager,
+    workspaceId: Uuid,
+    stageGroup: StageGroup,
+  ): Promise<number> {
+    const groupIndex = this.STAGE_GROUP_ORDER.indexOf(stageGroup);
+    let lastPosition = -1;
+
+    // Find last position in previous groups
+    for (let i = 0; i < groupIndex; i++) {
+      const lastStageInGroup = await manager
+        .createQueryBuilder(StagesEntity, 'stage')
+        .where('stage.workspaceId = :workspaceId', { workspaceId })
+        .andWhere('stage.stageGroup = :stageGroup', {
+          stageGroup: this.STAGE_GROUP_ORDER[i],
+        })
+        .orderBy('stage.position', 'DESC')
+        .take(1)
+        .getOne();
+
+      if (lastStageInGroup) {
+        lastPosition = Math.max(lastPosition, lastStageInGroup.position);
+      }
+    }
+
+    const newPosition = lastPosition + 1;
+
+    // Shift subsequent stages if needed
+    await manager
+      .createQueryBuilder()
+      .update(StagesEntity)
+      .set({ position: () => 'position + 1' })
+      .where('workspaceId = :workspaceId', { workspaceId })
+      .andWhere('position >= :position', { position: newPosition })
+      .execute();
+
+    return newPosition;
+  }
+
+  private async validateAndAdjustPosition(
+    manager: EntityManager,
+    workspaceId: Uuid,
+    requestedPosition: number,
+    stageGroup: StageGroup,
+  ): Promise<number> {
+    const allStages = await manager
+      .createQueryBuilder(StagesEntity, 'stage')
+      .where('stage.workspaceId = :workspaceId', { workspaceId })
+      .orderBy('stage.position', 'ASC')
+      .getMany();
+
+    const requestedGroupIndex = this.STAGE_GROUP_ORDER.indexOf(stageGroup);
+    const stageAtPosition = allStages.find(
+      (s) => s.position === requestedPosition,
+    );
+
+    if (stageAtPosition) {
+      const existingGroupIndex = this.STAGE_GROUP_ORDER.indexOf(
+        stageAtPosition.stageGroup,
+      );
+
+      if (requestedGroupIndex !== existingGroupIndex) {
+        throw new BadRequestException(
+          `Không thể tạo stage tại vị trí ${requestedPosition} vì nó thuộc về nhóm ${stageAtPosition.stageGroup}`,
+        );
+      }
+
+      // Shift stages at and after this position
+      await manager
+        .createQueryBuilder()
+        .update(StagesEntity)
+        .set({ position: () => 'position + 1' })
+        .where('workspaceId = :workspaceId', { workspaceId })
+        .andWhere('position >= :position', { position: requestedPosition })
+        .execute();
+    }
+
+    return requestedPosition;
+  }
+
+  private async validateStageUpdate(
+    manager: EntityManager,
+    stageEntity: StagesEntity,
+    updateStageDto: UpdateStageDto,
+  ): Promise<void> {
+    // Check title uniqueness
+    if (
+      updateStageDto.title &&
+      updateStageDto.title.toLowerCase() !== stageEntity.title.toLowerCase()
+    ) {
+      await this.checkDuplicateTitle(
+        manager,
+        updateStageDto.title,
+        stageEntity.workspaceId,
+        stageEntity.id,
+      );
+    }
+
+    // Validate built-in stage constraints
+    if (stageEntity.isBuiltIn) {
+      if (
+        updateStageDto.stageGroup &&
+        updateStageDto.stageGroup !== stageEntity.stageGroup
+      ) {
+        throw new BadRequestException(
+          'Không thể thay đổi nhóm của stage mặc định',
+        );
+      }
+
+      if (
+        'position' in updateStageDto &&
+        updateStageDto.position !== stageEntity.position
+      ) {
+        throw new BadRequestException(
+          'Không thể thay đổi vị trí của stage mặc định',
+        );
+      }
+    }
+
+    // Validate new stage group
+    if (updateStageDto.stageGroup === StageGroup.CLOSED) {
+      throw new BadRequestException('Không thể chuyển stage vào nhóm Closed');
+    }
+  }
+
+  private isPositionUpdate(
+    updateStageDto: UpdateStageDto,
+    stageEntity: StagesEntity,
+  ): boolean {
+    return (
+      updateStageDto.position !== undefined &&
+      updateStageDto.position !== stageEntity.position
+    );
+  }
+
+  private async handleStageGroupChange(
+    manager: EntityManager,
+    stageEntity: StagesEntity,
+    updateStageDto: UpdateStageDto,
+    newStageGroup: StageGroup,
+  ): Promise<void> {
+    const oldStageGroup = stageEntity.stageGroup;
+
+    // Calculate new group position
+    const stagesInNewGroup = await manager.find(StagesEntity, {
+      where: {
+        workspaceId: stageEntity.workspaceId,
+        stageGroup: newStageGroup,
+      },
       order: { groupPosition: 'ASC' },
     });
 
-    if (stagesInGroup.length > 0) {
-      groupPosition = stagesInGroup[stagesInGroup.length - 1].groupPosition + 1;
-    }
+    const newGroupPosition = stagesInNewGroup.length;
 
-    // Tính position chung
-    let position = createStageDto.position;
-    if (position === undefined) {
-      // Tính vị trí cuối của nhóm
-      const stageGroups = [
-        StageGroup.NOT_STARTED,
-        StageGroup.ACTIVE,
-        StageGroup.DONE,
-        StageGroup.CLOSED,
-      ];
-      const groupIndex = stageGroups.indexOf(stageGroup);
-
-      let lastPositionInPreviousGroups = -1;
-
-      if (groupIndex > 0) {
-        const previousGroup = stageGroups[groupIndex - 1];
-        const lastStageInPreviousGroup = await this.stagesRepository.find({
-          where: { stageGroup: previousGroup },
-          order: { position: 'DESC' },
-          take: 1,
-        });
-
-        if (lastStageInPreviousGroup.length > 0) {
-          lastPositionInPreviousGroups = lastStageInPreviousGroup[0].position;
-        }
-      }
-
-      position = lastPositionInPreviousGroups + 1;
-
-      // Kiểm tra xem có stage nào sau position này không
-      const nextStages = allStages.filter((s) => s.position >= position);
-
-      // Dời các stages sau vị trí này
-      if (nextStages.length > 0) {
-        await this.stagesRepository
-          .createQueryBuilder()
-          .update(StagesEntity)
-          .set({ position: () => 'position + 1' })
-          .where('position >= :position', { position })
-          .execute();
-      }
-    } else {
-      // Kiểm tra ràng buộc vị trí dựa trên stageGroup
-      const stageGroups = [
-        StageGroup.NOT_STARTED,
-        StageGroup.ACTIVE,
-        StageGroup.DONE,
-        StageGroup.CLOSED,
-      ];
-      const requestedGroupIndex = stageGroups.indexOf(stageGroup);
-
-      // Tìm stage tại vị trí đã yêu cầu
-      const stageAtPosition = allStages.find((s) => s.position === position);
-
-      if (stageAtPosition) {
-        const existingGroupIndex = stageGroups.indexOf(
-          stageAtPosition.stageGroup,
-        );
-
-        // Không cho phép tạo stage ở nhóm khác với vị trí đã yêu cầu
-        if (requestedGroupIndex !== existingGroupIndex) {
-          throw new BadRequestException(
-            `Không thể tạo stage tại vị trí này vì nó thuộc về nhóm ${stageAtPosition.stageGroup}`,
-          );
-        }
-
-        // Dịch các stages sau vị trí này
-        await this.stagesRepository
-          .createQueryBuilder()
-          .update(StagesEntity)
-          .set({ position: () => 'position + 1' })
-          .where('position >= :position', { position })
-          .execute();
-      }
-    }
-
-    // Tạo stage mới
-    const stage = this.stagesRepository.create({
-      ...createStageDto,
-      position,
-      stageGroup,
-      groupPosition,
-      isBuiltIn: false,
+    // Update stage
+    Object.assign(stageEntity, {
+      ...updateStageDto,
+      stageGroup: newStageGroup,
+      groupPosition: newGroupPosition,
     });
 
-    await this.stagesRepository.save(stage);
+    await manager.save(stageEntity);
 
-    // Đảm bảo vị trí trong nhóm liên tục
-    await this.reorderStagesInGroup(stageGroup);
+    // Reorder both groups
+    await this.reorderStagesInGroup(
+      manager,
+      stageEntity.workspaceId,
+      oldStageGroup,
+    );
+    await this.reorderStagesInGroup(
+      manager,
+      stageEntity.workspaceId,
+      newStageGroup,
+    );
 
-    // Lấy lại stage đã tạo
-    const savedStage = await this.stagesRepository.findOne({
-      where: { id: stage.id },
-    });
-
-    return new ResponseDto<StageResDto>({
-      data: plainToInstance(StageResDto, savedStage, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Tạo trạng thái (stage) thành công',
-    });
+    // Update global positions
+    await this.updateGlobalPositions(manager, stageEntity.workspaceId);
   }
 
-  async findAll(query: QueryStageDto): Promise<ResponseDto<StageResDto[]>> {
-    const qb = this.stagesRepository.createQueryBuilder('stage');
+  private async handlePositionUpdate(
+    manager: EntityManager,
+    stageEntity: StagesEntity,
+    updateStageDto: UpdateStageDto,
+  ): Promise<void> {
+    const stagesInGroup = await manager.find(StagesEntity, {
+      where: {
+        workspaceId: stageEntity.workspaceId,
+        stageGroup: stageEntity.stageGroup,
+      },
+      order: { groupPosition: 'ASC' },
+    });
 
+    const oldGroupPosition = stageEntity.groupPosition;
+    const newGroupPosition = Math.min(
+      Math.max(0, updateStageDto.position!),
+      stagesInGroup.length - 1,
+    );
+
+    // Update other stages in group
+    if (newGroupPosition > oldGroupPosition) {
+      await manager
+        .createQueryBuilder()
+        .update(StagesEntity)
+        .set({ groupPosition: () => 'groupPosition - 1' })
+        .where('workspaceId = :workspaceId', {
+          workspaceId: stageEntity.workspaceId,
+        })
+        .andWhere('stageGroup = :stageGroup', {
+          stageGroup: stageEntity.stageGroup,
+        })
+        .andWhere('groupPosition > :oldPos AND groupPosition <= :newPos', {
+          oldPos: oldGroupPosition,
+          newPos: newGroupPosition,
+        })
+        .execute();
+    } else if (newGroupPosition < oldGroupPosition) {
+      await manager
+        .createQueryBuilder()
+        .update(StagesEntity)
+        .set({ groupPosition: () => 'groupPosition + 1' })
+        .where('workspaceId = :workspaceId', {
+          workspaceId: stageEntity.workspaceId,
+        })
+        .andWhere('stageGroup = :stageGroup', {
+          stageGroup: stageEntity.stageGroup,
+        })
+        .andWhere('groupPosition >= :newPos AND groupPosition < :oldPos', {
+          oldPos: oldGroupPosition,
+          newPos: newGroupPosition,
+        })
+        .execute();
+    }
+
+    // Update current stage
+    Object.assign(stageEntity, {
+      ...updateStageDto,
+      groupPosition: newGroupPosition,
+    });
+
+    await manager.save(stageEntity);
+
+    // Update global positions
+    await this.updateGlobalPositions(manager, stageEntity.workspaceId);
+  }
+
+  private async reorderStagesInGroup(
+    manager: EntityManager,
+    workspaceId: Uuid,
+    stageGroup: StageGroup,
+  ): Promise<void> {
+    const stages = await manager.find(StagesEntity, {
+      where: { workspaceId, stageGroup },
+      order: { groupPosition: 'ASC' },
+    });
+
+    for (let i = 0; i < stages.length; i++) {
+      if (stages[i].groupPosition !== i) {
+        await manager.update(StagesEntity, stages[i].id, {
+          groupPosition: i,
+        });
+      }
+    }
+  }
+
+  private async updateGlobalPositions(
+    manager: EntityManager,
+    workspaceId: Uuid,
+  ): Promise<void> {
+    let globalPosition = 0;
+
+    // Update position for each group in order
+    for (const group of this.STAGE_GROUP_ORDER) {
+      const stagesInGroup = await manager.find(StagesEntity, {
+        where: { workspaceId, stageGroup: group },
+        order: { groupPosition: 'ASC' },
+      });
+
+      for (const stage of stagesInGroup) {
+        if (stage.position !== globalPosition) {
+          await manager.update(StagesEntity, stage.id, {
+            position: globalPosition,
+          });
+        }
+        globalPosition++;
+      }
+    }
+  }
+
+  private applyFilters(qb: any, query: QueryStageDto): void {
     if (query.q) {
       qb.andWhere('stage.title ILIKE :search', { search: `%${query.q}%` });
     }
@@ -187,7 +630,9 @@ export class StagesService {
         isBuiltIn: query.isBuiltIn,
       });
     }
+  }
 
+  private applySorting(qb: any, query: QueryStageDto): void {
     const allowedSortFields = ['position', 'createdAt'];
 
     if (query.sortBy) {
@@ -203,262 +648,12 @@ export class StagesService {
 
       qb.addOrderBy(`stage.${sortField}`, query.order || 'DESC');
     } else {
-      qb.addOrderBy('stage.position', query.order || 'DESC');
-    }
-
-    const stages = await qb.getMany();
-    return new ResponseDto<StageResDto[]>({
-      data: plainToInstance(StageResDto, stages, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Danh sách trạng thái (stages) được lấy thành công',
-    });
-  }
-
-  async findOne(id: Uuid): Promise<ResponseDto<StageResDto>> {
-    const stage = await this.stagesRepository.findOne({ where: { id } });
-    if (!stage) throw new NotFoundException('Stage not found');
-    return new ResponseDto<StageResDto>({
-      data: plainToInstance(StageResDto, stage, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Lấy trạng thái (stage) thành công',
-    });
-  }
-
-  async update(
-    id: Uuid,
-    updateStageDto: UpdateStageDto,
-  ): Promise<ResponseDto<StageResDto>> {
-    console.log('updateStageDto', updateStageDto);
-
-    const stageEntity = await this.stagesRepository.findOne({ where: { id } });
-    if (!stageEntity) {
-      throw new NotFoundException('Trạng thái (stage) không tồn tại');
-    }
-
-    // Kiểm tra title không được trùng với các stage khác (nếu có thay đổi title, không phân biệt viết hoa/thường)
-    if (updateStageDto.title && updateStageDto.title.toLowerCase() !== stageEntity.title.toLowerCase()) {
-      const existingStage = await this.stagesRepository
-        .createQueryBuilder('stage')
-        .where('LOWER(stage.title) = LOWER(:title)', { title: updateStageDto.title })
-        .andWhere('stage.id != :id', { id })
-        .getOne();
-      if (existingStage) {
-        throw new BadRequestException(
-          `Tên stage "${updateStageDto.title}" đã tồn tại trong hệ thống`,
-        );
-      }
-    }
-
-    if (
-      stageEntity.isBuiltIn &&
-      updateStageDto.stageGroup &&
-      updateStageDto.stageGroup !== stageEntity.stageGroup
-    ) {
-      throw new BadRequestException(
-        'Không thể thay đổi nhóm của stage mặc định',
-      );
-    }
-
-    if (
-      stageEntity.isBuiltIn &&
-      'position' in updateStageDto &&
-      updateStageDto.position !== stageEntity.position
-    ) {
-      console.log(
-        'stageEntity.isBuiltIn',
-        stageEntity.isBuiltIn,
-        'position in updateStageDto',
-        'position' in updateStageDto,
-        'updateStageDto.position !== stageEntity.position',
-        updateStageDto.position !== stageEntity.position,
-      );
-
-      throw new BadRequestException(
-        'Không thể thay đổi vị trí của stage mặc định',
-      );
-    }
-
-    const oldStageGroup = stageEntity.stageGroup;
-    const newStageGroup = updateStageDto.stageGroup || oldStageGroup;
-
-    // Nếu thay đổi nhóm
-    if (newStageGroup !== oldStageGroup) {
-      // Kiểm tra các ràng buộc chuyển nhóm
-      if (newStageGroup === StageGroup.CLOSED) {
-        // Không cho phép thêm stage vào nhóm CLOSED
-        throw new BadRequestException('Không thể chuyển stage vào nhóm Closed');
-      }
-
-      // Tính toán vị trí mới trong nhóm mới
-      const stagesInNewGroup = await this.stagesRepository.find({
-        where: { stageGroup: newStageGroup },
-        order: { groupPosition: 'ASC' },
-      });
-
-      // Thêm vào cuối nhóm mới
-      const newGroupPosition = stagesInNewGroup.length;
-
-      // Cập nhật stage
-      Object.assign(stageEntity, {
-        ...updateStageDto,
-        stageGroup: newStageGroup,
-        groupPosition: newGroupPosition,
-      });
-
-      await this.stagesRepository.save(stageEntity);
-
-      // Reorder lại 2 nhóm
-      await this.reorderStagesInGroup(oldStageGroup);
-      await this.reorderStagesInGroup(newStageGroup);
-
-      // Cập nhật lại position tổng thể
-      await this.updateGlobalPositions();
-    } else if (
-      updateStageDto.position !== undefined &&
-      updateStageDto.position !== stageEntity.position
-    ) {
-      // Di chuyển trong cùng nhóm
-      const stagesInGroup = await this.stagesRepository.find({
-        where: { stageGroup: stageEntity.stageGroup },
-        order: { groupPosition: 'ASC' },
-      });
-
-      const oldGroupPosition = stageEntity.groupPosition;
-      const newGroupPosition = Math.min(
-        Math.max(0, updateStageDto.position),
-        stagesInGroup.length - 1,
-      );
-
-      // Cập nhật các stages khác trong nhóm
-      if (newGroupPosition > oldGroupPosition) {
-        await this.stagesRepository
-          .createQueryBuilder()
-          .update(StagesEntity)
-          .set({ groupPosition: () => 'groupPosition - 1' })
-          .where('stageGroup = :stageGroup', {
-            stageGroup: stageEntity.stageGroup,
-          })
-          .andWhere('groupPosition > :oldPos AND groupPosition <= :newPos', {
-            oldPos: oldGroupPosition,
-            newPos: newGroupPosition,
-          })
-          .execute();
-      } else if (newGroupPosition < oldGroupPosition) {
-        await this.stagesRepository
-          .createQueryBuilder()
-          .update(StagesEntity)
-          .set({ groupPosition: () => 'groupPosition + 1' })
-          .where('stageGroup = :stageGroup', {
-            stageGroup: stageEntity.stageGroup,
-          })
-          .andWhere('groupPosition >= :newPos AND groupPosition < :oldPos', {
-            oldPos: oldGroupPosition,
-            newPos: newGroupPosition,
-          })
-          .execute();
-      }
-
-      // Cập nhật stage hiện tại
-      Object.assign(stageEntity, {
-        ...updateStageDto,
-        groupPosition: newGroupPosition,
-      });
-
-      await this.stagesRepository.save(stageEntity);
-
-      // Cập nhật position tổng thể
-      await this.updateGlobalPositions();
-    } else {
-      // Chỉ cập nhật các trường khác
-      Object.assign(stageEntity, updateStageDto);
-      await this.stagesRepository.save(stageEntity);
-    }
-
-    // Lấy stage đã cập nhật
-    const updatedStage = await this.stagesRepository.findOne({
-      where: { id: stageEntity.id },
-    });
-
-    return new ResponseDto<StageResDto>({
-      data: plainToInstance(StageResDto, updatedStage, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật trạng thái (stage) thành công',
-    });
-  }
-
-  // Cập nhật hàm remove để áp dụng ràng buộc
-  async remove(id: Uuid): Promise<ResponseNoDataDto> {
-    const stageEntity = await this.stagesRepository.findOne({ where: { id } });
-    if (!stageEntity) throw new NotFoundException('Stage not found');
-
-    // Không cho phép xóa stage mặc định
-    if (stageEntity.isBuiltIn) {
-      throw new BadRequestException(
-        'Không thể xóa stage mặc định của hệ thống',
-      );
-    }
-
-    const stageGroup = stageEntity.stageGroup;
-
-    await this.stagesRepository.remove(stageEntity);
-
-    // Cập nhật lại vị trí trong nhóm và vị trí toàn cục
-    await this.reorderStagesInGroup(stageGroup);
-    await this.updateGlobalPositions();
-
-    return new ResponseNoDataDto({
-      message: 'Xóa trạng thái (stage) thành công',
-    });
-  }
-
-  // Cập nhật vị trí tổng thể dựa trên stageGroup và groupPosition
-  private async updateGlobalPositions(): Promise<void> {
-    // Thứ tự của các nhóm
-    const groupOrder = [
-      StageGroup.NOT_STARTED,
-      StageGroup.ACTIVE,
-      StageGroup.DONE,
-      StageGroup.CLOSED,
-    ];
-
-    let globalPosition = 0;
-
-    // Cập nhật position cho từng nhóm theo thứ tự
-    for (const group of groupOrder) {
-      const stagesInGroup = await this.stagesRepository.find({
-        where: { stageGroup: group },
-        order: { groupPosition: 'ASC' },
-      });
-
-      for (const stage of stagesInGroup) {
-        if (stage.position !== globalPosition) {
-          await this.stagesRepository.update(stage.id, {
-            position: globalPosition,
-          });
-        }
-        globalPosition++;
-      }
+      qb.addOrderBy('stage.position', query.order || 'ASC');
     }
   }
 
-  private async reorderStagesInGroup(stageGroup: StageGroup): Promise<void> {
-    const stages = await this.stagesRepository.find({
-      where: { stageGroup },
-      order: { groupPosition: 'ASC' },
-    });
-
-    for (let i = 0; i < stages.length; i++) {
-      if (stages[i].groupPosition !== i) {
-        await this.stagesRepository.update(stages[i].id, { groupPosition: i });
-      }
-    }
-  }
-
-  async initDefaultStages(): Promise<void> {
-    const defaultStages = [
+  private getDefaultStagesConfig() {
+    return [
       {
         title: 'TO DO',
         color: '#FF0000',
@@ -471,44 +666,23 @@ export class StagesService {
         color: '#0000FF',
         stageGroup: StageGroup.ACTIVE,
         isBuiltIn: true,
-        groupPosition: 1,
+        groupPosition: 0,
       },
       {
         title: 'DONE',
         color: '#00FF00',
         stageGroup: StageGroup.DONE,
         isBuiltIn: true,
-        groupPosition: 2,
+        groupPosition: 0,
       },
       {
         title: 'COMPLETE',
         color: '#008000',
         stageGroup: StageGroup.CLOSED,
         isBuiltIn: true,
-        groupPosition: 3,
+        groupPosition: 0,
+        isCompleted: true,
       },
     ];
-
-    for (const groupStage of defaultStages) {
-      const existing = await this.stagesRepository.findOne({
-        where: {
-          stageGroup: groupStage.stageGroup,
-          isBuiltIn: true,
-        },
-      });
-
-      if (!existing) {
-        await this.stagesRepository.save(
-          this.stagesRepository.create(groupStage),
-        );
-      }
-
-      // update lại như cũ nếu có sự thay đổi
-      else {
-        await this.stagesRepository.update(existing.id, groupStage);
-      }
-    }
-
-    await this.updateGlobalPositions();
   }
 }

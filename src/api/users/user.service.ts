@@ -19,6 +19,7 @@ import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
+import { StagesService } from '../stages/stages.service';
 import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { Workspaces } from '../workspaces/entities/workspace.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -41,6 +42,7 @@ export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+    private readonly stageService: StagesService,
   ) {}
 
   private canUpdateUser(currentRole: UserRole, targetRole: UserRole): boolean {
@@ -67,18 +69,20 @@ export class UserService {
       await userRepo.save(user);
 
       const workspace = workspaceRepo.create({
-        name: `${user.name} Workspace`,
+        name: `${user.name}'s Workspace`,
         owner: user,
         visibility: WorkspaceVisibility.PRIVATE,
       });
-      await workspaceRepo.save(workspace);
+      const savedWorkspace = await workspaceRepo.save(workspace);
 
       const workspaceMember = workspaceMemberRepo.create({
         user,
-        workspace,
+        workspace: savedWorkspace,
         role: WorkspaceRole.OWNER,
       });
       await workspaceMemberRepo.save(workspaceMember);
+
+      await this.stageService.initDefaultStages(savedWorkspace.id, manager);
 
       return new ResponseDto({
         data: plainToInstance(UserResDto, user, {

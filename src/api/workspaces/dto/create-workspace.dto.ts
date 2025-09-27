@@ -1,3 +1,4 @@
+import { Uuid } from '@/common/types/common.type';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -50,12 +51,12 @@ export class CreateWorkspaceDto {
       try {
         return JSON.parse(value);
       } catch {
-        return value.split(',').map(id => id.trim());
+        return value.split(',').map((id) => id.trim());
       }
     }
     return value;
   })
   @IsArray()
   @IsUUID('4', { each: true })
-  assigneeIds?: string[];
+  members?: Uuid[];
 }

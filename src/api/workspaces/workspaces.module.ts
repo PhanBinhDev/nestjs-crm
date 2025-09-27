@@ -1,5 +1,8 @@
 import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+import { StagesModule } from '../stages/stages.module';
+import { UserEntity } from '../users/entities/user.entity';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { WorkspaceViewSettings } from './entities/workspace-view-settings.entity';
 import { Workspaces } from './entities/workspace.entity';
@@ -13,7 +16,10 @@ import { WorkspacesService } from './workspaces.service';
       Workspaces,
       WorkspaceMembers,
       WorkspaceViewSettings,
+      UserEntity,
+      DataSource,
     ]),
+    StagesModule,
   ],
   controllers: [WorkspacesController],
   providers: [WorkspacesService],

@@ -1,6 +1,9 @@
+import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
+import { Uuid } from '@/common/types/common.type';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { StageGroup } from '@/database/enum/stage.enum';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 
 @Entity('stages')
 export class StagesEntity extends AbstractEntity {
@@ -43,4 +46,16 @@ export class StagesEntity extends AbstractEntity {
     default: 0,
   })
   groupPosition: number;
+
+  @Column({ type: 'uuid', nullable: false })
+  workspaceId: Uuid;
+
+  @ManyToOne(() => Workspaces, (workspace) => workspace.stages, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'workspaceId' })
+  workspace: WrapperType<Workspaces>;
+
+  @Column({ type: 'boolean', default: false })
+  isCompleted: boolean;
 }

@@ -5,7 +5,9 @@ import { WorkspaceRole } from '@/database/enum/workspace.enum';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
+import { StagesService } from '../stages/stages.service';
+import { UserEntity } from '../users/entities/user.entity';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
@@ -22,6 +24,14 @@ export class WorkspacesService {
 
     @InjectRepository(WorkspaceMembers)
     private readonly membersRepository: Repository<WorkspaceMembers>,
+
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
+
+    @InjectRepository(DataSource)
+    private readonly dataSource: DataSource,
+
+    private readonly stagesService: StagesService,
   ) {}
 
   async remove(id: Uuid, currentUserId: Uuid): Promise<ResponseNoDataDto> {
@@ -68,39 +78,53 @@ export class WorkspacesService {
     dto: CreateWorkspaceDto,
     ownerId: Uuid,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
-    // Tạo workspace
-    const workspace = this.workspaceRepository.create({
-      ...dto,
-      ownerId,
-    });
-    await this.workspaceRepository.save(workspace);
+    return await this.dataSource.transaction(async (manager) => {
+      const { members, ...body } = dto;
 
-    // Thêm owner làm member với role OWNER
-    await this.membersRepository.save(
-      this.membersRepository.create({
-        workspaceId: workspace.id,
+      const workspace = this.workspaceRepository.create(body);
+      const savedWorkspace = await manager.save(workspace);
+
+      await this.stagesService.initDefaultStages(savedWorkspace.id, manager);
+
+      const ownerMember = this.membersRepository.create({
+        workspaceId: savedWorkspace.id,
         userId: ownerId,
         role: WorkspaceRole.OWNER,
-      }),
-    );
+      });
+      await manager.save(ownerMember);
 
-    // Thêm các members được mời nếu có
-    if (dto.assigneeIds && dto.assigneeIds.length > 0) {
-      const membersToAdd = dto.assigneeIds.map((userId) =>
-        this.membersRepository.create({
-          workspaceId: workspace.id,
-          userId,
-          role: WorkspaceRole.MEMBER,
+      if (members && members.length > 0) {
+        const users = await manager.find(this.userRepository.target, {
+          where: { id: In(members) },
+        });
+
+        if (users.length !== members.length) {
+          const foundUserIds = users.map((user) => user.id);
+          const missingUserIds = members.filter(
+            (id) => !foundUserIds.includes(id),
+          );
+          throw new BadRequestException(
+            `Không tìm thấy người dùng với ID: ${missingUserIds.join(', ')}`,
+          );
+        }
+
+        const membersToAdd = members.map((userId) =>
+          this.membersRepository.create({
+            workspaceId: savedWorkspace.id,
+            userId,
+            role: WorkspaceRole.MEMBER,
+          }),
+        );
+
+        await manager.save(membersToAdd);
+      }
+
+      return new ResponseDto<BaseWorkspaceResDto>({
+        data: plainToInstance(BaseWorkspaceResDto, savedWorkspace, {
+          excludeExtraneousValues: true,
         }),
-      );
-      await this.membersRepository.save(membersToAdd);
-    }
-
-    return new ResponseDto<BaseWorkspaceResDto>({
-      data: plainToInstance(BaseWorkspaceResDto, workspace, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Tạo không gian làm việc thành công',
+        message: 'Tạo không gian làm việc thành công',
+      });
     });
   }
 
@@ -177,7 +201,9 @@ export class WorkspacesService {
     id: Uuid,
     dto: CreateWorkspaceDto,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
-    await this.workspaceRepository.update(id, dto);
+    const { members: _members, ...body } = dto;
+
+    await this.workspaceRepository.update(id, body);
     const updatedWorkspace = await this.workspaceRepository.findOne({
       where: { id },
     });

@@ -1,4 +1,5 @@
 import { ActivityEntity } from '@/api/activities/entities/activity.entity';
+import { StagesEntity } from '@/api/stages/entities/stage.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
@@ -46,6 +47,14 @@ export class Workspaces extends AbstractEntity {
   })
   avatars?: string;
 
+  @Column({
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+    unique: true,
+  })
+  inviteCode?: string;
+
   @OneToMany(() => WorkspaceMembers, (member) => member.workspace, {
     cascade: true,
   })
@@ -56,7 +65,9 @@ export class Workspaces extends AbstractEntity {
   })
   settingsView?: WorkspaceViewSettings[];
 
-  // Activity
   @OneToMany(() => ActivityEntity, (activity) => activity.workspace)
   activities?: ActivityEntity[];
+
+  @OneToMany(() => StagesEntity, (stage) => stage.workspace)
+  stages?: StagesEntity[];
 }

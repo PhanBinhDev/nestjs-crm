@@ -78,9 +78,7 @@ export class AuthController {
   @ApiPublic()
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  async googleAuth() {
-    // Guard redirects to Google
-  }
+  async googleAuth() {}
 
   @ApiPublic()
   @Get('google/callback')
