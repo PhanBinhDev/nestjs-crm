@@ -346,7 +346,6 @@ export class UserService {
     url: string,
   ): Promise<ResponseDto<ImportUsersResponseDto>> {
     try {
-      // Validate URL format
       try {
         const urlObj = new URL(url);
         if (
@@ -358,14 +357,13 @@ export class UserService {
             'Invalid Google Sheets URL. URL must be in export format: /export?format=xlsx',
           );
         }
-      } catch (error) {
+      } catch {
         throw new BadRequestException('Invalid URL format');
       }
 
-      // Download file from URL
       const response = await axios.get(url, {
         responseType: 'arraybuffer',
-        timeout: 30000, // 30 seconds timeout
+        timeout: 30000,
       });
 
       if (response.status !== 200) {
@@ -376,7 +374,6 @@ export class UserService {
 
       const buffer = Buffer.from(response.data);
 
-      // Create a mock file object to reuse existing import logic
       const mockFile: Express.Multer.File = {
         fieldname: 'file',
         originalname: 'import_from_url.xlsx',
@@ -391,7 +388,6 @@ export class UserService {
         path: null,
       };
 
-      // Reuse existing import logic
       return await this.importUsers(mockFile);
     } catch (error) {
       this.logger.error('Error importing users from URL:', error);

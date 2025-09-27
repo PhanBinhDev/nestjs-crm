@@ -132,7 +132,6 @@ export class StagesService {
       if (!stageEntity) {
         throw new NotFoundException('Trạng thái (stage) không tồn tại');
       }
-
       // 2. Validate updates
       await this.validateStageUpdate(manager, stageEntity, updateStageDto);
 
@@ -668,19 +667,26 @@ export class StagesService {
         groupPosition: 0,
       },
       {
+        title: 'OVERDUE',
+        color: '#FFA500',
+        stageGroup: StageGroup.ACTIVE,
+        isBuiltIn: true,
+        groupPosition: 0,
+      },
+      {
         title: 'DONE',
         color: '#00FF00',
         stageGroup: StageGroup.DONE,
         isBuiltIn: true,
         groupPosition: 0,
+        isCompleted: true,
       },
       {
-        title: 'COMPLETE',
-        color: '#008000',
+        title: 'CLOSED',
+        color: '#808080',
         stageGroup: StageGroup.CLOSED,
         isBuiltIn: true,
         groupPosition: 0,
-        isCompleted: true,
       },
     ];
   }

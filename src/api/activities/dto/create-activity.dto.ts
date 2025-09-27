@@ -1,3 +1,4 @@
+import { Uuid } from '@/common/types/common.type';
 import {
   ActivityCategory,
   ActivityPiority,
@@ -56,7 +57,7 @@ export class CreateActivityDto {
     description: 'ID giai đoạn (nếu có)',
     nullable: true,
   })
-  stageId?: string;
+  stageId?: Uuid;
 
   @DateFieldOptional({
     example: '2025-08-01T09:00:00Z',

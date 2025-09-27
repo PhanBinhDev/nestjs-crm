@@ -522,7 +522,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  // TODO: log delete
   async deleteActivity(id: Uuid, userId: Uuid): Promise<ResponseNoDataDto> {
     return this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
@@ -530,7 +529,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const activityFileRepo = manager.getRepository(ActivityFileEntity);
       const userRepo = manager.getRepository(UserEntity);
 
-      // Lấy thông tin activity cần xóa
       const activity = await activityRepo.findOne({
         where: { id },
         relations: ['files', 'parent'],
@@ -540,54 +538,42 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         throw new NotFoundException('Hoạt động không tồn tại');
       }
 
-      // Lấy thông tin user thực hiện xóa
       const user = await userRepo.findOneOrFail({ where: { id: userId } });
 
-      // CHECK NẾU MÀ NÓ CÓ PARENT ID -> nghĩa là đang delete sub task -> ghi log
       if (activity.parentId) {
+        const parentActivity = await activityRepo.findOne({
+          where: { id: activity.parentId },
+        });
+
         const deleteSubTaskLog = activityLogRepo.create({
-          activity: { id: activity.parentId } as ActivityEntity, // Log vào parent activity
+          activity: parentActivity,
           user,
           action: ActivityLogActionEnum.DELETED,
           message: `Xóa công việc phụ: ${activity.name}`,
-          metadata: {
-            type: ActivityLogQueryType.SUB_TASK,
-            deletedSubTaskId: activity.id,
-            deletedSubTaskName: activity.name,
-          },
         });
         await activityLogRepo.save(deleteSubTaskLog);
       } else {
-        // Nếu là main activity thì log vào chính nó
         const deleteActivityLog = activityLogRepo.create({
           activity,
           user,
           action: ActivityLogActionEnum.DELETED,
           message: `Xóa hoạt động: ${activity.name}`,
-          metadata: {
-            // Fix: Sử dụng string literal thay vì enum không tồn tại
-            type: 'MAIN_ACTIVITY',
-            deletedActivityName: activity.name,
-          },
         });
         await activityLogRepo.save(deleteActivityLog);
       }
 
-      // TODO: handle clear file manually here
       if (activity.files && activity.files.length > 0) {
-        // Xóa các file records trong database
         await activityFileRepo.delete({ activityId: id });
         console.log(
           `Đã xóa ${activity.files.length} file(s) liên quan đến activity ${id}`,
         );
       }
 
-      // Xóa activity
       await activityRepo.delete(id);
 
       return new ResponseNoDataDto({
         message: activity.parentId
-          ? 'Xóa công việc phụ thành công'
+          ? 'Xóa hoạt động phụ thành công'
           : 'Xóa hoạt động thành công',
       });
     });
@@ -596,7 +582,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async updateActivity(
     id: Uuid,
     dto: UpdateActivityDto,
-    userId: Uuid, // Thêm userId để biết ai thực hiện update
+    userId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
     return await this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
@@ -611,7 +597,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const newStageId = dto.stageId ?? activity.stageId;
       const newPosition = dto.position ?? activity.position;
 
-      // Logic di chuyển position (giữ nguyên như cũ)
       const hasStageChange = dto.stageId && dto.stageId !== oldStageId;
       const hasPositionChange =
         dto.position !== undefined && dto.position !== oldPosition;

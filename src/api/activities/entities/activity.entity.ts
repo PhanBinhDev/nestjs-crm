@@ -1,6 +1,7 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { StagesEntity } from '@/api/stages/entities/stage.entity';
 import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
+import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
@@ -35,7 +36,7 @@ export class ActivityEntity extends AbstractEntity {
   stage?: StagesEntity;
 
   @Column({ type: 'uuid', nullable: true })
-  stageId?: string;
+  stageId?: Uuid;
 
   @Column({ type: 'timestamptz', nullable: true })
   startTime?: Date;
@@ -56,7 +57,7 @@ export class ActivityEntity extends AbstractEntity {
   estimateTime?: number;
 
   @Column({ type: 'uuid', nullable: true })
-  parentId?: string;
+  parentId?: Uuid;
 
   @Column({ type: 'int', default: 0 })
   position: number;
@@ -68,7 +69,7 @@ export class ActivityEntity extends AbstractEntity {
   parent?: ActivityEntity;
 
   @Column({ type: 'uuid', nullable: false })
-  workspaceId: string;
+  workspaceId: Uuid;
 
   @ManyToOne(() => Workspaces, (workspace) => workspace.activities, {
     nullable: true,
@@ -87,7 +88,7 @@ export class ActivityEntity extends AbstractEntity {
   status: ActivityStatus;
 
   @Column({ type: 'uuid', nullable: true })
-  semesterId?: string;
+  semesterId?: Uuid;
 
   @Column({ type: 'int', nullable: true })
   instructorCount?: number;
