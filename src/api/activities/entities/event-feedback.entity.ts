@@ -1,15 +1,9 @@
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Unique } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
+import { EventFeedbackFileEntity } from './event-feedback-file.entity';
 
-export enum EventFeedbackRating {
-  ONE = '1',
-  TWO = '2',
-  THREE = '3',
-  FOUR = '4',
-  FIVE = '5',
-}
 
 @Entity('event_feedback')
 @Unique(['activityId', 'email'])
@@ -42,10 +36,9 @@ export class EventFeedbackEntity extends AbstractEntity {
   studentId: string;
 
   @Column({ 
-    type: 'enum', 
-    enum: EventFeedbackRating 
+    type: 'int'
   })
-  rating: EventFeedbackRating;
+  rating: number;
 
   @Column({ type: 'text', nullable: true })
   comments?: string;
@@ -55,4 +48,7 @@ export class EventFeedbackEntity extends AbstractEntity {
 
   @Column({ type: 'timestamptz', default: () => 'now()' })
   submittedAt: Date;
+
+  @OneToMany(() => EventFeedbackFileEntity, (file) => file.eventFeedback)
+  files: EventFeedbackFileEntity[];
 }

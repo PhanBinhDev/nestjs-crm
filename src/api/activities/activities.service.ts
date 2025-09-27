@@ -54,6 +54,7 @@ import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
+import { EventFeedbackFileEntity } from './entities/event-feedback-file.entity';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
@@ -82,6 +83,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityLogRepository: Repository<ActivityLogEntity>,
     @InjectRepository(EventFeedbackEntity)
     private readonly eventFeedbackRepo: Repository<EventFeedbackEntity>,
+    @InjectRepository(EventFeedbackFileEntity)
+    private readonly eventFeedbackFileRepo: Repository<EventFeedbackFileEntity>,
   ) {
     super(activityRepo);
   }
@@ -1193,26 +1196,46 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new BadRequestException('Email này đã đánh giá sự kiện này rồi');
     }
 
-    const feedback = this.eventFeedbackRepo.create({
-      activityId,
-      email: dto.email,
-      numPhone: dto.numPhone,
-      fullName: dto.fullName,
-      studentId: dto.studentId,
-      rating: dto.rating,
-      comments: dto.comments,
-      image: dto.image,
-    });
+    return await this.dataSource.transaction(async (manager) => {
+      const feedback = manager.create(EventFeedbackEntity, {
+        activityId,
+        email: dto.email,
+        numPhone: dto.numPhone,
+        fullName: dto.fullName,
+        studentId: dto.studentId,
+        rating: dto.rating,
+        comments: dto.comments,
+      });
 
-    await this.eventFeedbackRepo.save(feedback);
+      const savedFeedback = await manager.save(feedback);
 
-    return new ResponseDto<EventFeedbackResDto>({
-      data: plainToInstance(EventFeedbackResDto, feedback, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Tạo đánh giá sự kiện thành công',
+      // Xử lý images nếu có
+      if (dto.images && dto.images.length > 0) {
+        const feedbackFiles = dto.images.map(image => 
+          manager.create(EventFeedbackFileEntity, {
+            eventFeedbackId: savedFeedback.id,
+            uid: image.uid,
+            name: image.name,
+          })
+        );
+        await manager.save(feedbackFiles);
+      }
+
+      // Lấy feedback với files
+      const feedbackWithFiles = await manager.findOne(EventFeedbackEntity, {
+        where: { id: savedFeedback.id },
+        relations: ['files'],
+      });
+
+      return new ResponseDto<EventFeedbackResDto>({
+        data: plainToInstance(EventFeedbackResDto, feedbackWithFiles, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo đánh giá sự kiện thành công',
+      });
     });
   }
+
 
   async getEventFeedbacksByActivityId(
     activityId: Uuid,
@@ -1230,6 +1253,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
+      relations: ['files'],
       order: { submittedAt: 'DESC' },
     });
 
@@ -1288,7 +1312,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     // Tính điểm trung bình
-    const ratingValues = feedbacks.map((f) => parseInt(f.rating));
+    const ratingValues = feedbacks.map((f) => f.rating);
     const averageRating =
       ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 

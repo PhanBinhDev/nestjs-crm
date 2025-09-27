@@ -89,6 +89,12 @@ export class ActivityEntity extends AbstractEntity {
   @Column({ type: 'uuid', nullable: true })
   semesterId?: string;
 
+  @Column({ type: 'int', nullable: true })
+  instructorCount?: number;
+
+  @Column({ type: 'int', nullable: true })
+  studentCount?: number;
+
   @OneToMany(
     () => ActivityParticipantEntity,
     (participant) => participant.activity,

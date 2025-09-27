@@ -30,7 +30,18 @@ export class StagesService {
   async create(
     createStageDto: CreateStageDto,
   ): Promise<ResponseDto<StageResDto>> {
-    const { stageGroup = StageGroup.ACTIVE } = createStageDto;
+    const { stageGroup = StageGroup.ACTIVE, title } = createStageDto;
+
+    // Kiểm tra title không được trùng với các stage khác (không phân biệt viết hoa/thường)
+    const existingStage = await this.stagesRepository
+      .createQueryBuilder('stage')
+      .where('LOWER(stage.title) = LOWER(:title)', { title })
+      .getOne();
+    if (existingStage) {
+      throw new BadRequestException(
+        `Tên stage "${title}" đã tồn tại trong hệ thống`,
+      );
+    }
 
     // Kiểm tra ràng buộc: không cho phép tạo thêm stage trong nhóm CLOSED
     if (stageGroup === StageGroup.CLOSED) {
@@ -224,6 +235,20 @@ export class StagesService {
     const stageEntity = await this.stagesRepository.findOne({ where: { id } });
     if (!stageEntity) {
       throw new NotFoundException('Trạng thái (stage) không tồn tại');
+    }
+
+    // Kiểm tra title không được trùng với các stage khác (nếu có thay đổi title, không phân biệt viết hoa/thường)
+    if (updateStageDto.title && updateStageDto.title.toLowerCase() !== stageEntity.title.toLowerCase()) {
+      const existingStage = await this.stagesRepository
+        .createQueryBuilder('stage')
+        .where('LOWER(stage.title) = LOWER(:title)', { title: updateStageDto.title })
+        .andWhere('stage.id != :id', { id })
+        .getOne();
+      if (existingStage) {
+        throw new BadRequestException(
+          `Tên stage "${updateStageDto.title}" đã tồn tại trong hệ thống`,
+        );
+      }
     }
 
     if (

@@ -116,6 +116,24 @@ export class ActivityResDto {
   @Expose()
   workspaceId: Uuid;
 
+  @ApiProperty({
+    example: 5,
+    required: false,
+    nullable: true,
+    description: 'Số lượng giảng viên tham gia',
+  })
+  @Expose()
+  instructorCount?: number;
+
+  @ApiProperty({
+    example: 30,
+    required: false,
+    nullable: true,
+    description: 'Số lượng sinh viên tham gia',
+  })
+  @Expose()
+  studentCount?: number;
+
   @ApiProperty({ type: () => SemesterResDto, required: false })
   @Expose()
   @Type(() => SemesterResDto)
