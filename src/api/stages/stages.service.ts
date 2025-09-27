@@ -675,7 +675,7 @@ export class StagesService {
       },
       {
         title: 'DONE',
-        color: '#00FF00',
+        color: '#059669',
         stageGroup: StageGroup.DONE,
         isBuiltIn: true,
         groupPosition: 0,
