@@ -17,7 +17,6 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { DataSource } from 'typeorm';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
@@ -27,6 +26,8 @@ import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
+import { CategoryResDto } from './dto/category.res.dto';
+import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
@@ -40,10 +41,28 @@ import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 @ApiTags('activities')
 @Controller('activities')
 export class ActivitiesController {
-  constructor(
-    private readonly activitiesService: ActivitiesService,
-    private readonly dataSource: DataSource,
-  ) {}
+  constructor(private readonly activitiesService: ActivitiesService) {}
+
+  @Get('category')
+  @ApiAuth({
+    summary: 'Lấy danh sách danh mục hoạt động',
+    type: CategoryResDto,
+    isArray: true,
+  })
+  getActivityCategories() {
+    return this.activitiesService.getActivityCategories();
+  }
+
+  @Post('category')
+  @ApiAuth({
+    summary: 'Tạo mới danh mục hoạt động',
+    type: CategoryResDto,
+  })
+  @Roles(UserRole.TM)
+  createActivityCategory(@Body() dto: CategoryDto) {
+    return this.activitiesService.createActivityCategory(dto);
+  }
+
   @Get(':id/logs')
   @ApiAuth({
     summary: 'Lấy danh sách log chi tiết của activity',

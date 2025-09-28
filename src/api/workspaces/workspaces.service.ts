@@ -214,7 +214,7 @@ export class WorkspacesService {
     });
   }
 
-  async findMembers(id: Uuid, currentUserId: Uuid) {
+  async findMembers(id: Uuid, currentUserId: Uuid, q: string) {
     const isInWorkspace = await this.checkUserInWorkspace(currentUserId, id);
     if (!isInWorkspace) {
       throw new BadRequestException(
@@ -222,10 +222,19 @@ export class WorkspacesService {
       );
     }
 
-    const members = await this.membersRepository.find({
-      where: { workspaceId: id },
-      relations: ['user'],
-    });
+    const queryBuilder = this.membersRepository
+      .createQueryBuilder('member')
+      .leftJoinAndSelect('member.user', 'user')
+      .where('member.workspaceId = :workspaceId', { workspaceId: id });
+
+    if (q) {
+      queryBuilder.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
+        q: `%${q}%`,
+      });
+    }
+
+    const members = await queryBuilder.getMany();
+
     return new ResponseDto<WorkspaceMemberResDto[]>({
       data: plainToInstance(WorkspaceMemberResDto, members, {
         excludeExtraneousValues: true,

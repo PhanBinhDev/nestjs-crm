@@ -5,13 +5,13 @@ import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
-  ActivityCategory,
   ActivityPiority,
   ActivityStatus,
   ActivityType,
 } from '@/database/enum/activity.enum';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { ActivityAssigneeEntity } from './activity-assignee.entity';
+import { ActivityCategoryEntity } from './activity-category.entity';
 import { ActivityChecklistEntity } from './activity-checklist.entity';
 import { ActivityFeedbackEntity } from './activity-feedback.entity';
 import { ActivityFileEntity } from './activity-file.entity';
@@ -81,8 +81,11 @@ export class ActivityEntity extends AbstractEntity {
   @OneToMany(() => ActivityEntity, (activity) => activity.parent)
   subActivities: ActivityEntity[];
 
-  @Column({ type: 'enum', enum: ActivityCategory, nullable: true })
-  category?: ActivityCategory;
+  @ManyToOne(() => ActivityCategoryEntity, (category) => category.activities, {
+    nullable: true,
+  })
+  @JoinColumn({ name: 'categoryId' })
+  category?: ActivityCategoryEntity;
 
   @Column({ type: 'enum', enum: ActivityStatus, default: ActivityStatus.NEW })
   status: ActivityStatus;

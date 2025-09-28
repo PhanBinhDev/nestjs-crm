@@ -15,7 +15,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
@@ -81,11 +81,17 @@ export class WorkspacesController {
     name: 'workspaceId',
     description: 'ID của không gian làm việc',
   })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    description: 'Từ khóa tìm kiếm thành viên (tên hoặc email)',
+  })
   findMembers(
     @Param('workspaceId') workspaceId: Uuid,
     @CurrentUser('id') currentUserId: Uuid,
+    @Query('q') q?: string,
   ) {
-    return this.workspacesService.findMembers(workspaceId, currentUserId);
+    return this.workspacesService.findMembers(workspaceId, currentUserId, q);
   }
 
   @Patch(':workspaceId')

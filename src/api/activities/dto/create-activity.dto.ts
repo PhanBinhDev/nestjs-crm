@@ -1,9 +1,5 @@
 import { Uuid } from '@/common/types/common.type';
-import {
-  ActivityCategory,
-  ActivityPiority,
-  ActivityType,
-} from '@/database/enum/activity.enum';
+import { ActivityPiority, ActivityType } from '@/database/enum/activity.enum';
 import {
   BooleanFieldOptional,
   DateFieldOptional,
@@ -89,11 +85,12 @@ export class CreateActivityDto {
   })
   mandatory?: boolean;
 
-  @EnumFieldOptional(() => ActivityCategory, {
-    example: ActivityCategory.SEMINAR,
-    description: 'Danh mục hoạt động',
+  @UUIDFieldOptional({
+    example: 'category-uuid',
+    description: 'ID danh mục hoạt động (Dành cho event)',
+    nullable: true,
   })
-  category?: ActivityCategory;
+  categoryId: Uuid;
 
   @UUIDFieldOptional({
     example: 'parent-activity-uuid',
@@ -163,6 +160,7 @@ export class CreateActivityDto {
       'Danh sách người được gán cho hoạt động (chỉ cần userId, role mặc định collaborator)',
   })
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ActivityAssigneeDto)
   assignees?: ActivityAssigneeDto[];

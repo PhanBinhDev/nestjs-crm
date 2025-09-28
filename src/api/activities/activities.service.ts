@@ -25,7 +25,9 @@ import { plainToInstance } from 'class-transformer';
 import { DataSource, Repository } from 'typeorm';
 import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
+import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
@@ -33,8 +35,9 @@ import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { AttachFileDto } from './dto/attach-file.dto';
 import { AttachFileResDto } from './dto/attach-file.res.dto';
+import { CategoryResDto } from './dto/category.res.dto';
+import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
-import { CreateActivityLogDto } from './dto/create-activity-log.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -44,6 +47,7 @@ import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
+import { ActivityCategoryEntity } from './entities/activity-category.entity';
 import {
   ActivityChecklistEntity,
   ActivityChecklistItemEntity,
@@ -79,8 +83,35 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityLogRepository: Repository<ActivityLogEntity>,
     @InjectRepository(EventFeedbackEntity)
     private readonly eventFeedbackRepo: Repository<EventFeedbackEntity>,
+    @InjectRepository(ActivityCategoryEntity)
+    private readonly activityCategoryRepo: Repository<ActivityCategoryEntity>,
+    @InjectRepository(StagesEntity)
+    private readonly stageRepo: Repository<StagesEntity>,
   ) {
     super(activityRepo);
+  }
+
+  async getActivityCategories(): Promise<ResponseDto<CategoryResDto[]>> {
+    const categories = await this.activityCategoryRepo.find();
+    return new ResponseDto<CategoryResDto[]>({
+      data: plainToInstance(CategoryResDto, categories, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách danh mục hoạt động thành công',
+    });
+  }
+
+  async createActivityCategory(
+    createCategoryDto: CategoryDto,
+  ): Promise<ResponseDto<CategoryResDto>> {
+    const category = this.activityCategoryRepo.create(createCategoryDto);
+    await this.activityCategoryRepo.save(category);
+    return new ResponseDto<CategoryResDto>({
+      data: plainToInstance(CategoryResDto, category, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tạo danh mục hoạt động thành công',
+    });
   }
 
   async getActivityLogs(
@@ -587,170 +618,63 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return await this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const activityAssigneeRepo = manager.getRepository(
+        ActivityAssigneeEntity,
+      );
       const userRepo = manager.getRepository(UserEntity);
 
-      const activity = await activityRepo.findOneOrFail({ where: { id } });
+      const activity = await activityRepo.findOneOrFail({
+        where: { id },
+        relations: ['assignees', 'assignees.user'],
+      });
       const user = await userRepo.findOneOrFail({ where: { id: userId } });
 
-      const oldStageId = activity.stageId;
-      const oldPosition = activity.position;
-      const newStageId = dto.stageId ?? activity.stageId;
-      const newPosition = dto.position ?? activity.position;
+      const oldValues = {
+        stageName: activity.stage?.title,
+        stageId: activity.stageId,
+        position: activity.position,
+        name: activity.name,
+        priority: activity.priority,
+        startTime: activity.startTime,
+        endTime: activity.endTime,
+        type: activity.type,
+        description: activity.description,
+        location: activity.location,
+        onlineLink: activity.onlineLink,
+        mandatory: activity.mandatory,
+        categoryId: activity?.category?.id,
+        categoryName: activity?.category?.name,
+        parentId: activity.parentId,
+        estimateTime: activity.estimateTime,
+        semesterId: activity.semesterId,
+        instructorCount: activity.instructorCount,
+        studentCount: activity.studentCount,
+        assignees: activity.assignees || [],
+      };
 
-      const hasStageChange = dto.stageId && dto.stageId !== oldStageId;
-      const hasPositionChange =
-        dto.position !== undefined && dto.position !== oldPosition;
+      await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
 
-      if (hasStageChange) {
-        await Promise.all([
-          activityRepo
-            .createQueryBuilder()
-            .update(ActivityEntity)
-            .set({ position: () => 'position - 1' })
-            .where('stageId = :oldStageId', { oldStageId })
-            .andWhere('position > :oldPosition', { oldPosition })
-            .execute(),
-
-          activityRepo
-            .createQueryBuilder()
-            .update(ActivityEntity)
-            .set({ position: () => 'position + 1' })
-            .where('stageId = :newStageId', { newStageId })
-            .andWhere('position >= :newPosition', { newPosition })
-            .execute(),
-        ]);
-      } else if (hasPositionChange) {
-        if (oldPosition < newPosition) {
-          await activityRepo
-            .createQueryBuilder()
-            .update(ActivityEntity)
-            .set({ position: () => 'position - 1' })
-            .where('stageId = :stageId', { stageId: newStageId })
-            .andWhere('position > :oldPosition', { oldPosition })
-            .andWhere('position <= :newPosition', { newPosition })
-            .execute();
-        } else {
-          await activityRepo
-            .createQueryBuilder()
-            .update(ActivityEntity)
-            .set({ position: () => 'position + 1' })
-            .where('stageId = :stageId', { stageId: newStageId })
-            .andWhere('position >= :newPosition', { newPosition })
-            .andWhere('position < :oldPosition', { oldPosition })
-            .execute();
-        }
+      if (dto.assignees !== undefined) {
+        await this.updateActivityAssignees(
+          activity.id,
+          dto.assignees,
+          activityAssigneeRepo,
+        );
       }
 
-      // Update activity
-      Object.assign(activity, dto);
+      Object.assign(activity, {
+        ...dto,
+        assignees: undefined,
+      });
       await activityRepo.save(activity);
 
-      // TODO: check nếu có stageId nghĩa là change column -> ghi log
-      if (dto.stageId && dto.stageId !== oldStageId) {
-        // Log stage change
-        const stageChangeLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.UPDATED,
-          message: `Chuyển hoạt động từ stage ${oldStageId} sang ${newStageId}`,
-          oldValue: oldStageId,
-          newValue: newStageId,
-          metadata: {
-            type: 'STAGE_CHANGE',
-            field: 'stageId',
-            oldStageId,
-            newStageId,
-          },
-        });
-        await activityLogRepo.save(stageChangeLog);
-      }
-
-      // Log other significant changes
-      const logPromises = [];
-
-      // Log name change
-      if (dto.name && dto.name !== activity.name) {
-        const nameChangeLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.UPDATED,
-          message: `Đổi tên hoạt động từ "${activity.name}" thành "${dto.name}"`,
-          oldValue: activity.name,
-          newValue: dto.name,
-          metadata: {
-            type: 'NAME_CHANGE',
-            field: 'name',
-          },
-        });
-        logPromises.push(activityLogRepo.save(nameChangeLog));
-      }
-
-      // Log priority change
-      if (dto.priority && dto.priority !== activity.priority) {
-        const priorityChangeLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.UPDATED,
-          message: `Thay đổi độ ưu tiên từ ${activity.priority} sang ${dto.priority}`,
-          oldValue: activity.priority,
-          newValue: dto.priority,
-          metadata: {
-            type: 'PRIORITY_CHANGE',
-            field: 'priority',
-          },
-        });
-        logPromises.push(activityLogRepo.save(priorityChangeLog));
-      }
-
-      // Log time changes
-      if (
-        dto.startTime &&
-        new Date(dto.startTime).getTime() !==
-          (activity.startTime instanceof Date
-            ? activity.startTime.getTime()
-            : new Date(activity.startTime).getTime())
-      ) {
-        const startTimeLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.UPDATED,
-          message: `Cập nhật thời gian bắt đầu`,
-          oldValue: activity.startTime,
-          newValue: dto.startTime,
-          metadata: {
-            type: 'TIME_CHANGE',
-            field: 'startTime',
-          },
-        });
-        logPromises.push(activityLogRepo.save(startTimeLog));
-      }
-
-      if (
-        dto.endTime &&
-        new Date(dto.endTime).getTime() !==
-          (activity.endTime instanceof Date
-            ? activity.endTime.getTime()
-            : new Date(activity.endTime).getTime())
-      ) {
-        const endTimeLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.UPDATED,
-          message: `Cập nhật thời gian kết thúc`,
-          oldValue: activity.endTime,
-          newValue: dto.endTime,
-          metadata: {
-            type: 'TIME_CHANGE',
-            field: 'endTime',
-          },
-        });
-        logPromises.push(activityLogRepo.save(endTimeLog));
-      }
-
-      // Execute all log saves
-      if (logPromises.length > 0) {
-        await Promise.all(logPromises);
-      }
+      await this.createActivityUpdateLogs(
+        activity,
+        user,
+        dto,
+        oldValues,
+        activityLogRepo,
+      );
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {
@@ -761,9 +685,420 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  private async logActivity(dto: CreateActivityLogDto) {
-    const activityLog = this.activityLogRepository.create(dto);
-    await this.activityLogRepository.save(activityLog);
+  private async handlePositionAndStageChanges(
+    dto: UpdateActivityDto,
+    oldValues: any,
+    activityRepo: Repository<ActivityEntity>,
+  ): Promise<void> {
+    const hasStageChange =
+      dto.stageId !== undefined && dto.stageId !== oldValues.stageId;
+    const hasPositionChange =
+      dto.position !== undefined && dto.position !== oldValues.position;
+
+    if (hasStageChange) {
+      await Promise.all([
+        activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position - 1' })
+          .where('stageId = :oldStageId', { oldStageId: oldValues.stageId })
+          .andWhere('position > :oldPosition', {
+            oldPosition: oldValues.position,
+          })
+          .execute(),
+
+        activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position + 1' })
+          .where('stageId = :newStageId', { newStageId: dto.stageId })
+          .andWhere('position >= :newPosition', {
+            newPosition: dto.position ?? oldValues.position,
+          })
+          .execute(),
+      ]);
+    } else if (hasPositionChange && !hasStageChange) {
+      const stageId = dto.stageId ?? oldValues.stageId;
+      const oldPosition = oldValues.position;
+      const newPosition = dto.position!;
+
+      if (oldPosition < newPosition) {
+        await activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position - 1' })
+          .where('stageId = :stageId', { stageId })
+          .andWhere('position > :oldPosition', { oldPosition })
+          .andWhere('position <= :newPosition', { newPosition })
+          .execute();
+      } else if (oldPosition > newPosition) {
+        await activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position + 1' })
+          .where('stageId = :stageId', { stageId })
+          .andWhere('position >= :newPosition', { newPosition })
+          .andWhere('position < :oldPosition', { oldPosition })
+          .execute();
+      }
+    }
+  }
+
+  private async updateActivityAssignees(
+    activityId: Uuid,
+    newAssignees: ActivityAssigneeDto[],
+    activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
+  ): Promise<void> {
+    await activityAssigneeRepo.delete({ activityId });
+
+    if (newAssignees && newAssignees.length > 0) {
+      const assigneeEntities = newAssignees.map((assigneeDto) =>
+        activityAssigneeRepo.create({
+          activityId,
+          userId: assigneeDto.userId,
+          role: assigneeDto.role || AssigneeRole.COLLABORATOR,
+        }),
+      );
+      await activityAssigneeRepo.save(assigneeEntities);
+    }
+  }
+
+  private async createActivityUpdateLogs(
+    activity: ActivityEntity,
+    user: UserEntity,
+    dto: UpdateActivityDto,
+    oldValues: any,
+    activityLogRepo: Repository<ActivityLogEntity>,
+  ): Promise<void> {
+    const newStage = dto.stageId
+      ? await this.stageRepo.findOne({ where: { id: dto.stageId } })
+      : null;
+
+    const logPromises: Promise<ActivityLogEntity>[] = [];
+
+    if (dto.stageId !== undefined && dto.stageId !== oldValues.stageId) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Chuyển hoạt động từ stage ${oldValues.stageName} sang ${newStage?.title}`,
+            oldValue: oldValues.stageId,
+            newValue: dto.stageId,
+            metadata: {
+              type: 'STAGE_CHANGE',
+              field: 'stageId',
+              oldStageId: oldValues.stageId,
+              newStageId: dto.stageId,
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log name change
+    if (dto.name !== undefined && dto.name !== oldValues.name) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Đổi tên hoạt động từ "${oldValues.name}" thành "${dto.name}"`,
+            oldValue: oldValues.name,
+            newValue: dto.name,
+            metadata: {
+              type: 'NAME_CHANGE',
+              field: 'name',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log priority change
+    if (dto.priority !== undefined && dto.priority !== oldValues.priority) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`,
+            oldValue: oldValues.priority,
+            newValue: dto.priority,
+            metadata: {
+              type: 'PRIORITY_CHANGE',
+              field: 'priority',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log type change
+    if (dto.type !== undefined && dto.type !== oldValues.type) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi loại hoạt động từ ${oldValues.type} sang ${dto.type}`,
+            oldValue: oldValues.type,
+            newValue: dto.type,
+            metadata: {
+              type: 'TYPE_CHANGE',
+              field: 'type',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log description change
+    if (
+      dto.description !== undefined &&
+      dto.description !== oldValues.description
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Cập nhật mô tả hoạt động`,
+            oldValue: oldValues.description,
+            newValue: dto.description,
+            metadata: {
+              type: 'DESCRIPTION_CHANGE',
+              field: 'description',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log location change
+    if (dto.location !== undefined && dto.location !== oldValues.location) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi địa điểm từ "${oldValues.location || 'không có'}" sang "${dto.location || 'không có'}"`,
+            oldValue: oldValues.location,
+            newValue: dto.location,
+            metadata: {
+              type: 'LOCATION_CHANGE',
+              field: 'location',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log online link change
+    if (
+      dto.onlineLink !== undefined &&
+      dto.onlineLink !== oldValues.onlineLink
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Cập nhật link online`,
+            oldValue: oldValues.onlineLink,
+            newValue: dto.onlineLink,
+            metadata: {
+              type: 'ONLINE_LINK_CHANGE',
+              field: 'onlineLink',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log mandatory change
+    if (dto.mandatory !== undefined && dto.mandatory !== oldValues.mandatory) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi tính bắt buộc từ ${oldValues.mandatory ? 'có' : 'không'} sang ${dto.mandatory ? 'có' : 'không'}`,
+            oldValue: oldValues.mandatory,
+            newValue: dto.mandatory,
+            metadata: {
+              type: 'MANDATORY_CHANGE',
+              field: 'mandatory',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log estimate time change
+    if (
+      dto.estimateTime !== undefined &&
+      dto.estimateTime !== oldValues.estimateTime
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi thời gian ước tính từ ${oldValues.estimateTime || 0} phút sang ${dto.estimateTime} phút`,
+            oldValue: oldValues.estimateTime,
+            newValue: dto.estimateTime,
+            metadata: {
+              type: 'ESTIMATE_TIME_CHANGE',
+              field: 'estimateTime',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.instructorCount !== undefined &&
+      dto.instructorCount !== oldValues.instructorCount
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi số lượng giảng viên từ ${oldValues.instructorCount || 0} sang ${dto.instructorCount}`,
+            oldValue: oldValues.instructorCount,
+            newValue: dto.instructorCount,
+            metadata: {
+              type: 'INSTRUCTOR_COUNT_CHANGE',
+              field: 'instructorCount',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log student count change
+    if (
+      dto.studentCount !== undefined &&
+      dto.studentCount !== oldValues.studentCount
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi số lượng sinh viên từ ${oldValues.studentCount || 0} sang ${dto.studentCount}`,
+            oldValue: oldValues.studentCount,
+            newValue: dto.studentCount,
+            metadata: {
+              type: 'STUDENT_COUNT_CHANGE',
+              field: 'studentCount',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log time changes
+    if (dto.startTime !== undefined) {
+      const oldStartTime =
+        oldValues.startTime instanceof Date
+          ? oldValues.startTime.getTime()
+          : new Date(oldValues.startTime).getTime();
+      const newStartTime = new Date(dto.startTime).getTime();
+
+      if (newStartTime !== oldStartTime) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật thời gian bắt đầu`,
+              oldValue: oldValues.startTime,
+              newValue: dto.startTime,
+              metadata: {
+                type: 'TIME_CHANGE',
+                field: 'startTime',
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    if (dto.endTime !== undefined) {
+      const oldEndTime =
+        oldValues.endTime instanceof Date
+          ? oldValues.endTime.getTime()
+          : new Date(oldValues.endTime).getTime();
+      const newEndTime = new Date(dto.endTime).getTime();
+
+      if (newEndTime !== oldEndTime) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật thời gian kết thúc`,
+              oldValue: oldValues.endTime,
+              newValue: dto.endTime,
+              metadata: {
+                type: 'TIME_CHANGE',
+                field: 'endTime',
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    // Log assignee changes
+    if (dto.assignees !== undefined) {
+      const oldAssigneeIds = oldValues.assignees
+        .map((a: any) => a.userId)
+        .sort();
+      const newAssigneeIds = dto.assignees.map((a) => a.userId).sort();
+
+      if (JSON.stringify(oldAssigneeIds) !== JSON.stringify(newAssigneeIds)) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật danh sách người được gán`,
+              oldValue: JSON.stringify(oldAssigneeIds),
+              newValue: JSON.stringify(newAssigneeIds),
+              metadata: {
+                type: 'ASSIGNEE_CHANGE',
+                field: 'assignees',
+                oldAssignees: oldAssigneeIds,
+                newAssignees: newAssigneeIds,
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    // Execute all log saves
+    if (logPromises.length > 0) {
+      await Promise.all(logPromises);
+    }
   }
 
   async attachFile(

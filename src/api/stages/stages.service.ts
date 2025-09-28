@@ -671,7 +671,7 @@ export class StagesService {
         color: '#FFA500',
         stageGroup: StageGroup.ACTIVE,
         isBuiltIn: true,
-        groupPosition: 0,
+        groupPosition: 1,
       },
       {
         title: 'DONE',
