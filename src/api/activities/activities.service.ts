@@ -57,7 +57,6 @@ import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
-import { EventFeedbackFileEntity } from './entities/event-feedback-file.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 @Injectable()
@@ -1586,30 +1585,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         studentId: dto.studentId,
         rating: dto.rating,
         comments: dto.comments,
+        image: dto.image,
       });
 
       const savedFeedback = await manager.save(feedback);
 
-      // Xử lý images nếu có
-      if (dto.images && dto.images.length > 0) {
-        const feedbackFiles = dto.images.map((image) =>
-          manager.create(EventFeedbackFileEntity, {
-            eventFeedbackId: savedFeedback.id,
-            uid: image.uid,
-            name: image.name,
-          }),
-        );
-        await manager.save(feedbackFiles);
-      }
-
-      // Lấy feedback với files
-      const feedbackWithFiles = await manager.findOne(EventFeedbackEntity, {
-        where: { id: savedFeedback.id },
-        relations: ['files'],
-      });
-
       return new ResponseDto<EventFeedbackResDto>({
-        data: plainToInstance(EventFeedbackResDto, feedbackWithFiles, {
+        data: plainToInstance(EventFeedbackResDto, savedFeedback, {
           excludeExtraneousValues: true,
         }),
         message: 'Tạo đánh giá sự kiện thành công',

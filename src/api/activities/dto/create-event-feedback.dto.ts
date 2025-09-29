@@ -1,24 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class EventFeedbackFileDto {
-  @ApiProperty({
-    description: 'UID của file đính kèm',
-    example: 'file-upload-1234567890-45'
-  })
-  @IsString()
-  @IsNotEmpty()
-  uid: string;
-
-  @ApiProperty({
-    description: 'Tên của file',
-    example: 'anh-feedback.jpg'
-  })
-  @IsString()
-  @IsNotEmpty()
-  name: string;
-}
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 
 export class CreateEventFeedbackDto {
   @ApiProperty({ 
@@ -74,13 +55,11 @@ export class CreateEventFeedbackDto {
   comments?: string;
 
   @ApiProperty({ 
-    type: [EventFeedbackFileDto],
+    example: '/uploads/feedback-image.jpg',
     required: false,
-    description: 'Danh sách hình ảnh đính kèm'
+    description: 'URL hình ảnh đính kèm'
   })
   @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => EventFeedbackFileDto)
-  images?: EventFeedbackFileDto[];
+  @IsString()
+  image?: string;
 }

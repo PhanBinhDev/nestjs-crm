@@ -1,8 +1,7 @@
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Unique } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
-import { EventFeedbackFileEntity } from './event-feedback-file.entity';
 
 
 @Entity('event_feedback')
@@ -48,7 +47,4 @@ export class EventFeedbackEntity extends AbstractEntity {
 
   @Column({ type: 'timestamptz', default: () => 'now()' })
   submittedAt: Date;
-
-  @OneToMany(() => EventFeedbackFileEntity, (file) => file.eventFeedback)
-  files: EventFeedbackFileEntity[];
 }

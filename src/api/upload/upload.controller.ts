@@ -37,13 +37,7 @@ export class UploadController {
     const url = await this.uploadService.saveFile(file, user.id);
     return {
       url,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      encoding: file.encoding,
-      fieldName: file.fieldname,
-      fileName: file.filename,
-      destination: file.destination,
+      status: 'done',
     };
   }
 
@@ -71,13 +65,7 @@ export class UploadController {
     const urls = await this.uploadService.saveFiles(files, user.id);
     return files.map((file, idx) => ({
       url: urls[idx],
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      encoding: file.encoding,
-      fieldName: file.fieldname,
-      fileName: file.filename,
-      destination: file.destination,
+      status: 'done',
     }));
   }
 }

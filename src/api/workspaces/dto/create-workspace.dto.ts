@@ -2,7 +2,7 @@ import { Uuid } from '@/common/types/common.type';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateWorkspaceDto {
   @ApiProperty({ description: 'Tên workspace', type: String })
@@ -18,11 +18,6 @@ export class CreateWorkspaceDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Icon workspace', type: String, required: false })
-  @IsOptional()
-  @IsString()
-  icon?: string;
-
   @ApiProperty({
     description: 'Visibility workspace',
     enum: WorkspaceVisibility,
@@ -32,12 +27,13 @@ export class CreateWorkspaceDto {
   visibility: WorkspaceVisibility;
 
   @ApiProperty({
-    description: 'Avatar workspace',
+    description: 'Avatar workspace (URL)',
     type: String,
     required: false,
   })
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   avatar?: string;
 
   @ApiProperty({
