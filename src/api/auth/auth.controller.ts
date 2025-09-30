@@ -10,6 +10,7 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
   Post,
   Req,
   Res,
@@ -23,6 +24,8 @@ import { CookieOptions, Request, Response } from 'express';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService<AllConfigType>,
@@ -71,6 +74,10 @@ export class AuthController {
       config.secure = true; // Required for sameSite: 'none'
       config.sameSite = 'none'; // Required for cross-domain
     }
+
+    this.logger.log(
+      `Cookie Config - isProduction: ${isProduction}, isLocalhost: ${isLocalhost}, isSameDomain: ${isSameDomain}, Config: ${JSON.stringify(config)}`,
+    );
 
     return config;
   }
