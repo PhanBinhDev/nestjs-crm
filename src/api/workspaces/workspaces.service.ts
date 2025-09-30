@@ -6,6 +6,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, In, Repository } from 'typeorm';
+import { UploadService } from '../upload/upload.service';
 import { StagesService } from '../stages/stages.service';
 import { UserEntity } from '../users/entities/user.entity';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
@@ -28,6 +29,7 @@ export class WorkspacesService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly stagesService: StagesService,
+    private readonly uploadService: UploadService,
   ) {}
 
   async remove(id: Uuid, currentUserId: Uuid): Promise<ResponseNoDataDto> {
@@ -75,12 +77,16 @@ export class WorkspacesService {
     ownerId: Uuid,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
     return await this.dataSource.transaction(async (manager) => {
-      const { members, ...body } = dto;
+      const { members, avatar, ...body } = dto;
 
-      const workspace = this.workspaceRepository.create({
+      // Chỉ lưu avatar nếu có giá trị (không phải chuỗi rỗng)
+      const workspaceData = {
         ...body,
         ownerId,
-      });
+        ...(avatar && avatar.trim() !== '' ? { avatar } : {}),
+      };
+
+      const workspace = this.workspaceRepository.create(workspaceData);
       const savedWorkspace = await manager.save(workspace);
 
       await this.stagesService.initDefaultStages(savedWorkspace.id, manager);
@@ -199,8 +205,15 @@ export class WorkspacesService {
   async update(
     id: Uuid,
     dto: CreateWorkspaceDto,
+    avatar?: Express.Multer.File,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
     const { members: _members, ...body } = dto;
+
+    // Upload avatar nếu có
+    if (avatar) {
+      const avatarPath = await this.uploadService.saveFile(avatar);
+      body.avatar = avatarPath;
+    }
 
     await this.workspaceRepository.update(id, body);
     const updatedWorkspace = await this.workspaceRepository.findOne({

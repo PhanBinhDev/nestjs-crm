@@ -39,8 +39,8 @@ export class BaseWorkspaceResDto extends AuditResDto {
   visibility: WorkspaceVisibility;
 
   @StringFieldOptional({
-    description: 'Avatar của không gian làm việc',
-    example: 'https://example.com/avatar.png',
+    description: 'Avatar của không gian làm việc (URL)',
+    example: '/uploads/workspace-avatar.jpg',
   })
   @Expose()
   avatar?: string;

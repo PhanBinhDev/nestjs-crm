@@ -16,7 +16,6 @@ import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
-import { EventFeedbackFileEntity } from './entities/event-feedback-file.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 @Module({
@@ -31,7 +30,6 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
       ActivityChecklistItemEntity,
       ActivityLogEntity,
       EventFeedbackEntity,
-      EventFeedbackFileEntity,
       SemesterEntity,
       UserEntity,
       ActivityCategoryEntity,

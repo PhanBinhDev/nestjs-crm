@@ -23,13 +23,6 @@ export class Workspaces extends AbstractEntity {
   })
   description?: string;
 
-  @Column({
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  icon?: string;
-
   @Column({ type: 'varchar', length: 20, nullable: false })
   visibility: WorkspaceVisibility;
 
@@ -44,8 +37,9 @@ export class Workspaces extends AbstractEntity {
     type: 'varchar',
     length: 255,
     nullable: true,
+    name: 'avatars',
   })
-  avatars?: string;
+  avatar?: string;
 
   @Column({
     type: 'varchar',

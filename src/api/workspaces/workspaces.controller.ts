@@ -13,9 +13,12 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
@@ -95,6 +98,8 @@ export class WorkspacesController {
   }
 
   @Patch(':workspaceId')
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiConsumes('multipart/form-data')
   @UseGuards(WorkspaceAccessGuard)
   @ApiAuth({
     summary: 'Cập nhật không gian làm việc',
@@ -109,8 +114,9 @@ export class WorkspacesController {
   update(
     @Param('workspaceId') workspaceId: Uuid,
     @Body() updateWorkspaceDto: CreateWorkspaceDto,
+    @UploadedFile() avatar?: Express.Multer.File,
   ) {
-    return this.workspacesService.update(workspaceId, updateWorkspaceDto);
+    return this.workspacesService.update(workspaceId, updateWorkspaceDto, avatar);
   }
 
   @Delete(':workspaceId')
