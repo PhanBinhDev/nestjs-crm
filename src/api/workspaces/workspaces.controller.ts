@@ -18,7 +18,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
@@ -117,7 +117,11 @@ export class WorkspacesController {
     @Body() updateWorkspaceDto: CreateWorkspaceDto,
     @UploadedFile() avatar?: Express.Multer.File,
   ) {
-    return this.workspacesService.update(workspaceId, updateWorkspaceDto, avatar);
+    return this.workspacesService.update(
+      workspaceId,
+      updateWorkspaceDto,
+      avatar,
+    );
   }
 
   @Delete(':workspaceId')

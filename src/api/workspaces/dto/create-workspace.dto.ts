@@ -2,7 +2,13 @@ import { Uuid } from '@/common/types/common.type';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateWorkspaceDto {
   @ApiProperty({ description: 'Tên workspace', type: String })

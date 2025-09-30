@@ -1,10 +1,14 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_log')
+@Index('idx_activity_log_activity', ['activity'])
+@Index('idx_activity_log_user', ['user'])
+@Index('idx_activity_log_action', ['action'])
+@Index('idx_activity_log_parent', ['parentLog'])
 export class ActivityLogEntity extends AbstractEntity {
   @Column({ type: 'varchar', length: 100 })
   action: string;

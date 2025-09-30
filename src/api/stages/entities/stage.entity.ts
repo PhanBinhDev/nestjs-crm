@@ -3,9 +3,14 @@ import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { StageGroup } from '@/database/enum/stage.enum';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 
 @Entity('stages')
+@Index(['workspaceId', 'stageGroup'])
+@Index('idx_stage_workspace', ['workspaceId'])
+@Index('idx_stage_position', ['position'])
+@Index('idx_stage_completed', ['isCompleted'])
+@Index('idx_stage_overdue', ['isOverdue'])
 export class StagesEntity extends AbstractEntity {
   constructor(data?: Partial<StagesEntity>) {
     super();
@@ -58,4 +63,7 @@ export class StagesEntity extends AbstractEntity {
 
   @Column({ type: 'boolean', default: false })
   isCompleted: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isOverdue: boolean;
 }

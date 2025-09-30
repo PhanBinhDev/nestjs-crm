@@ -1,9 +1,13 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, ManyToOne } from 'typeorm';
 
 @Entity('notifications')
+@Index('idx_notification_user', ['userId'])
+@Index('idx_notification_workspace', ['workspaceId'])
+@Index('idx_notification_isRead', ['isRead'])
+@Index('idx_notification_type', ['type'])
 export class NotificationEntity extends AbstractEntity {
   @Column({ type: 'uuid' })
   userId: string;

@@ -20,16 +20,16 @@ import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
-import { ActivityFileResDto } from './dto/activity-file.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
-import { AttachFileDto } from './dto/attach-file.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
@@ -61,6 +61,19 @@ export class ActivitiesController {
   @Roles(UserRole.TM)
   createActivityCategory(@Body() dto: CategoryDto) {
     return this.activitiesService.createActivityCategory(dto);
+  }
+
+  @Post(':id/comments')
+  @ApiAuth({
+    summary: 'Thêm bình luận cho activity',
+    type: ActivityCommentResDto,
+  })
+  createComment(
+    @Param('id') activityId: Uuid,
+    @Body() dto: CreateActivityCommentDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.createComment(activityId, dto, userId);
   }
 
   @Get(':id/logs')
@@ -199,27 +212,6 @@ export class ActivitiesController {
     @CurrentUser() user: UserEntity,
   ) {
     return this.activitiesService.updateActivity(id, dto, user.id);
-  }
-
-  @Post(':id/files')
-  @ApiAuth({
-    summary: 'Đính kèm file cho activity',
-    type: ActivityFileResDto,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  async attachFile(@Param('id') id: Uuid, @Body() dto: AttachFileDto) {
-    return this.activitiesService.attachFile(id, dto);
-  }
-
-  @Get(':id/files')
-  @ApiAuth({
-    summary: 'Lấy danh sách file đính kèm của activity',
-    type: ActivityFileResDto,
-    isArray: true,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  getFiles(@Param('id') id: Uuid) {
-    return this.activitiesService.getFiles(id);
   }
 
   @Patch(':id/participants')

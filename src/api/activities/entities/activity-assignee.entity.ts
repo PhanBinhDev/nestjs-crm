@@ -2,10 +2,17 @@ import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { AssigneeRole, AssignmentStatus } from '@/database/enum/activity.enum';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_assignees')
+@Index('idx_activity_assignee_activity', ['activityId'])
+@Index('idx_activity_assignee_user', ['userId'])
+@Index('idx_activity_assignee_activity_user', ['activityId', 'userId'], {
+  unique: true,
+})
+@Index('idx_activity_assignee_role', ['role'])
+@Index('idx_activity_assignee_status', ['status'])
 export class ActivityAssigneeEntity extends AbstractEntity {
   @ManyToOne(() => ActivityEntity, (activity) => activity.assignees, {
     onDelete: 'CASCADE',

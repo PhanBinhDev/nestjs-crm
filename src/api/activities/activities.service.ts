@@ -29,16 +29,16 @@ import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
-import { AttachFileDto } from './dto/attach-file.dto';
-import { AttachFileResDto } from './dto/attach-file.res.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
@@ -52,8 +52,8 @@ import {
   ActivityChecklistEntity,
   ActivityChecklistItemEntity,
 } from './entities/activity-checklist.entity';
+import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
-import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -64,8 +64,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   constructor(
     @InjectRepository(ActivityEntity)
     private readonly activityRepo: Repository<ActivityEntity>,
-    @InjectRepository(ActivityFileEntity)
-    private readonly activityFileRepo: Repository<ActivityFileEntity>,
     @InjectRepository(ActivityParticipantEntity)
     private readonly participantRepo: Repository<ActivityParticipantEntity>,
     @InjectRepository(ActivityFeedbackEntity)
@@ -86,8 +84,40 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityCategoryRepo: Repository<ActivityCategoryEntity>,
     @InjectRepository(StagesEntity)
     private readonly stageRepo: Repository<StagesEntity>,
+
+    @InjectRepository(ActivityCommentEntity)
+    private readonly activityCommentRepo: Repository<ActivityCommentEntity>,
   ) {
     super(activityRepo);
+  }
+
+  async createComment(
+    activityId: Uuid,
+    createCommentDto: CreateActivityCommentDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Người dùng không tồn tại');
+    }
+
+    const comment = this.activityCommentRepo.create({});
+
+    return new ResponseDto<ActivityCommentResDto>({
+      data: plainToInstance(ActivityCommentResDto, comment, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tạo bình luận thành công',
+    });
   }
 
   async getActivityCategories(): Promise<ResponseDto<CategoryResDto[]>> {
@@ -411,7 +441,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       })
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
-      .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('activity.feedbacks', 'feedbacks')
       .leftJoinAndSelect('feedbacks.user', 'feedbackUser')
       .leftJoinAndSelect('activity.assignees', 'assignees')
@@ -533,7 +562,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       relations: [
         'participants',
         'participants.user',
-        'files',
         'feedbacks',
         'feedbacks.user',
         'assignees',
@@ -556,12 +584,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
-      const activityFileRepo = manager.getRepository(ActivityFileEntity);
       const userRepo = manager.getRepository(UserEntity);
 
       const activity = await activityRepo.findOne({
         where: { id },
-        relations: ['files', 'parent'],
+        relations: ['parent'],
       });
 
       if (!activity) {
@@ -590,13 +617,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           message: `Xóa hoạt động: ${activity.name}`,
         });
         await activityLogRepo.save(deleteActivityLog);
-      }
-
-      if (activity.files && activity.files.length > 0) {
-        await activityFileRepo.delete({ activityId: id });
-        console.log(
-          `Đã xóa ${activity.files.length} file(s) liên quan đến activity ${id}`,
-        );
       }
 
       await activityRepo.delete(id);
@@ -1100,53 +1120,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
   }
 
-  async attachFile(
-    id: Uuid,
-    dto: AttachFileDto,
-  ): Promise<ResponseDto<ActivityResDto>> {
-    return await this.activityRepo.manager.transaction(async (manager) => {
-      const activityFile = manager.create(ActivityFileEntity, {
-        activityId: id,
-        fileUrl: dto.fileUrl,
-        fileName: dto.fileName,
-      });
-
-      await this.activityFileRepo.save(activityFile);
-
-      const updatedActivity = await manager.findOneOrFail(ActivityEntity, {
-        where: { id },
-        relations: ['files'],
-      });
-
-      return new ResponseDto<ActivityResDto>({
-        data: plainToInstance(ActivityResDto, updatedActivity, {
-          excludeExtraneousValues: true,
-        }),
-        message: 'Đính kèm tệp thành công',
-      });
-    });
-  }
-
-  async getFiles(id: Uuid): Promise<ResponseDto<AttachFileResDto[]>> {
-    const files = await this.activityFileRepo.find({
-      where: { activityId: id },
-    });
-
-    if (files.length === 0) {
-      return new ResponseDto<AttachFileResDto[]>({
-        data: [],
-        message: 'Không tìm thấy tệp nào cho hoạt động này',
-      });
-    }
-
-    return new ResponseDto<AttachFileResDto[]>({
-      data: plainToInstance(AttachFileResDto, files, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Lấy danh sách tệp thành công',
-    });
-  }
-
   async updateParticipants(id: Uuid, dto: UpdateParticipantReqDto) {
     const activity = await this.activityRepo.findOne({
       where: { id },
@@ -1602,7 +1575,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getEventFeedbacksByActivityId(
     activityId: Uuid,
   ): Promise<ResponseDto<EventFeedbackResDto[]>> {
-    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -1615,7 +1587,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
-      relations: ['files'],
       order: { submittedAt: 'DESC' },
     });
 

@@ -1,9 +1,17 @@
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_checklists')
+@Index('idx_activity_checklist_activity', ['activityId'])
 export class ActivityChecklistEntity extends AbstractEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
@@ -24,6 +32,8 @@ export class ActivityChecklistEntity extends AbstractEntity {
 }
 
 @Entity('activity_checklist_items')
+@Index('idx_activity_checklist_item_checklist', ['checklistId'])
+@Index('idx_activity_checklist_item_is_done', ['isDone'])
 export class ActivityChecklistItemEntity extends AbstractEntity {
   @Column({ type: 'varchar', length: 255 })
   content: string;

@@ -3,7 +3,6 @@ import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
 
-
 @Entity('event_feedback')
 @Unique(['activityId', 'email'])
 @Index(['activityId'])
@@ -34,8 +33,8 @@ export class EventFeedbackEntity extends AbstractEntity {
   @Column({ type: 'varchar', length: 50 })
   studentId: string;
 
-  @Column({ 
-    type: 'int'
+  @Column({
+    type: 'int',
   })
   rating: number;
 

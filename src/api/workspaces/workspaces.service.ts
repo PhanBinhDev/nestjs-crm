@@ -1,7 +1,10 @@
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
-import { WorkspaceRole } from '@/database/enum/workspace.enum';
+import {
+  WorkspaceMemberStatus,
+  WorkspaceRole,
+} from '@/database/enum/workspace.enum';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
@@ -78,7 +81,7 @@ export class WorkspacesService {
       throw new BadRequestException('Workspace not found');
     }
 
-    const isOwner = workspace.ownerId === currentUserId;
+    const isOwner = workspace.owner.id === currentUserId;
     if (!isOwner) {
       throw new BadRequestException(
         'Bạn không có quyền xóa không gian làm việc này',
@@ -92,7 +95,11 @@ export class WorkspacesService {
     }
 
     const ownedWorkspacesCount = await this.workspaceRepository.count({
-      where: { ownerId: currentUserId },
+      where: {
+        owner: {
+          id: currentUserId,
+        },
+      },
     });
 
     if (ownedWorkspacesCount <= 1) {
@@ -115,10 +122,13 @@ export class WorkspacesService {
     return await this.dataSource.transaction(async (manager) => {
       const { members, avatar, ...body } = dto;
 
-      // Chỉ lưu avatar nếu có giá trị (không phải chuỗi rỗng)
+      const owner = await manager.findOne(UserEntity, {
+        where: { id: ownerId },
+      });
+
       const workspaceData = {
         ...body,
-        ownerId,
+        owner,
         ...(avatar && avatar.trim() !== '' ? { avatar } : {}),
       };
 
@@ -154,8 +164,11 @@ export class WorkspacesService {
             workspaceId: savedWorkspace.id,
             userId,
             role: WorkspaceRole.MEMBER,
+            status: WorkspaceMemberStatus.PENDING,
           }),
         );
+
+        // TODO: send email invite
 
         await manager.save(membersToAdd);
       }
@@ -202,7 +215,8 @@ export class WorkspacesService {
 
     let workspace = await this.workspaceRepository.findOne({
       where: { id },
-      select: ['id', 'visibility', 'ownerId'],
+      select: ['id', 'visibility'],
+      relations,
     });
 
     if (!workspace) {
@@ -212,7 +226,7 @@ export class WorkspacesService {
     if (workspace.visibility === 'private') {
       workspace = await this.workspaceRepository.findOne({
         where: [
-          { id, ownerId: currentUserId },
+          { id, owner: { id: currentUserId } },
           { id, members: { userId: currentUserId } },
         ],
         relations,

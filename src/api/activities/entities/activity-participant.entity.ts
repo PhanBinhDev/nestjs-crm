@@ -5,10 +5,17 @@ import {
   ParticipantRole,
   ParticipantStatus,
 } from '@/database/enum/activity.enum';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_participants')
+@Index('idx_activity_participant_activity', ['activityId'])
+@Index('idx_activity_participant_user', ['userId'])
+@Index('idx_activity_participant_activity_user', ['activityId', 'userId'], {
+  unique: true,
+})
+@Index('idx_activity_participant_role', ['role'])
+@Index('idx_activity_participant_status', ['status'])
 export class ActivityParticipantEntity extends AbstractEntity {
   @ManyToOne(() => ActivityEntity, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'activityId' })

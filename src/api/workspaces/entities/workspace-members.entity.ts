@@ -5,10 +5,17 @@ import {
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { Workspaces } from './workspace.entity';
 
 @Entity('workspace_members')
+@Index('idx_workspace_member_workspace', ['workspaceId'])
+@Index('idx_workspace_member_user', ['userId'])
+@Index('idx_workspace_member_workspace_user', ['workspaceId', 'userId'], {
+  unique: true,
+})
+@Index('idx_workspace_member_role', ['role'])
+@Index('idx_workspace_member_status', ['status'])
 export class WorkspaceMembers extends AbstractEntity {
   @Column({
     type: 'uuid',

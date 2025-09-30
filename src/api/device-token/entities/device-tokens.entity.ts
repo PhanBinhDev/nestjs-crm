@@ -1,7 +1,8 @@
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, Index } from 'typeorm';
 
 @Entity('device-token')
+@Index('idx_device_token_user', ['userId'])
 export class DeviceTokenEntity extends AbstractEntity {
   @Column({
     type: 'uuid',

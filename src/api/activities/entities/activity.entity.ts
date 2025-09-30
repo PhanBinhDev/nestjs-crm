@@ -9,15 +9,30 @@ import {
   ActivityStatus,
   ActivityType,
 } from '@/database/enum/activity.enum';
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { ActivityAssigneeEntity } from './activity-assignee.entity';
 import { ActivityCategoryEntity } from './activity-category.entity';
 import { ActivityChecklistEntity } from './activity-checklist.entity';
+import { ActivityCommentEntity } from './activity-comments.entity';
 import { ActivityFeedbackEntity } from './activity-feedback.entity';
-import { ActivityFileEntity } from './activity-file.entity';
 import { ActivityParticipantEntity } from './activity-participant.entity';
 
 @Entity('activities')
+@Index('idx_activity_workspace', ['workspaceId'])
+@Index('idx_activity_stage', ['stageId'])
+@Index('idx_activity_parent', ['parentId'])
+@Index('idx_activity_category', ['categoryId'])
+@Index('idx_activity_semester', ['semesterId'])
+@Index('idx_activity_status', ['status'])
+@Index('idx_activity_type', ['type'])
+@Index('idx_activity_name', ['name'])
 export class ActivityEntity extends AbstractEntity {
   @Column({ type: 'varchar', length: 255, nullable: false })
   name: string;
@@ -81,6 +96,14 @@ export class ActivityEntity extends AbstractEntity {
   @OneToMany(() => ActivityEntity, (activity) => activity.parent)
   subActivities: ActivityEntity[];
 
+  @OneToMany(() => ActivityCommentEntity, (comment) => comment.activity, {
+    cascade: true,
+  })
+  comments: ActivityCommentEntity[];
+
+  @Column({ type: 'uuid', nullable: true })
+  categoryId?: Uuid;
+
   @ManyToOne(() => ActivityCategoryEntity, (category) => category.activities, {
     nullable: true,
   })
@@ -107,11 +130,6 @@ export class ActivityEntity extends AbstractEntity {
     },
   )
   participants: ActivityParticipantEntity[];
-
-  @OneToMany(() => ActivityFileEntity, (file) => file.activity, {
-    cascade: true,
-  })
-  files: ActivityFileEntity[];
 
   @OneToMany(() => ActivityFeedbackEntity, (feedback) => feedback.activity, {
     cascade: true,

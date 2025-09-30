@@ -71,7 +71,6 @@ export class StagesService {
 
       const savedStage = await manager.save(stage);
 
-      // 6. Reorder stages in group to ensure consistency
       await this.reorderStagesInGroup(manager, workspaceId, stageGroup);
 
       return new ResponseDto<StageResDto>({
@@ -132,15 +131,12 @@ export class StagesService {
       if (!stageEntity) {
         throw new NotFoundException('Trạng thái (stage) không tồn tại');
       }
-      // 2. Validate updates
       await this.validateStageUpdate(manager, stageEntity, updateStageDto);
 
-      // 3. Handle different update scenarios
       const oldStageGroup = stageEntity.stageGroup;
       const newStageGroup = updateStageDto.stageGroup || oldStageGroup;
 
       if (newStageGroup !== oldStageGroup) {
-        // Handle stage group change
         await this.handleStageGroupChange(
           manager,
           stageEntity,
@@ -148,15 +144,12 @@ export class StagesService {
           newStageGroup,
         );
       } else if (this.isPositionUpdate(updateStageDto, stageEntity)) {
-        // Handle position change within same group
         await this.handlePositionUpdate(manager, stageEntity, updateStageDto);
       } else {
-        // Simple field updates
         Object.assign(stageEntity, updateStageDto);
         await manager.save(stageEntity);
       }
 
-      // 4. Get updated stage
       const updatedStage = await manager.findOne(StagesEntity, {
         where: { id: stageEntity.id },
       });
@@ -222,6 +215,7 @@ export class StagesService {
           workspaceId,
           stageGroup: stageConfig.stageGroup,
           isBuiltIn: true,
+          title: stageConfig.title,
         },
       });
 

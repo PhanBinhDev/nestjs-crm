@@ -4,11 +4,21 @@ import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { WorkspaceMembers } from './workspace-members.entity';
 import { WorkspaceViewSettings } from './workspace-view-settings.entity';
 
 @Entity('workspaces')
+@Index('idx_workspace_invite_code', ['inviteCode'], { unique: true })
+@Index('idx_workspace_visibility', ['visibility'])
+@Index('idx_workspace_name', ['name'])
 export class Workspaces extends AbstractEntity {
   @Column({
     type: 'varchar',
@@ -25,9 +35,6 @@ export class Workspaces extends AbstractEntity {
 
   @Column({ type: 'varchar', length: 20, nullable: false })
   visibility: WorkspaceVisibility;
-
-  @Column({ type: 'uuid', nullable: false })
-  ownerId: string;
 
   @ManyToOne(() => UserEntity, { nullable: false })
   @JoinColumn({ name: 'ownerId' })
