@@ -43,7 +43,7 @@ export class BaseWorkspaceResDto extends AuditResDto {
     example: '/uploads/workspace-avatar.jpg',
   })
   @Expose()
-  avatar?: string;
+  avatars?: string;
 
   @UUIDField({
     description: 'ID của chủ sở hữu không gian làm việc',

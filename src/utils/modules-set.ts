@@ -6,6 +6,7 @@ import backgroundConfig from '@/background/config/background.config';
 import appConfig from '@/config/app.config';
 import databaseConfig from '@/database/config/database.config';
 import { TypeOrmConfigService } from '@/database/typeorm-config.service';
+import mailConfig from '@/mail/config/mail.config';
 import { ModuleMetadata } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -17,7 +18,13 @@ function generateModulesSet() {
   const imports: ModuleMetadata['imports'] = [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, backgroundConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        authConfig,
+        backgroundConfig,
+        mailConfig,
+      ],
       envFilePath: ['.env'],
     }),
   ];

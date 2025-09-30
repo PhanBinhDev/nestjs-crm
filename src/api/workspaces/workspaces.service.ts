@@ -6,11 +6,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, In, Repository } from 'typeorm';
-import { UploadService } from '../upload/upload.service';
 import { StagesService } from '../stages/stages.service';
+import { UploadService } from '../upload/upload.service';
 import { UserEntity } from '../users/entities/user.entity';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
@@ -31,6 +32,41 @@ export class WorkspacesService {
     private readonly stagesService: StagesService,
     private readonly uploadService: UploadService,
   ) {}
+
+  async invite(
+    workspaceId: Uuid,
+    inviteMemberDto: InviteMemberDto,
+  ): Promise<ResponseNoDataDto> {
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      relations: ['members'],
+    });
+
+    if (!workspace) {
+      throw new BadRequestException('Workspace not found');
+    }
+
+    const membersToInvite = await this.userRepository.findBy({
+      id: In(inviteMemberDto.userIds),
+    });
+    if (membersToInvite.length === 0) {
+      throw new BadRequestException('No valid user IDs provided');
+    }
+
+    const invitations = membersToInvite.map((user) =>
+      this.membersRepository.create({
+        workspaceId,
+        userId: user.id,
+        role: WorkspaceRole.MEMBER,
+      }),
+    );
+
+    await this.membersRepository.save(invitations);
+
+    return new ResponseNoDataDto({
+      message: 'Invitations sent successfully',
+    });
+  }
 
   async remove(id: Uuid, currentUserId: Uuid): Promise<ResponseNoDataDto> {
     const workspace = await this.workspaceRepository.findOne({

@@ -2,9 +2,11 @@ import { AllConfigType } from '@/config/config.type';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EmailQueueModule } from './queues/email-queue/email-queue.module';
 import { NotificationQueueModule } from './queues/notification-queue/notification-queue.module';
 @Module({
   imports: [
+    EmailQueueModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService<AllConfigType>) => {

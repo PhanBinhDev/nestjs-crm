@@ -1,7 +1,10 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { WorkspaceRole } from '@/database/enum/workspace.enum';
+import {
+  WorkspaceMemberStatus,
+  WorkspaceRole,
+} from '@/database/enum/workspace.enum';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { Workspaces } from './workspace.entity';
 
@@ -29,4 +32,11 @@ export class WorkspaceMembers extends AbstractEntity {
   @ManyToOne(() => Workspaces, (workspace) => workspace.members)
   @JoinColumn({ name: 'workspaceId' })
   workspace: WrapperType<Workspaces>;
+
+  @Column({
+    type: 'enum',
+    enum: WorkspaceMemberStatus,
+    default: WorkspaceMemberStatus.PENDING,
+  })
+  status: WorkspaceMemberStatus;
 }

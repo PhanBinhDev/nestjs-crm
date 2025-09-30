@@ -1,6 +1,7 @@
 import { AuthConfig } from '@/api/auth/config/auth-config.type';
 import { BackgroundConfig } from '@/background/config/background-config.type';
 import { DatabaseConfig } from '@/database/config/database-config.type';
+import { MailConfig } from '@/mail/config/mail-config.type';
 import { AppConfig } from './app-config.type';
 
 export type AllConfigType = {
@@ -8,4 +9,5 @@ export type AllConfigType = {
   auth: AuthConfig;
   database: DatabaseConfig;
   background: BackgroundConfig;
+  mail: MailConfig;
 };

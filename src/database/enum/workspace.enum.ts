@@ -8,3 +8,9 @@ export enum WorkspaceVisibility {
   PRIVATE = 'private',
   PUBLIC = 'public',
 }
+
+export enum WorkspaceMemberStatus {
+  ACTIVE = 'active',
+  PENDING = 'pending',
+  REJECT = 'reject',
+}

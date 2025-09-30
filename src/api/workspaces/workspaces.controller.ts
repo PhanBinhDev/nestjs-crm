@@ -21,6 +21,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
@@ -130,5 +131,18 @@ export class WorkspacesController {
     @CurrentUser('id') currentUserId: Uuid,
   ) {
     return this.workspacesService.remove(workspaceId, currentUserId);
+  }
+
+  @Post(':workspaceId/invite')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Mời thành viên vào không gian làm việc',
+    type: WorkspaceMemberResDto,
+  })
+  invite(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Body() inviteMemberDto: InviteMemberDto,
+  ) {
+    return this.workspacesService.invite(workspaceId, inviteMemberDto);
   }
 }

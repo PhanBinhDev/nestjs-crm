@@ -9,5 +9,6 @@ export enum QueuePrefix {
 
 export enum JobName {
   EMAIL_VERIFICATION = 'email-verification',
+  WORKSPACE_INVITATION = 'workspace-invitation',
   NOTIFICATION = 'notification',
 }
