@@ -143,6 +143,11 @@ export class WorkspacesController {
     summary: 'Mời thành viên vào không gian làm việc',
     type: WorkspaceMemberResDto,
   })
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+    type: 'string',
+  })
   invite(
     @Param('workspaceId') workspaceId: Uuid,
     @Body() inviteMemberDto: InviteMemberDto,

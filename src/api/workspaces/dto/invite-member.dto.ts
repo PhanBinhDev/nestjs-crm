@@ -1,11 +1,13 @@
 import { Uuid } from '@/common/types/common.type';
-import { StringField } from '@/decorators/field.decorators';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsString } from 'class-validator';
 
 export class InviteMemberDto {
-  @StringField({
-    description: 'Danh sách ID người dùng cần mời vào không gian làm việc',
+  @ApiProperty({
     example: ['550e8400-e29b-41d4-a716-446655440000'],
-    isArray: true,
+    
   })
+  @IsArray()
+  @IsString({ each: true })
   userIds: Uuid[];
 }

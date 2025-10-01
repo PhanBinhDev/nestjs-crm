@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lời mời tham gia Workspace</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f5f5f5;
+      padding: 20px;
+    }
+
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Header */
+    .email-header {
+      background-color: #1e3a5f;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #4CAF50, #2196F3);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: white;
+      font-size: 20px;
+    }
+
+    .header-title {
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    /* Content */
+    .email-content {
+      padding: 40px 32px;
+    }
+
+    .greeting {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1e3a5f;
+      margin-bottom: 20px;
+    }
+
+    .message {
+      font-size: 16px;
+      line-height: 1.6;
+      color: #4a5568;
+      margin-bottom: 16px;
+    }
+
+    .workspace-info {
+      background-color: #f7fafc;
+      border-left: 4px solid #2196F3;
+      padding: 16px 20px;
+      margin: 24px 0;
+      border-radius: 4px;
+    }
+
+    .workspace-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #718096;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .workspace-name {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1e3a5f;
+    }
+
+    /* Button */
+    .button-container {
+      text-align: center;
+      margin: 32px 0;
+    }
+
+    .invite-button {
+      display: inline-block;
+      background-color: #2196F3;
+      color: #ffffff;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      transition: background-color 0.3s ease;
+      box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+    }
+
+    .invite-button:hover {
+      background-color: #1976D2;
+    }
+
+    .alternative-link {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .alternative-text {
+      font-size: 14px;
+      color: #718096;
+      margin-bottom: 12px;
+    }
+
+    .link-box {
+      background-color: #f7fafc;
+      padding: 12px 16px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+      word-break: break-all;
+      font-size: 13px;
+      color: #2196F3;
+    }
+
+    /* Footer */
+    .email-footer {
+      background-color: #f7fafc;
+      padding: 24px 32px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .footer-text {
+      font-size: 13px;
+      color: #718096;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+
+    .footer-company {
+      font-size: 14px;
+      color: #1e3a5f;
+      font-weight: 600;
+      margin-top: 16px;
+    }
+
+    .footer-links {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .footer-link {
+      color: #2196F3;
+      text-decoration: none;
+      font-size: 13px;
+      margin-right: 16px;
+    }
+
+    .footer-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Responsive */
+    @media only screen and (max-width: 600px) {
+      .email-content {
+        padding: 24px 20px;
+      }
+
+      .email-header {
+        padding: 20px;
+      }
+
+      .greeting {
+        font-size: 20px;
+      }
+
+      .message {
+        font-size: 15px;
+      }
+
+      .invite-button {
+        padding: 12px 24px;
+        font-size: 15px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="email-container">
+    <!-- Header -->
+    <div class="email-header">
+      <div class="logo">PT</div>
+      <div class="header-title">CRM CNTT</div>
+    </div>
+
+    <!-- Content -->
+    <div class="email-content">
+      <div class="greeting">Xin chào! 👋</div>
+
+      <p class="message">
+        <strong>{{ownerName}}</strong> đã mời bạn tham gia vào workspace trên hệ thống CRM CNTT.
+      </p>
+
+      <div class="workspace-info">
+        <div class="workspace-label">Workspace</div>
+        <div class="workspace-name">{{workspaceName}}</div>
+      </div>
+
+      <p class="message">
+        Bằng cách tham gia workspace này, bạn có thể cộng tác với team, quản lý công việc và theo dõi tiến độ dự án một
+        cách hiệu quả hơn.
+      </p>
+
+      <!-- Button -->
+      <div class="button-container">
+        <a href="{{inviteLink}}" class="invite-button">
+          Tham gia Workspace
+        </a>
+      </div>
+
+      <!-- Alternative Link -->
+      <div class="alternative-link">
+        <p class="alternative-text">
+          Hoặc copy và dán liên kết sau vào trình duyệt của bạn:
+        </p>
+        <div class="link-box">
+          {{inviteLink}}
+        </div>
+      </div>
+
+      <p class="message" style="margin-top: 24px; font-size: 14px; color: #718096;">
+        Lưu ý: Liên kết mời này có thể hết hạn sau một khoảng thời gian nhất định. Vui lòng sử dụng càng sớm càng tốt.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div class="email-footer">
+      <div class="footer-company">
+        CRM CNTT - VT POLYTECHNIC
+      </div>
+
+      <p class="footer-text">
+        Email này được gửi tự động từ hệ thống CRM CNTT. Vui lòng không trả lời email này.
+      </p>
+
+      <p class="footer-text">
+        Nếu bạn không mong muốn nhận được lời mời này, bạn có thể bỏ qua email này một cách an toàn.
+      </p>
+
+      <div class="footer-links">
+        <a href="#" class="footer-link">Trợ giúp</a>
+        <a href="#" class="footer-link">Chính sách bảo mật</a>
+        <a href="#" class="footer-link">Điều khoản sử dụng</a>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

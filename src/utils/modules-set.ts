@@ -4,12 +4,16 @@ import authConfig from '@/api/auth/config/auth.config';
 import { BackgroundModule } from '@/background/background.module';
 import backgroundConfig from '@/background/config/background.config';
 import appConfig from '@/config/app.config';
+import { AllConfigType } from '@/config/config.type';
 import databaseConfig from '@/database/config/database.config';
 import { TypeOrmConfigService } from '@/database/typeorm-config.service';
 import mailConfig from '@/mail/config/mail.config';
+import redisConfig from '@/redis/config/redis.config';
+import { CacheModule } from '@nestjs/cache-manager';
 import { ModuleMetadata } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { redisStore } from 'cache-manager-ioredis-yet';
 import { LoggerModule } from 'nestjs-pino';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import loggerFactory from './logger-factory';
@@ -24,6 +28,7 @@ function generateModulesSet() {
         authConfig,
         backgroundConfig,
         mailConfig,
+        redisConfig,
       ],
       envFilePath: ['.env'],
     }),
@@ -47,6 +52,28 @@ function generateModulesSet() {
     useFactory: loggerFactory,
   });
 
+  const cacheModule = CacheModule.registerAsync({
+    imports: [ConfigModule],
+    useFactory: async (configService: ConfigService<AllConfigType>) => {
+      return {
+        store: await redisStore({
+          host: configService.getOrThrow('redis.host', {
+            infer: true,
+          }),
+          port: configService.getOrThrow('redis.port', {
+            infer: true,
+          }),
+          password: configService.getOrThrow('redis.password', {
+            infer: true,
+          }),
+          tls: configService.get('redis.tlsEnabled', { infer: true }),
+        }),
+      };
+    },
+    isGlobal: true,
+    inject: [ConfigService],
+  });
+
   const modulesSet = process.env.MODULES_SET || 'monolith';
 
   switch (modulesSet) {
@@ -57,13 +84,20 @@ function generateModulesSet() {
         BackgroundModule,
         dbModule,
         loggerModule,
+        cacheModule,
       ];
       break;
     case 'api':
-      customModules = [ApiModule, AuthModule, dbModule, loggerModule];
+      customModules = [
+        ApiModule,
+        AuthModule,
+        dbModule,
+        loggerModule,
+        cacheModule,
+      ];
       break;
     case 'background':
-      customModules = [BackgroundModule, dbModule, loggerModule];
+      customModules = [BackgroundModule, dbModule, loggerModule, cacheModule];
       break;
     default:
       console.error(`Unsupported modules set: ${modulesSet}`);

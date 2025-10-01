@@ -1,3 +1,4 @@
+import { IWorkspaceMemberJob } from '@/common/interfaces/job.interface';
 import { AllConfigType } from '@/config/config.type';
 import { MailerService } from '@nestjs-modules/mailer';
 import { Injectable } from '@nestjs/common';
@@ -33,6 +34,19 @@ export class MailService {
       context: {
         otp,
         year: new Date().getFullYear(),
+      },
+    });
+  }
+
+  async sendWorkspaceInvitation(data: IWorkspaceMemberJob) {
+    const { email: to, ...rest } = data;
+
+    await this.mailerService.sendMail({
+      to,
+      subject: `Lời mời tham gia workspace ${data.workspaceName}`,
+      template: 'workspace-invitation',
+      context: {
+        ...rest,
       },
     });
   }

@@ -1,3 +1,4 @@
+import { PageOptionsDto } from '@/common/dto/cursor-pagination/page-options.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
@@ -105,6 +106,7 @@ export class ActivitiesController {
   getReplies(
     @Param('id') activityId: Uuid,
     @Param('commentId') commentId: Uuid,
+    @Query() query: PageOptionsDto,
   ) {
     return this.activitiesService.getReplies(activityId, commentId);
   }

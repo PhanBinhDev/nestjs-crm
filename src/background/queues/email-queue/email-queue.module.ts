@@ -1,4 +1,4 @@
-import { QueueName, QueuePrefix } from '@/constants/job.constant';
+import { QueueName } from '@/constants/job.constant';
 import { MailModule } from '@/mail/mail.module';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
@@ -11,7 +11,6 @@ import { EmailProcessor } from './email.processor';
     MailModule,
     BullModule.registerQueue({
       name: QueueName.EMAIL,
-      prefix: QueuePrefix.AUTH,
       streams: {
         events: {
           maxLen: 1000,
@@ -20,5 +19,6 @@ import { EmailProcessor } from './email.processor';
     }),
   ],
   providers: [EmailQueueService, EmailProcessor, EmailQueueEvents],
+  exports: [BullModule, EmailQueueService],
 })
 export class EmailQueueModule {}

@@ -1,3 +1,4 @@
+import { EmailQueueModule } from '@/background/queues/email-queue/email-queue.module';
 import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -20,6 +21,7 @@ import { WorkspacesService } from './workspaces.service';
       UserEntity,
       DataSource,
     ]),
+    EmailQueueModule,
     StagesModule,
     UploadModule,
   ],

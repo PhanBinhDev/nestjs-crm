@@ -1,13 +1,26 @@
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
+import { IWorkspaceMemberJob } from '@/common/interfaces/job.interface';
 import { Uuid } from '@/common/types/common.type';
+import { AllConfigType } from '@/config/config.type';
+import { WORKSPACE_INVITE_TTL } from '@/constants/app.constant';
+import { CacheKey } from '@/constants/cache.constant';
+import { JobName, QueueName } from '@/constants/job.constant';
 import {
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { createCacheKey } from '@/utils/cache.util';
+import { InjectQueue } from '@nestjs/bullmq';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
+import { Cache } from 'cache-manager';
 import { plainToInstance } from 'class-transformer';
+import { randomBytes } from 'crypto';
+import ms from 'ms';
 import { DataSource, In, Repository } from 'typeorm';
 import { StagesService } from '../stages/stages.service';
 import { UploadService } from '../upload/upload.service';
@@ -34,7 +47,53 @@ export class WorkspacesService {
     private readonly dataSource: DataSource,
     private readonly stagesService: StagesService,
     private readonly uploadService: UploadService,
+    @InjectQueue(QueueName.EMAIL)
+    private readonly emailQueue: Queue<IWorkspaceMemberJob, any, string>,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+    private readonly configService: ConfigService<AllConfigType>,
   ) {}
+
+  async verifyInviteToken(
+    token: string,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const cacheKey = createCacheKey(CacheKey.WORKSPACE_INVITE, token);
+    const cachedData = await this.cacheManager.store.get<string>(cacheKey);
+
+    if (!cachedData) {
+      throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn');
+    }
+
+    const { workspaceId } = JSON.parse(cachedData);
+
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      relations: ['members'],
+    });
+    if (!workspace) {
+      throw new BadRequestException('Workspace không tồn tại');
+    }
+
+    const isMember = workspace.members.some((m) => m.userId === userId);
+    if (isMember) {
+      return new ResponseNoDataDto({
+        message: 'Bạn đã là thành viên của workspace này.',
+      });
+    }
+
+    const newMember = this.membersRepository.create({
+      workspaceId,
+      userId,
+      role: WorkspaceRole.MEMBER,
+      status: WorkspaceMemberStatus.ACTIVE,
+    });
+    await this.membersRepository.save(newMember);
+
+    await this.cacheManager.store.del(cacheKey);
+
+    return new ResponseNoDataDto({ message: 'Tham gia workspace thành công.' });
+  }
 
   async invite(
     workspaceId: Uuid,
@@ -42,7 +101,7 @@ export class WorkspacesService {
   ): Promise<ResponseNoDataDto> {
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
-      relations: ['members'],
+      relations: ['members', 'owner'],
     });
 
     if (!workspace) {
@@ -52,6 +111,7 @@ export class WorkspacesService {
     const membersToInvite = await this.userRepository.findBy({
       id: In(inviteMemberDto.userIds),
     });
+
     if (membersToInvite.length === 0) {
       throw new BadRequestException('No valid user IDs provided');
     }
@@ -61,10 +121,35 @@ export class WorkspacesService {
         workspaceId,
         userId: user.id,
         role: WorkspaceRole.MEMBER,
+        status: WorkspaceMemberStatus.PENDING,
       }),
     );
 
     await this.membersRepository.save(invitations);
+
+    const baseURL = this.configService.getOrThrow('app.frontendUrl', {
+      infer: true,
+    });
+
+    const token = randomBytes(32).toString('hex');
+    const inviteLink = `${baseURL}/workspaces/invite?token=${token}`;
+
+    await this.cacheManager.store.set(
+      createCacheKey(CacheKey.WORKSPACE_INVITE, token),
+      JSON.stringify({ workspaceId: workspace.id }),
+      ms(WORKSPACE_INVITE_TTL),
+    );
+
+    await Promise.all(
+      membersToInvite.map((user) =>
+        this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
+          workspaceName: workspace.name,
+          inviteLink,
+          ownerName: workspace.owner.name,
+          email: user.email,
+        }),
+      ),
+    );
 
     return new ResponseNoDataDto({
       message: 'Invitations sent successfully',
@@ -160,18 +245,40 @@ export class WorkspacesService {
           );
         }
 
-        const membersToAdd = members.map((userId) =>
-          this.membersRepository.create({
+        const membersToAdd = members.map((userId) => {
+          return this.membersRepository.create({
             workspaceId: savedWorkspace.id,
             userId,
             role: WorkspaceRole.MEMBER,
             status: WorkspaceMemberStatus.PENDING,
-          }),
-        );
-
-        // TODO: send email invite
+          });
+        });
 
         await manager.save(membersToAdd);
+
+        const baseURL = this.configService.getOrThrow('app.frontendUrl', {
+          infer: true,
+        });
+
+        const token = randomBytes(32).toString('hex');
+        const inviteLink = `${baseURL}/workspaces/invite?token=${token}`;
+
+        await this.cacheManager.store.set(
+          createCacheKey(CacheKey.WORKSPACE_INVITE, token),
+          JSON.stringify({ workspaceId: workspace.id }),
+          ms(WORKSPACE_INVITE_TTL),
+        );
+
+        await Promise.all(
+          users.map((user) =>
+            this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
+              workspaceName: savedWorkspace.name,
+              inviteLink,
+              ownerName: owner.name,
+              email: user.email,
+            }),
+          ),
+        );
       }
 
       return new ResponseDto<BaseWorkspaceResDto>({
@@ -196,9 +303,6 @@ export class WorkspacesService {
       ...ws,
       membersCount: ws.members ? ws.members.length : 0,
     }));
-
-    console.log('workspacesWithCount', workspacesWithCount);
-    console.log('workspaces', workspaces);
 
     return new ResponseDto<BaseWorkspaceResDto[]>({
       data: plainToInstance(BaseWorkspaceResDto, workspacesWithCount, {

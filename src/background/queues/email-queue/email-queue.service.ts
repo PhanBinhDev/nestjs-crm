@@ -1,4 +1,7 @@
-import { IVerifyEmailJob } from '@/common/interfaces/job.interface';
+import {
+  IVerifyEmailJob,
+  IWorkspaceMemberJob,
+} from '@/common/interfaces/job.interface';
 import { MailService } from '@/mail/mail.service';
 import { Injectable, Logger } from '@nestjs/common';
 
@@ -11,5 +14,10 @@ export class EmailQueueService {
   async sendEmailVerification(data: IVerifyEmailJob): Promise<void> {
     this.logger.debug(`Sending email verification to ${data.email}`);
     await this.mailService.sendEmailVerification(data.email, data.token);
+  }
+
+  async sendWorkspaceInvitation(data: IWorkspaceMemberJob): Promise<void> {
+    this.logger.debug(`Sending workspace invitation to ${data.email}`);
+    await this.mailService.sendWorkspaceInvitation(data);
   }
 }

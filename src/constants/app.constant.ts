@@ -33,3 +33,4 @@ export const loggingRedactPaths = [
 export const DEFAULT_PAGE_LIMIT = 10;
 export const DEFAULT_CURRENT_PAGE = 1;
 export const SYSTEM_USER_ID = 'system';
+export const WORKSPACE_INVITE_TTL = '7d';

@@ -1,3 +1,6 @@
+import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagination.dto';
+import { PageOptionsDto } from '@/common/dto/cursor-pagination/page-options.dto';
+import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
 import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
@@ -14,6 +17,7 @@ import {
 } from '@/database/enum/activity.enum';
 import { ValidationException } from '@/exceptions/validation.exception';
 import { BaseService } from '@/services/base.service';
+import { buildPaginator } from '@/utils/cursor-pagination';
 import { paginate } from '@/utils/offset-pagination';
 import {
   BadRequestException,
@@ -188,8 +192,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getReplies(
     activityId: Uuid,
     commentId: Uuid,
-  ): Promise<ResponseDto<ActivityCommentResDto[]>> {
-    // Kiểm tra activity có tồn tại không
+    query: PageOptionsDto,
+  ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
     });
@@ -198,7 +202,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Hoạt động không tồn tại');
     }
 
-    // Kiểm tra comment cha có tồn tại không
     const parentComment = await this.activityCommentRepo.findOne({
       where: { id: commentId, activityId },
     });
@@ -207,17 +210,48 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Không tìm thấy bình luận');
     }
 
-    // Lấy danh sách replies của comment
-    const replies = await this.activityCommentRepo.find({
-      where: { parentCommentId: commentId, activityId },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
+    const qb = this.activityCommentRepo
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.parentCommentId = :parentCommentId', {
+        parentCommentId: commentId,
+      })
+      .andWhere('comment.activityId = :activityId', { activityId });
+
+    const allowedSortFields = ['createdAt', 'content'];
+    const sortField = allowedSortFields.includes(query.sortBy || '')
+      ? query.sortBy
+      : 'createdAt';
+
+    qb.orderBy(`comment.${sortField}`, query.order || 'ASC');
+
+    const paginator = buildPaginator({
+      entity: ActivityCommentEntity,
+      alias: 'comment',
+      query: {
+        limit: query.limit,
+        order: query.order,
+        afterCursor: query.afterCursor,
+        beforeCursor: query.beforeCursor,
+      },
     });
 
-    return new ResponseDto<ActivityCommentResDto[]>({
-      data: plainToInstance(ActivityCommentResDto, replies, {
+    const totalRecords = await qb.getCount();
+
+    const { data, cursor } = await paginator.paginate(qb);
+
+    const metaDto = new CursorPaginationDto(
+      totalRecords,
+      cursor.afterCursor,
+      cursor.beforeCursor,
+      query,
+    );
+
+    return new CursorPaginatedDto<ActivityCommentResDto>({
+      data: plainToInstance(ActivityCommentResDto, data, {
         excludeExtraneousValues: true,
       }),
+      meta: metaDto,
       message: 'Lấy danh sách replies thành công',
     });
   }
@@ -567,7 +601,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // TODO: Log tương tự như subtask cho checklist
       if (dto.checklist?.length > 0) {
         const checklistLogs: ActivityLogEntity[] = [];
 
