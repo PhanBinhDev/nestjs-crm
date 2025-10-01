@@ -496,8 +496,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       takeAll: true,
     });
 
+    const activitiesWithProgress = activities.map((activity) => {
+      const progress = this.calculateProgress(activity);
+      return { ...activity, progress };
+    });
+
     return new OffsetPaginatedDto({
-      data: plainToInstance(ActivityResDto, activities, {
+      data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
@@ -512,8 +517,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       where: { parentId },
     });
 
+    const activitiesWithProgress = activities.map((activity) => {
+      const progress = this.calculateProgress(activity);
+      return { ...activity, progress };
+    });
+
     return new ResponseDto<ActivityResDto[]>({
-      data: plainToInstance(ActivityResDto, activities, {
+      data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
       message: 'Lấy danh sách sub-activities thành công',
@@ -572,10 +582,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       ],
     });
 
+    const progress = this.calculateProgress(activity);
+
     return new ResponseDto<ActivityResDto>({
-      data: plainToInstance(ActivityResDto, activity, {
-        excludeExtraneousValues: true,
-      }),
+      data: plainToInstance(
+        ActivityResDto,
+        { ...activity, progress },
+        {
+          excludeExtraneousValues: true,
+        },
+      ),
       message: 'Lấy thông tin hoạt động thành công',
     });
   }
@@ -1667,5 +1683,97 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       },
       message: 'Lấy thống kê đánh giá sự kiện thành công',
     });
+  }
+
+  /**
+   * Tính progress của activity
+   * @param activity Activity entity với relations đã load
+   * @returns Progress percentage (0-100)
+   */
+  private calculateProgress(activity: ActivityEntity): number {
+    const hasSubActivities = activity.subActivities?.length > 0;
+    const hasChecklists = activity.checklists?.length > 0;
+
+    if (!hasSubActivities && !hasChecklists) {
+      return activity.stage?.isCompleted ? 100 : 0;
+    }
+
+    let totalWeight = 0;
+    let completedWeight = 0;
+
+    if (hasSubActivities) {
+      const subTaskCount = activity.subActivities.length;
+      const subTaskWeight = 100 / (subTaskCount + 1);
+
+      // Tính progress của các subtask
+      activity.subActivities.forEach((subActivity) => {
+        totalWeight += subTaskWeight;
+        if (subActivity.stage?.isCompleted) {
+          completedWeight += subTaskWeight;
+        }
+      });
+
+      // Thêm weight cho task chính
+      totalWeight += subTaskWeight;
+      if (activity.stage?.isCompleted) {
+        completedWeight += subTaskWeight;
+      }
+    }
+
+    // Case 3: Task có checklists
+    if (hasChecklists) {
+      let totalChecklistItems = 0;
+      let completedChecklistItems = 0;
+
+      activity.checklists.forEach((checklist) => {
+        if (checklist.items?.length > 0) {
+          checklist.items.forEach((item) => {
+            totalChecklistItems++;
+            if (item.isDone) {
+              completedChecklistItems++;
+            }
+          });
+        }
+      });
+
+      if (totalChecklistItems > 0) {
+        // Nếu có cả subtask và checklist, chia weight
+        if (hasSubActivities) {
+          const checklistWeight = 50;
+          const subTaskActualWeight = 50;
+
+          // Rescale subtask progress
+          const subTaskProgress =
+            totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
+          completedWeight = (subTaskProgress * subTaskActualWeight) / 100;
+          totalWeight = subTaskActualWeight;
+
+          // Add checklist progress
+          const checklistProgress =
+            (completedChecklistItems / totalChecklistItems) * checklistWeight;
+          completedWeight += checklistProgress;
+          totalWeight += checklistWeight;
+        } else {
+          // Chỉ có checklist
+          const itemWeight = 100 / (totalChecklistItems + 1); // +1 cho task chính
+
+          completedWeight = completedChecklistItems * itemWeight;
+          totalWeight = totalChecklistItems * itemWeight;
+
+          // Thêm weight cho task chính
+          totalWeight += itemWeight;
+          if (activity.stage?.isCompleted) {
+            completedWeight += itemWeight;
+          }
+        }
+      }
+    }
+
+    // Tính phần trăm cuối cùng
+    const progress =
+      totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
+
+    // Làm tròn đến 2 chữ số thập phân
+    return Math.round(progress * 100) / 100;
   }
 }

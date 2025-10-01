@@ -8,7 +8,11 @@ import {
   ActivityStatus,
   ActivityType,
 } from '@/database/enum/activity.enum';
-import { ClassField, UUIDField } from '@/decorators/field.decorators';
+import {
+  ClassField,
+  NumberField,
+  UUIDField,
+} from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
@@ -170,4 +174,10 @@ export class ActivityResDto {
   })
   @Expose()
   stage?: WrapperType<StageResDto>;
+
+  @NumberField({
+    example: 0,
+  })
+  @Expose()
+  progress: number;
 }
