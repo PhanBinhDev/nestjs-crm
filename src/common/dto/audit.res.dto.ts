@@ -16,5 +16,6 @@ export class AuditResDto {
   updatedAt: Date;
 
   @UUIDField()
+  @Expose()
   createdBy: Uuid;
 }
