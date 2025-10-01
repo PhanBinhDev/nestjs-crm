@@ -45,6 +45,7 @@ import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
 import { ActivityCategoryEntity } from './entities/activity-category.entity';
@@ -110,14 +111,225 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Người dùng không tồn tại');
     }
 
-    const comment = this.activityCommentRepo.create({});
+    // Kiểm tra parentComment nếu có
+    if (
+      createCommentDto.parentCommentId &&
+      createCommentDto.parentCommentId.trim() !== ''
+    ) {
+      const parentComment = await this.activityCommentRepo.findOne({
+        where: { id: createCommentDto.parentCommentId as Uuid, activityId },
+      });
+
+      if (!parentComment) {
+        throw new NotFoundException('Bình luận cha không tồn tại');
+      }
+    }
+
+    const comment = this.activityCommentRepo.create({
+      activityId,
+      userId,
+      content: createCommentDto.content,
+      parentCommentId:
+        createCommentDto.parentCommentId &&
+        createCommentDto.parentCommentId.trim() !== ''
+          ? (createCommentDto.parentCommentId as Uuid)
+          : null,
+    });
+
+    const savedComment = await this.activityCommentRepo.save(comment);
+
+    // Tải lại comment với quan hệ user
+    const commentWithUser = await this.activityCommentRepo.findOne({
+      where: { id: savedComment.id },
+      relations: ['user'],
+    });
+
+    // Tạo log cho việc tạo comment
+    await this.createCommentLog(
+      activity,
+      user,
+      ActivityLogActionEnum.COMMENT_CREATED,
+      'Đã thêm bình luận mới',
+    );
 
     return new ResponseDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, comment, {
+      data: plainToInstance(ActivityCommentResDto, commentWithUser, {
         excludeExtraneousValues: true,
       }),
       message: 'Tạo bình luận thành công',
     });
+  }
+
+  async getComments(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const comments = await this.activityCommentRepo.find({
+      where: { activityId, parentCommentId: null },
+      relations: ['user', 'replies', 'replies.user'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return new ResponseDto<ActivityCommentResDto[]>({
+      data: plainToInstance(ActivityCommentResDto, comments, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách bình luận thành công',
+    });
+  }
+
+  async getReplies(
+    activityId: Uuid,
+    commentId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto[]>> {
+    // Kiểm tra activity có tồn tại không
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    // Kiểm tra comment cha có tồn tại không
+    const parentComment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+    });
+
+    if (!parentComment) {
+      throw new NotFoundException('Không tìm thấy bình luận');
+    }
+
+    // Lấy danh sách replies của comment
+    const replies = await this.activityCommentRepo.find({
+      where: { parentCommentId: commentId, activityId },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+
+    return new ResponseDto<ActivityCommentResDto[]>({
+      data: plainToInstance(ActivityCommentResDto, replies, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách replies thành công',
+    });
+  }
+
+  async updateComment(
+    activityId: Uuid,
+    commentId: Uuid,
+    updateCommentDto: UpdateActivityCommentDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const comment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+      relations: ['user'],
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Bình luận không tồn tại');
+    }
+
+    // Chỉ cho phép người tạo comment sửa
+    if (comment.userId !== userId) {
+      throw new BadRequestException('Bạn chỉ có thể sửa bình luận của mình');
+    }
+
+    const oldContent = comment.content;
+    comment.content = updateCommentDto.content;
+    comment.isEdited = true;
+    comment.editedAt = new Date();
+
+    const updatedComment = await this.activityCommentRepo.save(comment);
+
+    // Tạo log cho việc cập nhật comment
+    await this.createCommentLog(
+      activity,
+      comment.user,
+      ActivityLogActionEnum.COMMENT_UPDATED,
+      `Đã cập nhật bình luận từ "${oldContent}" thành "${updateCommentDto.content}"`,
+    );
+
+    return new ResponseDto<ActivityCommentResDto>({
+      data: plainToInstance(ActivityCommentResDto, updatedComment, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật bình luận thành công',
+    });
+  }
+
+  async deleteComment(
+    activityId: Uuid,
+    commentId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const comment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+      relations: ['user', 'replies'],
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Bình luận không tồn tại');
+    }
+
+    // Chỉ cho phép người tạo comment xóa
+    if (comment.userId !== userId) {
+      throw new BadRequestException('Bạn chỉ có thể xóa bình luận của mình');
+    }
+
+    const contentBackup = comment.content;
+
+    // Xóa comment (cascade sẽ xóa các replies)
+    await this.activityCommentRepo.remove(comment);
+
+    // Tạo log cho việc xóa comment
+    await this.createCommentLog(
+      activity,
+      comment.user,
+      ActivityLogActionEnum.COMMENT_DELETED,
+      `Đã xóa bình luận: "${contentBackup}"`,
+    );
+
+    return new ResponseNoDataDto({ message: 'Xóa bình luận thành công' });
+  }
+
+  private async createCommentLog(
+    activity: ActivityEntity,
+    user: UserEntity,
+    action: ActivityLogActionEnum,
+    description: string,
+  ): Promise<void> {
+    const log = this.activityLogRepository.create({
+      activity,
+      user,
+      action,
+      message: description,
+    });
+
+    await this.activityLogRepository.save(log);
   }
 
   async getActivityCategories(): Promise<ResponseDto<CategoryResDto[]>> {

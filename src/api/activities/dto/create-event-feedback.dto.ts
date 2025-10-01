@@ -1,43 +1,51 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateEventFeedbackDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'user@example.com',
-    description: 'Email của người đánh giá'
+    description: 'Email của người đánh giá',
   })
   @IsNotEmpty()
   @IsEmail()
   email: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '0123456789',
     required: false,
-    description: 'Số điện thoại'
+    description: 'Số điện thoại',
   })
   @IsOptional()
   @IsString()
   numPhone?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'Nguyễn Văn A',
-    description: 'Họ và tên đầy đủ'
+    description: 'Họ và tên đầy đủ',
   })
   @IsNotEmpty()
   @IsString()
   fullName: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'SV001',
-    description: 'Mã sinh viên hoặc mã người tham gia'
+    description: 'Mã sinh viên hoặc mã người tham gia',
   })
   @IsNotEmpty()
   @IsString()
   studentId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 5,
-    description: 'Điểm đánh giá từ 1-5 sao'
+    description: 'Điểm đánh giá từ 1-5 sao',
   })
   @IsNotEmpty()
   @IsNumber()
@@ -45,19 +53,19 @@ export class CreateEventFeedbackDto {
   @Max(5)
   rating: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'Sự kiện rất hay và bổ ích!',
     required: false,
-    description: 'Nhận xét chi tiết về sự kiện'
+    description: 'Nhận xét chi tiết về sự kiện',
   })
   @IsOptional()
   @IsString()
   comments?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '/uploads/feedback-image.jpg',
     required: false,
-    description: 'URL hình ảnh đính kèm'
+    description: 'URL hình ảnh đính kèm',
   })
   @IsOptional()
   @IsString()
