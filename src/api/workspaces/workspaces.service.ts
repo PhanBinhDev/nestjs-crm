@@ -141,6 +141,7 @@ export class WorkspacesService {
         workspaceId: savedWorkspace.id,
         userId: ownerId,
         role: WorkspaceRole.OWNER,
+        status: WorkspaceMemberStatus.ACTIVE,
       });
       await manager.save(ownerMember);
 
@@ -185,14 +186,22 @@ export class WorkspacesService {
   async findAll(userId: Uuid): Promise<ResponseDto<BaseWorkspaceResDto[]>> {
     const workspaces = await this.workspaceRepository
       .createQueryBuilder('workspace')
-      .leftJoin('workspace.members', 'members')
+      .leftJoinAndSelect('workspace.members', 'members')
       .where('workspace.ownerId = :userId', { userId })
       .orWhere('members.userId = :userId', { userId })
       .distinct(true)
       .getMany();
 
+    const workspacesWithCount = workspaces.map((ws) => ({
+      ...ws,
+      membersCount: ws.members ? ws.members.length : 0,
+    }));
+
+    console.log('workspacesWithCount', workspacesWithCount);
+    console.log('workspaces', workspaces);
+
     return new ResponseDto<BaseWorkspaceResDto[]>({
-      data: plainToInstance(BaseWorkspaceResDto, workspaces, {
+      data: plainToInstance(BaseWorkspaceResDto, workspacesWithCount, {
         excludeExtraneousValues: true,
       }),
       message: 'Lấy danh sách không gian làm việc thành công',

@@ -3,6 +3,7 @@ import { Uuid } from '@/common/types/common.type';
 import { WorkspaceVisibility } from '@/database/enum/workspace.enum';
 import {
   EnumField,
+  NumberField,
   StringField,
   StringFieldOptional,
   UUIDField,
@@ -43,7 +44,7 @@ export class BaseWorkspaceResDto extends AuditResDto {
     example: '/uploads/workspace-avatar.jpg',
   })
   @Expose()
-  avatars?: string;
+  avatar?: string;
 
   @UUIDField({
     description: 'ID của chủ sở hữu không gian làm việc',
@@ -51,4 +52,11 @@ export class BaseWorkspaceResDto extends AuditResDto {
   })
   @Expose()
   ownerId: Uuid;
+
+  @NumberField({
+    description: 'Số lượng thành viên trong không gian làm việc',
+    example: 5,
+  })
+  @Expose()
+  membersCount?: number;
 }
