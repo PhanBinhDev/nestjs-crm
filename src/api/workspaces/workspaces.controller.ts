@@ -151,7 +151,25 @@ export class WorkspacesController {
   invite(
     @Param('workspaceId') workspaceId: Uuid,
     @Body() inviteMemberDto: InviteMemberDto,
+    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.workspacesService.invite(workspaceId, inviteMemberDto);
+    return this.workspacesService.invite(workspaceId, inviteMemberDto, userId);
+  }
+
+  @Post('verify-invite/:token')
+  @ApiAuth({
+    summary: 'Xác thực token mời vào không gian làm việc',
+    type: WorkspaceDetailsResDto,
+  })
+  @ApiParam({
+    name: 'token',
+    description: 'Token mời',
+    type: 'string',
+  })
+  verifyInviteToken(
+    @Param('token') token: string,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.workspacesService.verifyInviteToken(token, userId);
   }
 }

@@ -65,7 +65,11 @@ export class WorkspacesService {
       throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn');
     }
 
-    const { workspaceId } = JSON.parse(cachedData);
+    const { workspaceId, userId: invitedUserId } = JSON.parse(cachedData);
+
+    if (userId !== invitedUserId) {
+      throw new BadRequestException('Token không hợp lệ cho người dùng này');
+    }
 
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
@@ -98,6 +102,7 @@ export class WorkspacesService {
   async invite(
     workspaceId: Uuid,
     inviteMemberDto: InviteMemberDto,
+    userId: Uuid,
   ): Promise<ResponseNoDataDto> {
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
@@ -106,6 +111,17 @@ export class WorkspacesService {
 
     if (!workspace) {
       throw new BadRequestException('Workspace not found');
+    }
+
+    const isOwner = workspace.owner.id === userId;
+    const isAdminMember = workspace.members.some(
+      (m) => m.userId === userId && m.role === WorkspaceRole.ADMIN,
+    );
+
+    if (!isOwner && !isAdminMember) {
+      throw new BadRequestException(
+        'Bạn không có quyền mời thành viên vào không gian làm việc này',
+      );
     }
 
     const membersToInvite = await this.userRepository.findBy({
@@ -131,24 +147,27 @@ export class WorkspacesService {
       infer: true,
     });
 
-    const token = randomBytes(32).toString('hex');
-    const inviteLink = `${baseURL}/workspaces/invite?token=${token}`;
-
-    await this.cacheManager.store.set(
-      createCacheKey(CacheKey.WORKSPACE_INVITE, token),
-      JSON.stringify({ workspaceId: workspace.id }),
-      ms(WORKSPACE_INVITE_TTL),
-    );
-
     await Promise.all(
-      membersToInvite.map((user) =>
-        this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
+      membersToInvite.map(async (user) => {
+        const token = randomBytes(32).toString('hex');
+        const inviteLink = `${baseURL}/invite-members?token=${token}`;
+
+        await this.cacheManager.store.set(
+          createCacheKey(CacheKey.WORKSPACE_INVITE, token),
+          JSON.stringify({
+            workspaceId: workspace.id,
+            userId: user.id,
+          }),
+          ms(WORKSPACE_INVITE_TTL),
+        );
+
+        await this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
           workspaceName: workspace.name,
           inviteLink,
           ownerName: workspace.owner.name,
           email: user.email,
-        }),
-      ),
+        });
+      }),
     );
 
     return new ResponseNoDataDto({
@@ -260,24 +279,27 @@ export class WorkspacesService {
           infer: true,
         });
 
-        const token = randomBytes(32).toString('hex');
-        const inviteLink = `${baseURL}/workspaces/invite?token=${token}`;
-
-        await this.cacheManager.store.set(
-          createCacheKey(CacheKey.WORKSPACE_INVITE, token),
-          JSON.stringify({ workspaceId: workspace.id }),
-          ms(WORKSPACE_INVITE_TTL),
-        );
-
         await Promise.all(
-          users.map((user) =>
-            this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
+          users.map(async (user) => {
+            const token = randomBytes(32).toString('hex');
+            const inviteLink = `${baseURL}/invite-members?token=${token}`;
+
+            await this.cacheManager.store.set(
+              createCacheKey(CacheKey.WORKSPACE_INVITE, token),
+              JSON.stringify({
+                workspaceId: savedWorkspace.id,
+                userId: user.id,
+              }),
+              ms(WORKSPACE_INVITE_TTL),
+            );
+
+            await this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
               workspaceName: savedWorkspace.name,
               inviteLink,
               ownerName: owner.name,
               email: user.email,
-            }),
-          ),
+            });
+          }),
         );
       }
 
