@@ -61,6 +61,9 @@ export enum ActivityLogActionEnum {
   UPDATED = 'updated',
   DELETED = 'deleted',
   ADDED = 'added',
+  COMMENT_CREATED = 'comment_created',
+  COMMENT_UPDATED = 'comment_updated',
+  COMMENT_DELETED = 'comment_deleted',
 }
 
 export enum ActivityLogQueryType {

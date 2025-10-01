@@ -36,6 +36,7 @@ import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 
 @ApiTags('activities')
@@ -63,7 +64,7 @@ export class ActivitiesController {
     return this.activitiesService.createActivityCategory(dto);
   }
 
-  @Post(':id/comments')
+  @Post('comments')
   @ApiAuth({
     summary: 'Thêm bình luận cho activity',
     type: ActivityCommentResDto,
@@ -73,7 +74,75 @@ export class ActivitiesController {
     @Body() dto: CreateActivityCommentDto,
     @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.createComment(activityId, dto, userId);
+    return this.activitiesService.createComment(
+      dto.activityId as Uuid,
+      dto,
+      userId,
+    );
+  }
+
+  @Get(':id/comments')
+  @ApiAuth({
+    summary: 'Lấy danh sách bình luận của activity',
+    type: ActivityCommentResDto,
+    paginationType: 'cursor',
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getComments(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getComments(activityId);
+  }
+
+  @Get(':id/comments/:commentId/replies')
+  @ApiAuth({
+    summary: 'Lấy danh sách replies của một bình luận',
+    type: ActivityCommentResDto,
+    paginationType: 'cursor',
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment cha' })
+  getReplies(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+  ) {
+    return this.activitiesService.getReplies(activityId, commentId);
+  }
+
+  @Patch(':id/comments/:commentId')
+  @ApiAuth({
+    summary: 'Cập nhật bình luận',
+    type: ActivityCommentResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment' })
+  updateComment(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+    @Body() dto: UpdateActivityCommentDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.updateComment(
+      activityId,
+      commentId,
+      dto,
+      userId,
+    );
+  }
+
+  @Delete(':id/comments/:commentId')
+  @ApiAuth({
+    summary: 'Xóa bình luận',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment' })
+  deleteComment(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.deleteComment(activityId, commentId, userId);
   }
 
   @Get(':id/logs')
