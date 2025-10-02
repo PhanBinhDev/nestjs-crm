@@ -108,7 +108,7 @@ export class ActivitiesController {
     @Param('commentId') commentId: Uuid,
     @Query() query: PageOptionsDto,
   ) {
-    return this.activitiesService.getReplies(activityId, commentId);
+    return this.activitiesService.getReplies(activityId, commentId, query);
   }
 
   @Patch(':id/comments/:commentId')
@@ -145,6 +145,36 @@ export class ActivitiesController {
     @CurrentUser('id') userId: Uuid,
   ) {
     return this.activitiesService.deleteComment(activityId, commentId, userId);
+  }
+
+  @Post(':id/comments/:commentId/reaction')
+  @ApiAuth({
+    summary: 'Thêm reaction (tym) cho bình luận',
+    type: ActivityCommentResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment' })
+  addReaction(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.addReaction(activityId, commentId, userId);
+  }
+
+  @Delete(':id/comments/:commentId/reaction')
+  @ApiAuth({
+    summary: 'Bỏ reaction (tym) khỏi bình luận',
+    type: ActivityCommentResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment' })
+  removeReaction(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.removeReaction(activityId, commentId, userId);
   }
 
   @Get(':id/logs')

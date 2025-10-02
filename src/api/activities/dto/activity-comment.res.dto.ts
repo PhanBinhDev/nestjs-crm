@@ -42,6 +42,12 @@ export class ActivityCommentResDto extends AuditResDto {
   @Expose()
   reactions?: Record<string, number>;
 
+  @ApiProperty({ description: 'Số lượng tym' })
+  @Expose()
+  get tymCount(): number {
+    return this.reactions?.tym || 0;
+  }
+
   @ApiProperty({ type: UserInfoDto })
   @Expose()
   @Type(() => UserInfoDto)

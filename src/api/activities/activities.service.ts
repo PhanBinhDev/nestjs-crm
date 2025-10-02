@@ -366,6 +366,105 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     await this.activityLogRepository.save(log);
   }
 
+  async addReaction(
+    activityId: Uuid,
+    commentId: Uuid,
+    _userId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    // Kiểm tra activity có tồn tại không
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    // Kiểm tra comment có tồn tại không
+    const comment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+      relations: ['user'],
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Không tìm thấy bình luận');
+    }
+
+    // Khởi tạo reactions nếu chưa có
+    if (!comment.reactions) {
+      comment.reactions = {};
+    }
+
+    // Khởi tạo tym count nếu chưa có
+    if (!comment.reactions.tym) {
+      comment.reactions.tym = 0;
+    }
+
+    // Tăng số lượng tym
+    comment.reactions.tym += 1;
+
+    // Đánh dấu flag cho TypeORM nhận biết thay đổi jsonb
+    comment.reactions = { ...comment.reactions };
+
+    const updatedComment = await this.activityCommentRepo.save(comment);
+
+    return new ResponseDto<ActivityCommentResDto>({
+      data: plainToInstance(ActivityCommentResDto, updatedComment, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Thêm reaction thành công',
+    });
+  }
+
+  async removeReaction(
+    activityId: Uuid,
+    commentId: Uuid,
+    _userId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    // Kiểm tra activity có tồn tại không
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    // Kiểm tra comment có tồn tại không
+    const comment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+      relations: ['user'],
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Không tìm thấy bình luận');
+    }
+
+    // Kiểm tra có reactions không
+    if (
+      !comment.reactions ||
+      !comment.reactions.tym ||
+      comment.reactions.tym <= 0
+    ) {
+      throw new BadRequestException('Bình luận này chưa có reaction nào');
+    }
+
+    // Giảm số lượng tym
+    comment.reactions.tym = Math.max(0, comment.reactions.tym - 1);
+
+    // Đánh dấu flag cho TypeORM nhận biết thay đổi jsonb
+    comment.reactions = { ...comment.reactions };
+
+    const updatedComment = await this.activityCommentRepo.save(comment);
+
+    return new ResponseDto<ActivityCommentResDto>({
+      data: plainToInstance(ActivityCommentResDto, updatedComment, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Bỏ reaction thành công',
+    });
+  }
+
   async getActivityCategories(): Promise<ResponseDto<CategoryResDto[]>> {
     const categories = await this.activityCategoryRepo.find();
     return new ResponseDto<CategoryResDto[]>({
