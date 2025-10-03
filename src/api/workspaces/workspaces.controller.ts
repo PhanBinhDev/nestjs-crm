@@ -23,6 +23,7 @@ import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspacesService } from './workspaces.service';
@@ -171,5 +172,68 @@ export class WorkspacesController {
     @CurrentUser('id') userId: Uuid,
   ) {
     return this.workspacesService.verifyInviteToken(token, userId);
+  }
+
+  @Delete(':workspaceId/members/:userId')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Xóa thành viên khỏi không gian làm việc',
+  })
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiParam({
+    name: 'userId',
+    description: 'ID của thành viên cần xóa',
+    type: 'string',
+    format: 'uuid',
+  })
+  removeMember(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Param('userId') userId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.removeMember(
+      workspaceId,
+      userId,
+      currentUserId,
+    );
+  }
+
+  @Patch(':workspaceId/members/:userId/role')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Cập nhật vai trò thành viên trong không gian làm việc',
+    type: WorkspaceMemberResDto,
+  })
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiParam({
+    name: 'userId',
+    description: 'ID của thành viên cần cập nhật vai trò',
+    type: 'string',
+    format: 'uuid',
+  })
+  updateMemberRole(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Param('userId') userId: Uuid,
+    @Body() updateMemberRoleDto: UpdateMemberRoleDto,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.updateMemberRole(
+      workspaceId,
+      userId,
+      updateMemberRoleDto,
+      currentUserId,
+    );
   }
 }
