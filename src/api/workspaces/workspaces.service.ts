@@ -13,7 +13,13 @@ import {
 import { createCacheKey } from '@/utils/cache.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
@@ -29,10 +35,12 @@ import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { Workspaces } from './entities/workspace.entity';
+import { WorkspaceRoleHierarchy } from './utils/workspace-role-hierarchy';
 
 @Injectable()
 export class WorkspacesService {
@@ -453,5 +461,172 @@ export class WorkspacesService {
       return false;
     }
     return workspace.members.some((member) => member.userId === userId);
+  }
+
+  /**
+   * Remove a member from workspace
+   * Only users with higher role can remove members with lower roles
+   */
+  async removeMember(
+    workspaceId: Uuid,
+    userIdToRemove: Uuid,
+    currentUserId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    // Find workspace with all members and owner
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      relations: ['owner', 'members', 'members.user'],
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
+    // Check if current user is in the workspace
+    const currentUserMember = workspace.members.find(
+      (member) => member.userId === currentUserId,
+    );
+
+    if (!currentUserMember && workspace.owner.id !== currentUserId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập workspace này');
+    }
+
+    // Check if user to remove exists in workspace
+    const memberToRemove = workspace.members.find(
+      (member) => member.userId === userIdToRemove,
+    );
+
+    if (!memberToRemove) {
+      throw new NotFoundException(
+        'Người dùng không phải là thành viên của workspace này',
+      );
+    }
+
+    // Prevent self-removal
+    if (currentUserId === userIdToRemove) {
+      throw new BadRequestException('Bạn không thể tự xóa chính mình');
+    }
+
+    // Determine current user's role
+    const currentUserRole =
+      workspace.owner.id === currentUserId
+        ? WorkspaceRole.OWNER
+        : currentUserMember.role;
+
+    // Check role hierarchy permissions
+    if (
+      !WorkspaceRoleHierarchy.canManageRole(
+        currentUserRole,
+        memberToRemove.role,
+      )
+    ) {
+      throw new ForbiddenException(
+        'Bạn không có quyền xóa thành viên có vai trò này',
+      );
+    }
+
+    // Remove the member
+    await this.membersRepository.remove(memberToRemove);
+
+    return new ResponseNoDataDto({
+      message: 'Xóa thành viên khỏi workspace thành công',
+    });
+  }
+
+  /**
+   * Update member role in workspace
+   * Only users with higher role can update members with lower roles
+   */
+  async updateMemberRole(
+    workspaceId: Uuid,
+    userIdToUpdate: Uuid,
+    updateDto: UpdateMemberRoleDto,
+    currentUserId: Uuid,
+  ): Promise<ResponseDto<WorkspaceMemberResDto>> {
+    // Find workspace with all members and owner
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      relations: ['owner', 'members', 'members.user'],
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
+    // Check if current user is in the workspace
+    const currentUserMember = workspace.members.find(
+      (member) => member.userId === currentUserId,
+    );
+
+    if (!currentUserMember && workspace.owner.id !== currentUserId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập workspace này');
+    }
+
+    // Check if user to update exists in workspace
+    const memberToUpdate = workspace.members.find(
+      (member) => member.userId === userIdToUpdate,
+    );
+
+    if (!memberToUpdate) {
+      throw new NotFoundException(
+        'Người dùng không phải là thành viên của workspace này',
+      );
+    }
+
+    // Prevent changing owner role
+    if (workspace.owner.id === userIdToUpdate) {
+      throw new BadRequestException(
+        'Không thể thay đổi vai trò của chủ sở hữu workspace',
+      );
+    }
+
+    // Prevent self role change
+    if (currentUserId === userIdToUpdate) {
+      throw new BadRequestException(
+        'Bạn không thể thay đổi vai trò của chính mình',
+      );
+    }
+
+    // Determine current user's role
+    const currentUserRole =
+      workspace.owner.id === currentUserId
+        ? WorkspaceRole.OWNER
+        : currentUserMember.role;
+
+    // Check if current user can manage the target member's current role
+    if (
+      !WorkspaceRoleHierarchy.canManageRole(
+        currentUserRole,
+        memberToUpdate.role,
+      )
+    ) {
+      throw new ForbiddenException(
+        'Bạn không có quyền quản lý thành viên có vai trò này',
+      );
+    }
+
+    // Check if current user can assign the new role
+    if (
+      !WorkspaceRoleHierarchy.canAssignRole(currentUserRole, updateDto.role)
+    ) {
+      throw new ForbiddenException('Bạn không có quyền gán vai trò này');
+    }
+
+    // Update the member's role
+    memberToUpdate.role = updateDto.role;
+    const updatedMember = await this.membersRepository.save(memberToUpdate);
+
+    // Reload with user data for response
+    const memberWithUser = await this.membersRepository.findOne({
+      where: { id: updatedMember.id },
+      relations: ['user'],
+    });
+
+    return new ResponseDto<WorkspaceMemberResDto>({
+      data: plainToInstance(WorkspaceMemberResDto, memberWithUser, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật vai trò thành viên thành công',
+    });
   }
 }
