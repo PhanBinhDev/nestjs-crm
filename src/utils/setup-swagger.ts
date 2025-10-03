@@ -15,7 +15,7 @@ function setupSwagger(app: INestApplication) {
     .addBearerAuth()
     .addServer(
       configService.getOrThrow('app.url', { infer: true }),
-      'Production',
+      configService.getOrThrow('app.nodeEnv', { infer: true }),
     )
     .build();
   const document = SwaggerModule.createDocument(app, config);
