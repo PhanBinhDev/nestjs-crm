@@ -31,6 +31,7 @@ import { NotificationEntity } from '../notification/entities/notification.entity
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { FileEntity } from '../files/entities/files.entity';
 import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
@@ -59,6 +60,7 @@ import {
 } from './entities/activity-checklist.entity';
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
+import { ActivityFileEntity } from './entities/activity-file.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -92,6 +94,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     @InjectRepository(ActivityCommentEntity)
     private readonly activityCommentRepo: Repository<ActivityCommentEntity>,
+    @InjectRepository(ActivityFileEntity)
+    private readonly activityFileRepo: Repository<ActivityFileEntity>,
   ) {
     super(activityRepo);
   }
@@ -761,9 +765,69 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+      // Handle file attachments
+      if (dto.attachments && dto.attachments.length > 0) {
+        const activityFileRepo = manager.getRepository(ActivityFileEntity);
+        const fileLogs: ActivityLogEntity[] = [];
+
+        console.log('Processing file attachments:', dto.attachments);
+
+        for (const fileId of dto.attachments) {
+          try {
+            // Validate fileId format
+            if (!fileId || typeof fileId !== 'string') {
+              console.error('Invalid fileId:', fileId);
+              continue;
+            }
+
+            // Verify file exists by URL (frontend sends URL, not ID)
+            const file = await manager.getRepository(FileEntity).findOne({
+              where: { url: fileId },
+            });
+
+            if (!file) {
+              console.error('File not found:', fileId);
+              continue;
+            }
+
+            // Create ActivityFileEntity
+            const activityFile = activityFileRepo.create({
+              activityId: savedActivity.id,
+              fileId: file.id, // Use actual file ID, not URL
+              createdBy: userId,
+            });
+            
+            const savedActivityFile = await activityFileRepo.save(activityFile);
+            console.log('ActivityFile saved successfully:', savedActivityFile.id);
+
+            // Log file attachment
+            const fileLog = activityLogRepo.create({
+              activity: savedActivity,
+              user: userCreator,
+              action: ActivityLogActionEnum.CREATED,
+              message: `Đính kèm file: ${file.originalName}`,
+              metadata: {
+                type: 'FILE_ATTACHMENT',
+                fileId: file.id,
+                fileName: file.originalName,
+              },
+            });
+            fileLogs.push(fileLog);
+          } catch (error) {
+            console.error('Error saving activity file:', error);
+            // Don't throw error, just log it and continue
+            console.error('Skipping file attachment due to error');
+          }
+        }
+
+        if (fileLogs.length > 0) {
+          await activityLogRepo.save(fileLogs);
+        }
+      }
+
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
-        relations: ['subActivities', 'assignees', 'assignees.user'],
+        relations: ['subActivities', 'assignees', 'assignees.user', 'files', 'files.file'],
       });
 
       return new ResponseDto<ActivityResDto>({
@@ -794,6 +858,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('subActivities.stage', 'subStage')
       .leftJoinAndSelect('activity.checklists', 'checklists')
       .leftJoinAndSelect('checklists.items', 'items')
+      .leftJoinAndSelect('activity.files', 'files')
+      .leftJoinAndSelect('files.file', 'file')
       .leftJoinAndSelect('activity.stage', 'stage');
 
     if (!query.includeSubTasks) {
@@ -923,6 +989,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         'stage',
         'subActivities',
         'subActivities.stage',
+        'files',
+        'files.file',
       ],
     });
 

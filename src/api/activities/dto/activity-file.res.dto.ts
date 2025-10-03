@@ -1,16 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose } from 'class-transformer';
+import { Expose, Transform } from 'class-transformer';
 
 export class ActivityFileResDto {
   @ApiProperty()
   @Expose()
-  id: string;
-
-  @ApiProperty()
-  @Expose()
-  fileUrl: string;
-
-  @ApiProperty()
-  @Expose()
-  fileName: string;
+  @Transform(({ obj }) => obj.file?.url || obj.url)
+  url: string;
 }

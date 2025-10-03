@@ -22,6 +22,7 @@
     "noFallthroughCasesInSwitch": false,
     "esModuleInterop": true,
     "importHelpers": true,
+    "baseUrl": "./",
     "paths": {
       "@/api/*": ["src/api/*"],
       "@/background/*": ["src/background/*"],

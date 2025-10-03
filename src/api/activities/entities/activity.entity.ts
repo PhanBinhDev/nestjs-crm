@@ -22,6 +22,7 @@ import { ActivityCategoryEntity } from './activity-category.entity';
 import { ActivityChecklistEntity } from './activity-checklist.entity';
 import { ActivityCommentEntity } from './activity-comments.entity';
 import { ActivityFeedbackEntity } from './activity-feedback.entity';
+import { ActivityFileEntity } from './activity-file.entity';
 import { ActivityParticipantEntity } from './activity-participant.entity';
 
 @Entity('activities')
@@ -149,4 +150,9 @@ export class ActivityEntity extends AbstractEntity {
     cascade: true,
   })
   checklists: ActivityChecklistEntity[];
+
+  @OneToMany(() => ActivityFileEntity, (activityFile) => activityFile.activity, {
+    cascade: true,
+  })
+  files: ActivityFileEntity[];
 }

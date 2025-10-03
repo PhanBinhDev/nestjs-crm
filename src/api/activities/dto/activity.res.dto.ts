@@ -17,6 +17,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
 import { ActivityChecklistResDto } from './activity-checklist.res.dto';
+import { ActivityFileResDto } from './activity-file.res.dto';
 
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
@@ -174,6 +175,14 @@ export class ActivityResDto {
   })
   @Expose()
   stage?: WrapperType<StageResDto>;
+
+  @ClassField(() => ActivityFileResDto, {
+    isArray: true,
+    required: false,
+    description: 'Danh sách file đính kèm',
+  })
+  @Expose()
+  files?: ActivityFileResDto[];
 
   @NumberField({
     example: 0,
