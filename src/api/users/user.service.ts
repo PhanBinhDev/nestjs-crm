@@ -3,6 +3,7 @@ import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
 import { UserRole } from '@/database/enum/user.enum';
 import {
+  WorkspaceMemberStatus,
   WorkspaceRole,
   WorkspaceVisibility,
 } from '@/database/enum/workspace.enum';
@@ -461,6 +462,7 @@ export class UserService {
         user,
         workspace: savedWorkspace,
         role: WorkspaceRole.OWNER,
+        status: WorkspaceMemberStatus.ACTIVE,
       });
       await workspaceMemberRepo.save(workspaceMember);
 
