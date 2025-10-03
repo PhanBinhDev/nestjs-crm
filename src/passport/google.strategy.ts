@@ -22,13 +22,17 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     done: VerifyCallback,
   ) {
     const email = profile.emails[0].value;
-    const user = await this.userService.findOneUserEmail(email);
+    let user = await this.userService.findOneUserEmail(email);
+
+    if (!user) {
+      user = await this.userService.createUserFromGoogle(profile);
+    }
 
     const res = {
       data: user,
       success: !!user,
     };
 
-    done(null, res);
+    done(null, res as any);
   }
 }

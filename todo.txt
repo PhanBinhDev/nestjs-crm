@@ -1,9 +1,0 @@
-PROD
-clientID: 45634835875-feg918f6ngvssb3hqvcudg8ol24rp81a.apps.googleusercontent.com
-clientSecret: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
-DEV
-clientID: 45634835875-fb49q9shgl0veq5sg1aphbena3n0h1jf.apps.googleusercontent.com
-clientSecret: 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
-STAGING
-clientID: 45634835875-ppikc58kdh2etto7q196fp0qr2dtka0o.apps.googleusercontent.com
-clientSecret: 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

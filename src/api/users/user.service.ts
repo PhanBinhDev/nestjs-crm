@@ -17,6 +17,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
+import { Profile } from 'passport-google-oauth20';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { StagesService } from '../stages/stages.service';
@@ -423,6 +424,50 @@ export class UserService {
     }
 
     return mappedRole;
+  }
+
+  async createUserFromGoogle(profile: Profile): Promise<UserEntity> {
+    return this.userRepository.manager.transaction(async (manager) => {
+      const userRepo = manager.getRepository(UserEntity);
+      const workspaceRepo = manager.getRepository(Workspaces);
+      const workspaceMemberRepo = manager.getRepository(WorkspaceMembers);
+
+      const email = profile.emails[0].value;
+      const name =
+        profile.displayName ||
+        `${profile.name?.givenName || ''} ${profile.name?.familyName || ''}`.trim();
+      const avatar = profile.photos?.[0]?.value;
+
+      const user = userRepo.create({
+        email,
+        name,
+        avatar,
+        username: email.split('@')[0],
+        isActive: true,
+        role: UserRole.GV,
+        phone: '+84123456789',
+      });
+
+      await userRepo.save(user);
+
+      const workspace = workspaceRepo.create({
+        name: `${user.name}'s Workspace`,
+        owner: user,
+        visibility: WorkspaceVisibility.PRIVATE,
+      });
+      const savedWorkspace = await workspaceRepo.save(workspace);
+
+      const workspaceMember = workspaceMemberRepo.create({
+        user,
+        workspace: savedWorkspace,
+        role: WorkspaceRole.OWNER,
+      });
+      await workspaceMemberRepo.save(workspaceMember);
+
+      await this.stageService.initDefaultStages(savedWorkspace.id, manager);
+
+      return user;
+    });
   }
 
   async update(
