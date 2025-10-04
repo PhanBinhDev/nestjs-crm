@@ -119,7 +119,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Người dùng không tồn tại');
     }
 
-    // Kiểm tra parentComment nếu có
     if (
       createCommentDto.parentCommentId &&
       createCommentDto.parentCommentId.trim() !== ''
@@ -146,13 +145,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const savedComment = await this.activityCommentRepo.save(comment);
 
-    // Tải lại comment với quan hệ user
     const commentWithUser = await this.activityCommentRepo.findOne({
       where: { id: savedComment.id },
       relations: ['user'],
     });
 
-    // Tạo log cho việc tạo comment
     await this.createCommentLog(
       activity,
       user,
