@@ -1072,6 +1072,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   ): Promise<ResponseDto<ActivityResDto[]>> {
     const activities = await this.activityRepo.find({
       where: { parentId },
+      relations: [
+        'stage',
+        'assignees',
+        'assignees.user',
+        'files',
+        'files.file',
+      ],
     });
 
     const activitiesWithProgress = activities.map((activity) => {
