@@ -1,36 +1,60 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
+import { ReactionType } from '@/database/enum/comments.enum';
+import {
+  BooleanField,
+  BooleanFieldOptional,
+  ClassField,
+  ClassFieldOptional,
+  EnumFieldOptional,
+  StringField,
+  StringFieldOptional,
+  UUIDField,
+  UUIDFieldOptional,
+} from '@/decorators/field.decorators';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 
-class UserInfoDto {
-  @ApiProperty()
+export class ReactionUserDto {
+  @UUIDField()
   @Expose()
-  id: Uuid;
+  id: string;
 
-  @ApiProperty()
+  @StringField()
   @Expose()
   name: string;
 
+  @StringFieldOptional()
+  @Expose()
+  avatar?: string;
+}
+
+export class ReactionSummaryDto {
   @ApiProperty()
   @Expose()
-  email: string;
+  count: number;
+
+  @ClassField(() => ReactionUserDto, { each: true })
+  @Expose()
+  @Type(() => ReactionUserDto)
+  users: ReactionUserDto[];
 }
 
 export class ActivityCommentResDto extends AuditResDto {
-  @ApiProperty()
+  @UUIDField()
   @Expose()
   activityId: Uuid;
 
-  @ApiPropertyOptional()
+  @UUIDFieldOptional()
   @Expose()
   parentCommentId?: Uuid;
 
-  @ApiProperty()
+  @StringField()
   @Expose()
   content: string;
 
-  @ApiProperty()
+  @BooleanField()
   @Expose()
   isEdited: boolean;
 
@@ -42,19 +66,53 @@ export class ActivityCommentResDto extends AuditResDto {
   @Expose()
   reactions?: Record<string, number>;
 
+  @ApiPropertyOptional({ description: 'Counts of reactions by type' })
+  @Expose()
+  reactionCounts?: Record<string, number>;
+
+  @ApiPropertyOptional({
+    description: 'Detailed summary of reactions with user info',
+  })
+  @Expose()
+  reactionSummary?: Record<string, ReactionSummaryDto>;
+
+  @EnumFieldOptional(() => ReactionType, {
+    description: "Current user's reaction type if any",
+  })
+  @Expose()
+  currentUserReaction?: ReactionType;
+
+  @BooleanFieldOptional({
+    description: 'Whether current user has reacted to this comment',
+  })
+  @Expose()
+  hasUserReacted?: boolean;
+
   @ApiProperty({ description: 'Số lượng tym' })
   @Expose()
   get tymCount(): number {
     return this.reactions?.tym || 0;
   }
 
-  @ApiProperty({ type: UserInfoDto })
+  @ApiProperty({ description: 'Total reaction count' })
   @Expose()
-  @Type(() => UserInfoDto)
-  user: UserInfoDto;
+  get totalReactions(): number {
+    if (this.reactionCounts) {
+      return Object.values(this.reactionCounts).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+    }
+    return 0;
+  }
 
-  //   @ApiPropertyOptional({ type: [ActivityCommentResDto] })
-  //   @Expose()
-  //   @Type(() => ActivityCommentResDto)
-  //   replies?: ActivityCommentResDto[];
+  @ClassField(() => UserResDto)
+  @Expose()
+  @Type(() => UserResDto)
+  user: UserResDto;
+
+  @ClassFieldOptional(() => ActivityCommentResDto, { each: true })
+  @Expose()
+  @Type(() => ActivityCommentResDto)
+  replies?: ActivityCommentResDto[];
 }

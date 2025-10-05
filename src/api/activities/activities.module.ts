@@ -11,6 +11,7 @@ import {
   ActivityChecklistEntity,
   ActivityChecklistItemEntity,
 } from './entities/activity-checklist.entity';
+import { ActivityCommentReactionEntity } from './entities/activity-comments-reaction.entity';
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
@@ -36,6 +37,7 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
       StagesEntity,
       ActivityCommentEntity,
       ActivityFileEntity,
+      ActivityCommentReactionEntity,
     ]),
   ],
   controllers: [ActivitiesController],
