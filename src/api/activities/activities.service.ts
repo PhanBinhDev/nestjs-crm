@@ -27,11 +27,11 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, Repository } from 'typeorm';
+import { FileEntity } from '../files/entities/files.entity';
 import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
-import { FileEntity } from '../files/entities/files.entity';
 import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
@@ -595,10 +595,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         throw new ValidationException(ErrorCode.E003);
       }
 
-      if (dto.type === 'event' && !dto.location) {
-        throw new BadRequestException('Event phải có location');
-      }
-
       const activityRepo = manager.getRepository(ActivityEntity);
       const checklistRepo = manager.getRepository(ActivityChecklistEntity);
       const checklistItemRepo = manager.getRepository(
@@ -793,9 +789,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               fileId: file.id, // Use actual file ID, not URL
               createdBy: userId,
             });
-            
+
             const savedActivityFile = await activityFileRepo.save(activityFile);
-            console.log('ActivityFile saved successfully:', savedActivityFile.id);
+            console.log(
+              'ActivityFile saved successfully:',
+              savedActivityFile.id,
+            );
 
             // Log file attachment
             const fileLog = activityLogRepo.create({
@@ -824,7 +823,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
-        relations: ['subActivities', 'assignees', 'assignees.user', 'files', 'files.file'],
+        relations: [
+          'subActivities',
+          'assignees',
+          'assignees.user',
+          'files',
+          'files.file',
+        ],
       });
 
       return new ResponseDto<ActivityResDto>({
@@ -857,6 +862,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('checklists.items', 'items')
       .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('files.file', 'file')
+      .leftJoinAndSelect('activity.category', 'category')
       .leftJoinAndSelect('activity.stage', 'stage');
 
     if (!query.includeSubTasks) {
@@ -988,6 +994,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         'subActivities.stage',
         'files',
         'files.file',
+        'category',
       ],
     });
 

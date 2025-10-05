@@ -97,6 +97,14 @@ export class NotificationsService {
     });
   }
 
+  async clearAll(userId: Uuid): Promise<ResponseNoDataDto> {
+    await this.notificationRepo.delete({ userId });
+
+    return new ResponseNoDataDto({
+      message: 'Xoá tất cả thông báo thành công',
+    });
+  }
+
   async markRead(dto: MarkReadDto): Promise<ResponseNoDataDto> {
     const notification = await this.notificationRepo.findOne({
       where: { id: dto.notificationId },

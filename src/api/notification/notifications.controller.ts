@@ -33,6 +33,14 @@ export class NotificationsController {
     return this.notificationService.markRead(dto);
   }
 
+  @Patch('clear-all')
+  @ApiAuth({
+    summary: 'Xoá tất cả thông báo',
+  })
+  async clearAll(@CurrentUser() user: UserEntity) {
+    return this.notificationService.clearAll(user.id);
+  }
+
   @Patch('read-all')
   @ApiAuth({
     summary: 'Đánh dấu tất cả thông báo là đã đọc',

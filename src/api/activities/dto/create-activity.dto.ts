@@ -168,7 +168,8 @@ export class CreateActivityDto {
   @ApiProperty({
     type: [String],
     required: false,
-    description: 'Danh sách file URL đính kèm cho hoạt động (array string URLs)',
+    description:
+      'Danh sách file URL đính kèm cho hoạt động (array string URLs)',
     example: ['/uploads/file1.docx', '/uploads/file2.png'],
   })
   @IsOptional()

@@ -3,7 +3,6 @@ import { StageResDto } from '@/api/stages/dto/stage.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import {
-  ActivityCategory,
   ActivityPiority,
   ActivityStatus,
   ActivityType,
@@ -11,11 +10,13 @@ import {
 import {
   ClassField,
   NumberField,
+  StringField,
   UUIDField,
 } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
+import { ActivityCategoryResDto } from './activity-category.res.dto';
 import { ActivityChecklistResDto } from './activity-checklist.res.dto';
 import { ActivityFileResDto } from './activity-file.res.dto';
 
@@ -86,13 +87,19 @@ export class ActivityResDto {
   @Expose()
   mandatory?: boolean;
 
-  @ApiProperty({
-    enum: ActivityCategory,
-    example: ActivityCategory.SEMINAR,
+  @ClassField(() => ActivityCategoryResDto, {
     required: false,
+    description: 'Danh mục hoạt động',
   })
   @Expose()
-  category?: ActivityCategory;
+  category?: ActivityCategoryResDto;
+
+  @StringField({
+    example: 'category-uuid',
+    description: 'ID danh mục hoạt động',
+  })
+  @Expose()
+  categoryId?: Uuid;
 
   @ApiProperty({ example: '2025-07-20T08:43:00.230Z' })
   @Expose()

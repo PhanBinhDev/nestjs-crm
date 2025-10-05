@@ -151,8 +151,12 @@ export class ActivityEntity extends AbstractEntity {
   })
   checklists: ActivityChecklistEntity[];
 
-  @OneToMany(() => ActivityFileEntity, (activityFile) => activityFile.activity, {
-    cascade: true,
-  })
+  @OneToMany(
+    () => ActivityFileEntity,
+    (activityFile) => activityFile.activity,
+    {
+      cascade: true,
+    },
+  )
   files: ActivityFileEntity[];
 }
