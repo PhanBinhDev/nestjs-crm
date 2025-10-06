@@ -88,12 +88,6 @@ export class ActivityCommentResDto extends AuditResDto {
   @Expose()
   hasUserReacted?: boolean;
 
-  @ApiProperty({ description: 'Số lượng tym' })
-  @Expose()
-  get tymCount(): number {
-    return this.reactions?.tym || 0;
-  }
-
   @ApiProperty({ description: 'Total reaction count' })
   @Expose()
   get totalReactions(): number {
