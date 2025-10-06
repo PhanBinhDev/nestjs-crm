@@ -27,7 +27,6 @@ import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AddActivityLinkDto } from './dto/add-activity-link.dto';
-import { AddTaskLinkDto } from './dto/add-task-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
@@ -538,9 +537,8 @@ export class ActivitiesController {
   addLinkToActivity(
     @Param('id') activityId: Uuid,
     @Body() dto: AddActivityLinkDto,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.addLinkToActivity(activityId, dto, userId);
+    return this.activitiesService.addLinkToActivity(activityId, dto);
   }
 
   @Get(':id/links')
@@ -565,14 +563,8 @@ export class ActivitiesController {
     @Param('id') activityId: Uuid,
     @Param('linkId') linkId: Uuid,
     @Body() dto: AddActivityLinkDto,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.updateActivityLink(
-      activityId,
-      linkId,
-      dto,
-      userId,
-    );
+    return this.activitiesService.updateActivityLink(activityId, linkId, dto);
   }
 
   @Delete(':id/links/:linkId')
@@ -585,51 +577,7 @@ export class ActivitiesController {
   removeLinkFromActivity(
     @Param('id') activityId: Uuid,
     @Param('linkId') linkId: Uuid,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.removeLinkFromActivity(
-      activityId,
-      linkId,
-      userId,
-    );
-  }
-  @Post(':id/task-links')
-  @ApiAuth({
-    summary: 'Gắn task link - liên kết với activity khác',
-    type: ActivityLinkResDto,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  addTaskLink(
-    @Param('id') activityId: Uuid,
-    @Body() dto: AddTaskLinkDto,
-    @CurrentUser('id') userId: Uuid,
-  ) {
-    return this.activitiesService.addTaskLink(activityId, dto, userId);
-  }
-
-  @Get(':id/task-links')
-  @ApiAuth({
-    summary: 'Lấy danh sách task links của activity',
-    type: ActivityLinkResDto,
-    isArray: true,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  getTaskLinks(@Param('id') activityId: Uuid) {
-    return this.activitiesService.getTaskLinks(activityId);
-  }
-
-  @Delete(':id/task-links/:linkId')
-  @ApiAuth({
-    summary: 'Xóa task link khỏi activity',
-    type: ResponseNoDataDto,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  @ApiParam({ name: 'linkId', description: 'ID của task link cần xóa' })
-  removeTaskLink(
-    @Param('id') activityId: Uuid,
-    @Param('linkId') linkId: Uuid,
-    @CurrentUser('id') userId: Uuid,
-  ) {
-    return this.activitiesService.removeTaskLink(activityId, linkId, userId);
+    return this.activitiesService.removeLinkFromActivity(activityId, linkId);
   }
 }
