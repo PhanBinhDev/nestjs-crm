@@ -1,6 +1,8 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateActivityFilesTable1759496707326 implements MigrationInterface {
+export class CreateActivityFilesTable1759496707326
+  implements MigrationInterface
+{
   name = 'CreateActivityFilesTable1759496707326';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -67,4 +69,3 @@ export class CreateActivityFilesTable1759496707326 implements MigrationInterface
     `);
   }
 }
-

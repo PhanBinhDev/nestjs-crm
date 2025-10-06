@@ -23,8 +23,10 @@ import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
+import { AddActivityLinkDto } from './dto/add-activity-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
@@ -524,5 +526,71 @@ export class ActivitiesController {
   })
   async getEventFeedbackStats(@Param('id') id: Uuid) {
     return this.activitiesService.getEventFeedbackStats(id);
+  }
+
+  // Link Management Endpoints
+  @Post(':id/links')
+  @ApiAuth({
+    summary: 'Gắn link vào activity',
+    type: ActivityLinkResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  addLinkToActivity(
+    @Param('id') activityId: Uuid,
+    @Body() dto: AddActivityLinkDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.addLinkToActivity(activityId, dto, userId);
+  }
+
+  @Get(':id/links')
+  @ApiAuth({
+    summary: 'Lấy danh sách links của activity',
+    type: ActivityLinkResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityLinks(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityLinks(activityId);
+  }
+
+  @Patch(':id/links/:linkId')
+  @ApiAuth({
+    summary: 'Cập nhật link của activity',
+    type: ActivityLinkResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'linkId', description: 'ID của link cần cập nhật' })
+  updateActivityLink(
+    @Param('id') activityId: Uuid,
+    @Param('linkId') linkId: Uuid,
+    @Body() dto: AddActivityLinkDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.updateActivityLink(
+      activityId,
+      linkId,
+      dto,
+      userId,
+    );
+  }
+
+  @Delete(':id/links/:linkId')
+  @ApiAuth({
+    summary: 'Xóa link khỏi activity',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'linkId', description: 'ID của link cần xóa' })
+  removeLinkFromActivity(
+    @Param('id') activityId: Uuid,
+    @Param('linkId') linkId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.removeLinkFromActivity(
+      activityId,
+      linkId,
+      userId,
+    );
   }
 }
