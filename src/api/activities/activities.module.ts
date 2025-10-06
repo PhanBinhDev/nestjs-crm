@@ -15,6 +15,7 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -37,6 +38,7 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
       StagesEntity,
       ActivityCommentEntity,
       ActivityFileEntity,
+      ActivityLinkEntity,
       ActivityCommentReactionEntity,
     ]),
   ],

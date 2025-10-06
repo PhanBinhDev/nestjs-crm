@@ -37,8 +37,10 @@ import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
+import { AddActivityLinkDto } from './dto/add-activity-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
@@ -63,6 +65,7 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -97,6 +100,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityCommentRepo: Repository<ActivityCommentEntity>,
     @InjectRepository(ActivityCommentReactionEntity)
     private readonly activityCommentReactionRepo: Repository<ActivityCommentReactionEntity>,
+    @InjectRepository(ActivityLinkEntity)
+    private readonly activityLinkRepo: Repository<ActivityLinkEntity>,
   ) {
     super(activityRepo);
   }
@@ -2408,5 +2413,126 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
 
     return { counts, summary };
+  }
+
+  async addLinkToActivity(
+    activityId: Uuid,
+    dto: AddActivityLinkDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = this.activityLinkRepo.create({
+      activityId,
+      title: dto.title,
+      url: dto.url,
+      description: dto.description,
+    });
+
+    const savedLink = await this.activityLinkRepo.save(link);
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, savedLink, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Thêm link thành công',
+    });
+  }
+
+  async getActivityLinks(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const links = await this.activityLinkRepo.find({
+      where: { activityId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return new ResponseDto<ActivityLinkResDto[]>({
+      data: plainToInstance(ActivityLinkResDto, links, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách link thành công',
+    });
+  }
+
+  async updateActivityLink(
+    activityId: Uuid,
+    linkId: Uuid,
+    dto: AddActivityLinkDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: { id: linkId, activityId },
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    await this.activityLinkRepo.update(linkId, {
+      title: dto.title,
+      url: dto.url,
+      description: dto.description,
+    });
+
+    const updatedLink = await this.activityLinkRepo.findOne({
+      where: { id: linkId },
+    });
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, updatedLink, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật link thành công',
+    });
+  }
+  async removeLinkFromActivity(
+    activityId: Uuid,
+    linkId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: { id: linkId, activityId },
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    await this.activityLinkRepo.remove(link);
+
+    return new ResponseNoDataDto({
+      message: 'Xóa link thành công',
+    });
   }
 }
