@@ -18,31 +18,30 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { UserEntity } from '../users/entities/user.entity';
-import { ActivitiesService } from './activities.service';
-import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
-import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
-import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
-import { ActivityLinkResDto } from './dto/activity-link.res.dto';
-import { ActivityLogResDto } from './dto/activity-log.res.dto';
-import { ActivityResDto } from './dto/activity.res.dto';
-import { AddActivityLinkDto } from './dto/add-activity-link.dto';
-import { AddTaskLinkDto } from './dto/add-task-link.dto';
-import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
-import { CategoryResDto } from './dto/category.res.dto';
-import { CategoryDto } from './dto/category.res.dto copy';
-import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
-import { CreateActivityDto } from './dto/create-activity.dto';
-import { CreateActivityCommentDto } from './dto/create-comment.dto';
-import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
-import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
-import { QueryActivityLogDto } from './dto/query-activity-log.dto';
-import { QueryActivityDto } from './dto/query-activity.dto';
-import { ToggleReactionReqDto } from './dto/toggle-reaction.req.dto';
-import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
-import { UpdateActivityDto } from './dto/update-activity.dto';
-import { UpdateActivityCommentDto } from './dto/update-comment.dto';
-import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
+import { UserEntity } from '../../users/entities/user.entity';
+import { ActivitiesService } from '../activities.service';
+import { ActivityAssigneeResDto } from '../dto/activity-assignee.res.dto';
+import { ActivityCommentResDto } from '../dto/activity-comment.res.dto';
+import { ActivityFeedbackResDto } from '../dto/activity-feedback.res.dto';
+import { ActivityLinkResDto } from '../dto/activity-link.res.dto';
+import { ActivityLogResDto } from '../dto/activity-log.res.dto';
+import { ActivityResDto } from '../dto/activity.res.dto';
+import { AddActivityLinkDto } from '../dto/add-activity-link.dto';
+import { AssignUserToActivityDto } from '../dto/assign-user-to-activity.dto';
+import { CategoryResDto } from '../dto/category.res.dto';
+import { CategoryDto } from '../dto/category.res.dto copy';
+import { CreateActivityFeedbackDto } from '../dto/create-activity-feedback.dto';
+import { CreateActivityDto } from '../dto/create-activity.dto';
+import { CreateActivityCommentDto } from '../dto/create-comment.dto';
+import { CreateEventFeedbackDto } from '../dto/create-event-feedback.dto';
+import { EventFeedbackResDto } from '../dto/event-feedback.res.dto';
+import { QueryActivityLogDto } from '../dto/query-activity-log.dto';
+import { QueryActivityDto } from '../dto/query-activity.dto';
+import { ToggleReactionReqDto } from '../dto/toggle-reaction.req.dto';
+import { UpdateActivityStatusDto } from '../dto/update-activity-status.dto';
+import { UpdateActivityDto } from '../dto/update-activity.dto';
+import { UpdateActivityCommentDto } from '../dto/update-comment.dto';
+import { UpdateParticipantReqDto } from '../dto/update-participant.req.dto';
 
 @ApiTags('activities')
 @Controller('activities')
@@ -528,7 +527,6 @@ export class ActivitiesController {
   async getEventFeedbackStats(@Param('id') id: Uuid) {
     return this.activitiesService.getEventFeedbackStats(id);
   }
-
   @Post(':id/links')
   @ApiAuth({
     summary: 'Gắn link vào activity',
@@ -592,44 +590,5 @@ export class ActivitiesController {
       linkId,
       userId,
     );
-  }
-  @Post(':id/task-links')
-  @ApiAuth({
-    summary: 'Gắn task link - liên kết với activity khác',
-    type: ActivityLinkResDto,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  addTaskLink(
-    @Param('id') activityId: Uuid,
-    @Body() dto: AddTaskLinkDto,
-    @CurrentUser('id') userId: Uuid,
-  ) {
-    return this.activitiesService.addTaskLink(activityId, dto, userId);
-  }
-
-  @Get(':id/task-links')
-  @ApiAuth({
-    summary: 'Lấy danh sách task links của activity',
-    type: ActivityLinkResDto,
-    isArray: true,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  getTaskLinks(@Param('id') activityId: Uuid) {
-    return this.activitiesService.getTaskLinks(activityId);
-  }
-
-  @Delete(':id/task-links/:linkId')
-  @ApiAuth({
-    summary: 'Xóa task link khỏi activity',
-    type: ResponseNoDataDto,
-  })
-  @ApiParam({ name: 'id', description: 'ID của activity' })
-  @ApiParam({ name: 'linkId', description: 'ID của task link cần xóa' })
-  removeTaskLink(
-    @Param('id') activityId: Uuid,
-    @Param('linkId') linkId: Uuid,
-    @CurrentUser('id') userId: Uuid,
-  ) {
-    return this.activitiesService.removeTaskLink(activityId, linkId, userId);
   }
 }

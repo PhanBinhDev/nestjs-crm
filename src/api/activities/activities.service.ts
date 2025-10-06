@@ -41,6 +41,7 @@ import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AddActivityLinkDto } from './dto/add-activity-link.dto';
+import { AddTaskLinkDto } from './dto/add-task-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
@@ -2418,7 +2419,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async addLinkToActivity(
     activityId: Uuid,
     dto: AddActivityLinkDto,
-    userId: Uuid,
+    _userId: Uuid,
   ): Promise<ResponseDto<ActivityLinkResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -2433,6 +2434,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       title: dto.title,
       url: dto.url,
       description: dto.description,
+      linkType: 'external',
     });
 
     const savedLink = await this.activityLinkRepo.save(link);
@@ -2473,7 +2475,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     linkId: Uuid,
     dto: AddActivityLinkDto,
-    userId: Uuid,
+    _userId: Uuid,
   ): Promise<ResponseDto<ActivityLinkResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -2511,7 +2513,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async removeLinkFromActivity(
     activityId: Uuid,
     linkId: Uuid,
-    userId: Uuid,
+    _userId: Uuid,
   ): Promise<ResponseNoDataDto> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -2522,7 +2524,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     const link = await this.activityLinkRepo.findOne({
-      where: { id: linkId, activityId },
+      where: {
+        id: linkId,
+        activityId,
+        linkType: 'external',
+      },
     });
 
     if (!link) {
@@ -2533,6 +2539,153 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     return new ResponseNoDataDto({
       message: 'Xóa link thành công',
+    });
+  }
+
+  async addTaskLink(
+    activityId: Uuid,
+    dto: AddTaskLinkDto,
+    _userId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const linkedActivity = await this.activityRepo.findOne({
+      where: { id: dto.linkedActivityId },
+    });
+
+    if (!linkedActivity) {
+      throw new NotFoundException('Activity cần liên kết không tồn tại');
+    }
+
+    if (activityId === dto.linkedActivityId) {
+      throw new BadRequestException('Không thể liên kết task với chính nó');
+    }
+
+    const existingLink = await this.activityLinkRepo.findOne({
+      where: [
+        {
+          activityId,
+          linkedActivityId: dto.linkedActivityId,
+          linkType: 'task',
+        },
+        {
+          activityId: dto.linkedActivityId,
+          linkedActivityId: activityId,
+          linkType: 'task',
+        },
+      ],
+    });
+
+    if (existingLink) {
+      throw new BadRequestException('Đã tồn tại liên kết giữa 2 task này');
+    }
+
+    const autoTitle = `Liên kết với: ${linkedActivity.name}`;
+
+    const taskLink = this.activityLinkRepo.create({
+      activityId,
+      linkedActivityId: dto.linkedActivityId,
+      title: autoTitle,
+      description: null,
+      linkType: 'task',
+    });
+
+    const savedLink = await this.activityLinkRepo.save(taskLink);
+
+    const linkWithRelations = await this.activityLinkRepo.findOne({
+      where: { id: savedLink.id },
+      relations: [
+        'linkedActivity',
+        'linkedActivity.stage',
+        'linkedActivity.assignees',
+        'linkedActivity.assignees.user',
+        'linkedActivity.category',
+        'linkedActivity.participants',
+        'linkedActivity.participants.user',
+      ],
+    });
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, linkWithRelations, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Gắn liên kết task thành công',
+    });
+  }
+
+  async getTaskLinks(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const taskLinks = await this.activityLinkRepo.find({
+      where: {
+        activityId,
+        linkType: 'task',
+      },
+      relations: [
+        'linkedActivity',
+        'linkedActivity.stage',
+        'linkedActivity.assignees',
+        'linkedActivity.assignees.user',
+        'linkedActivity.category',
+        'linkedActivity.participants',
+        'linkedActivity.participants.user',
+        'linkedActivity.feedbacks',
+        'linkedActivity.feedbacks.user',
+      ],
+      order: { createdAt: 'DESC' },
+    });
+
+    return new ResponseDto<ActivityLinkResDto[]>({
+      data: plainToInstance(ActivityLinkResDto, taskLinks, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách task links thành công',
+    });
+  }
+
+  async removeTaskLink(
+    activityId: Uuid,
+    linkId: Uuid,
+    _userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const taskLink = await this.activityLinkRepo.findOne({
+      where: {
+        id: linkId,
+        activityId,
+        linkType: 'task',
+      },
+    });
+
+    if (!taskLink) {
+      throw new NotFoundException('Task link không tồn tại');
+    }
+
+    await this.activityLinkRepo.remove(taskLink);
+
+    return new ResponseNoDataDto({
+      message: 'Xóa liên kết task thành công',
     });
   }
 }
