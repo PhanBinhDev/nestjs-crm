@@ -2456,7 +2456,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const links = await this.activityLinkRepo.find({
       where: { activityId },
       order: { createdAt: 'DESC' },
-      relations: ['createdByUser'],
     });
 
     return new ResponseDto<ActivityLinkResDto[]>({
