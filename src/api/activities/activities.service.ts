@@ -551,17 +551,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const userRepo = manager.getRepository(UserEntity);
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
 
-      // Validate activity exists
       const activity = await activityRepo.findOne({
         where: { id: activityId },
-        relations: ['comments', 'comments.user'],
+        relations: ['workspace', 'workspace.owner'],
       });
 
       if (!activity) {
         throw new NotFoundException('Hoạt động không tồn tại');
       }
 
-      // Validate comment exists
       const comment = await commentRepo.findOne({
         where: { id: commentId, activityId },
         relations: ['user', 'replies'],
@@ -573,7 +571,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       const user = await userRepo.findOne({
         where: { id: userId },
-        relations: ['workspaces'],
       });
 
       if (!user) {
@@ -581,7 +578,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
 
       const isCommentCreator = comment.userId === userId;
-      const isWorkspaceOwner = activity.workspace.owner.id === userId;
+      const isWorkspaceOwner = activity.workspace?.owner.id === userId;
 
       if (!isCommentCreator && !isWorkspaceOwner) {
         throw new BadRequestException(
@@ -591,7 +588,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       const contentBackup = comment.content;
       const commentCreator = comment.user;
+
       await commentRepo.remove(comment);
+
       const activityLog = activityLogRepo.create({
         activity,
         user,
@@ -603,7 +602,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           type: ActivityLogActionEnum.COMMENT_DELETED,
           comment,
           deletedByAuthor: isCommentCreator,
-          hasReplies: comment.replies?.length > 0,
         },
       });
 
@@ -2458,6 +2456,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const links = await this.activityLinkRepo.find({
       where: { activityId },
       order: { createdAt: 'DESC' },
+      relations: ['createdByUser'],
     });
 
     return new ResponseDto<ActivityLinkResDto[]>({

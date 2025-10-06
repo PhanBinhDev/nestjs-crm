@@ -536,9 +536,8 @@ export class ActivitiesController {
   addLinkToActivity(
     @Param('id') activityId: Uuid,
     @Body() dto: AddActivityLinkDto,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.addLinkToActivity(activityId, dto, userId);
+    return this.activitiesService.addLinkToActivity(activityId, dto);
   }
 
   @Get(':id/links')
@@ -563,14 +562,8 @@ export class ActivitiesController {
     @Param('id') activityId: Uuid,
     @Param('linkId') linkId: Uuid,
     @Body() dto: AddActivityLinkDto,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.updateActivityLink(
-      activityId,
-      linkId,
-      dto,
-      userId,
-    );
+    return this.activitiesService.updateActivityLink(activityId, linkId, dto);
   }
 
   @Delete(':id/links/:linkId')
@@ -583,12 +576,7 @@ export class ActivitiesController {
   removeLinkFromActivity(
     @Param('id') activityId: Uuid,
     @Param('linkId') linkId: Uuid,
-    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.removeLinkFromActivity(
-      activityId,
-      linkId,
-      userId,
-    );
+    return this.activitiesService.removeLinkFromActivity(activityId, linkId);
   }
 }
