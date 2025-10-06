@@ -21,6 +21,7 @@ import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
@@ -40,6 +41,7 @@ import { QueryActivityDto } from './dto/query-activity.dto';
 import { ToggleReactionReqDto } from './dto/toggle-reaction.req.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 
@@ -173,6 +175,32 @@ export class ActivitiesController {
     @CurrentUser('id') userId: Uuid,
   ) {
     return this.activitiesService.deleteComment(activityId, commentId, userId);
+  }
+
+  @Get(':id/checklists')
+  @ApiAuth({
+    summary: 'Lấy danh sách checklist của hoạt động',
+    type: ActivityChecklistResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getChecklists(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getChecklists(activityId);
+  }
+
+  @Patch(':id/checklists/:checklistId')
+  @ApiAuth({
+    summary: 'Cập nhật checklist của hoạt động',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  updateChecklist(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Body() dto: UpdateChecklistDto,
+  ) {
+    return this.activitiesService.updateChecklist(activityId, checklistId, dto);
   }
 
   @Get(':id/logs')

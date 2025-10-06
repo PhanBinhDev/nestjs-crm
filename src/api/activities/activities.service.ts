@@ -27,6 +27,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { NotificationEntity } from '../notification/entities/notification.entity';
@@ -35,6 +36,7 @@ import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
@@ -53,6 +55,7 @@ import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
@@ -102,8 +105,135 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityCommentReactionRepo: Repository<ActivityCommentReactionEntity>,
     @InjectRepository(ActivityLinkEntity)
     private readonly activityLinkRepo: Repository<ActivityLinkEntity>,
+    @InjectRepository(ActivityChecklistEntity)
+    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
   ) {
     super(activityRepo);
+  }
+
+  async updateChecklist(
+    activityId: Uuid,
+    checklistId: Uuid,
+    dto: UpdateChecklistDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+        relations: ['items'],
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      if (dto.name) {
+        checklist.name = dto.name;
+        await checklistRepo.save(checklist);
+      }
+
+      if (dto.items?.length > 0) {
+        const existingItemsMap = new Map(
+          checklist.items?.map((item) => [item.id, item]) || [],
+        );
+
+        for (const itemDto of dto.items) {
+          const existingItem = existingItemsMap.get(itemDto.id);
+
+          if (existingItem) {
+            merge(existingItem, {
+              content: itemDto.content,
+              isDone: itemDto.isDone,
+            });
+            await checklistItemRepo.save(existingItem);
+          }
+        }
+      }
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật checklist thành công',
+      });
+    });
+  }
+
+  async getChecklists(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityChecklistResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const qb = this.activityChecklistRepo
+      .createQueryBuilder('checklist')
+      .leftJoinAndSelect('checklist.items', 'items')
+      .where('checklist.activityId = :activityId', { activityId })
+      .orderBy('checklist.createdAt', 'ASC')
+      .addOrderBy('items.createdAt', 'ASC');
+
+    const checklists = await qb.getMany();
+
+    const processedChecklists = checklists.map((checklist) => {
+      const totalItems = checklist.items?.length || 0;
+      const completedItems =
+        checklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      return {
+        ...checklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+    });
+
+    return new ResponseDto<ActivityChecklistResDto[]>({
+      data: plainToInstance(ActivityChecklistResDto, processedChecklists, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách checklist thành công',
+    });
   }
 
   async toggleReactionOnComment(

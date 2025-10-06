@@ -1,15 +1,12 @@
 import { UserResDto } from '@/api/users/dto/user.res.dto';
+import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { WrapperType } from '@/common/types/types';
 import { AssigneeRole, AssignmentStatus } from '@/database/enum/activity.enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityResDto } from './activity.res.dto';
 
-export class ActivityAssigneeResDto {
-  @ApiProperty({ example: 'a0c83f2d-7fa2-4ad2-ac00-7b08e5cad3a8' })
-  @Expose()
-  id: string;
-
+export class ActivityAssigneeResDto extends AuditResDto {
   @ApiProperty({ example: 'Hoạt động ABC' })
   @Expose()
   @Type(() => ActivityResDto)
