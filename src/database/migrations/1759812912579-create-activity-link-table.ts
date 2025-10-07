@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class CreateActivityLinksTable1759761972828 implements MigrationInterface {
-    name = 'CreateActivityLinksTable1759761972828'
+export class CreateActivityLinkTable1759812912579 implements MigrationInterface {
+    name = 'CreateActivityLinkTable1759812912579'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
@@ -12,7 +12,7 @@ export class CreateActivityLinksTable1759761972828 implements MigrationInterface
                 "url" character varying(2048) NOT NULL,
                 "description" text,
                 "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                "createdBy" character varying NOT NULL,
+                "createdBy" uuid NOT NULL,
                 "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_69509fa73dd5706f71fa352c9b3" PRIMARY KEY ("id")
             )
@@ -24,9 +24,16 @@ export class CreateActivityLinksTable1759761972828 implements MigrationInterface
             ALTER TABLE "activity_links"
             ADD CONSTRAINT "FK_a79aa863c38f9417825b6d2f5fb" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE NO ACTION
         `);
+        await queryRunner.query(`
+            ALTER TABLE "activity_links"
+            ADD CONSTRAINT "FK_e2dfff6c31ef0c97b49045b504a" FOREIGN KEY ("createdBy") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`
+            ALTER TABLE "activity_links" DROP CONSTRAINT "FK_e2dfff6c31ef0c97b49045b504a"
+        `);
         await queryRunner.query(`
             ALTER TABLE "activity_links" DROP CONSTRAINT "FK_a79aa863c38f9417825b6d2f5fb"
         `);

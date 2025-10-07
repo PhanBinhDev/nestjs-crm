@@ -5,30 +5,59 @@ import {
   StringFieldOptional,
   UUIDField,
 } from '@/decorators/field.decorators';
-import { Expose } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+import { Expose, Type } from 'class-transformer';
+
+export class CreatorInfoDto {
+  @UUIDField({
+    description: 'ID của người tạo',
+  })
+  @Expose()
+  id: Uuid;
+
+  @StringField({
+    description: 'Tên của người tạo',
+  })
+  @Expose()
+  name: string;
+}
 
 export class ActivityLinkResDto extends AuditResDto {
   @UUIDField({
-    description: 'ID of the activity this link is associated with',
+    description: 'ID của link',
+  })
+  @Expose()
+  declare id: Uuid;
+
+  @UUIDField({
+    description: 'ID của activity',
   })
   @Expose()
   activityId: Uuid;
 
   @StringField({
-    description: 'Title of the link',
+    description: 'Tiêu đề của link',
   })
   @Expose()
   title: string;
 
   @StringField({
-    description: 'URL of the link',
+    description: 'URL của link',
   })
   @Expose()
   url: string;
 
   @StringFieldOptional({
-    description: 'Optional description of the link',
+    description: 'Mô tả về link',
   })
   @Expose()
   description?: string;
+
+  @ApiProperty({
+    description: 'Thông tin người tạo link',
+    type: CreatorInfoDto,
+  })
+  @Type(() => CreatorInfoDto)
+  @Expose()
+  creator: CreatorInfoDto;
 }

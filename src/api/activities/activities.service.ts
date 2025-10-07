@@ -2546,6 +2546,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async addLinkToActivity(
     activityId: Uuid,
     dto: AddActivityLinkDto,
+    userId: Uuid,
   ): Promise<ResponseDto<ActivityLinkResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -2560,6 +2561,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       title: dto.title,
       url: dto.url,
       description: dto.description,
+      createdBy: userId,
     });
 
     const savedLink = await this.activityLinkRepo.save(link);
@@ -2617,15 +2619,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Link không tồn tại');
     }
 
-    await this.activityLinkRepo.update(linkId, {
-      title: dto.title,
-      url: dto.url,
-      description: dto.description,
-    });
+    link.title = dto.title;
+    link.url = dto.url;
+    link.description = dto.description;
 
-    const updatedLink = await this.activityLinkRepo.findOne({
-      where: { id: linkId },
-    });
+    const updatedLink = await this.activityLinkRepo.save(link);
 
     return new ResponseDto<ActivityLinkResDto>({
       data: plainToInstance(ActivityLinkResDto, updatedLink, {
@@ -2634,6 +2632,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Cập nhật link thành công',
     });
   }
+
   async removeLinkFromActivity(
     activityId: Uuid,
     linkId: Uuid,

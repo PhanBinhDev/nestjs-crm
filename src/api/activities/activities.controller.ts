@@ -565,8 +565,9 @@ export class ActivitiesController {
   addLinkToActivity(
     @Param('id') activityId: Uuid,
     @Body() dto: AddActivityLinkDto,
+    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.addLinkToActivity(activityId, dto);
+    return this.activitiesService.addLinkToActivity(activityId, dto, userId);
   }
 
   @Get(':id/links')
