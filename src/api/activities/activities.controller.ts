@@ -33,6 +33,7 @@ import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateChecklistDto } from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -177,6 +178,39 @@ export class ActivitiesController {
     return this.activitiesService.deleteComment(activityId, commentId, userId);
   }
 
+  @Post(':id/checklists')
+  @ApiAuth({
+    summary: 'Tạo mới checklist cho hoạt động',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  createChecklist(
+    @Param('id') activityId: Uuid,
+    @Body() dto: CreateChecklistDto,
+  ) {
+    return this.activitiesService.createChecklist(activityId, dto);
+  }
+
+  @Delete(':id/checklists/:checklistId/items/:itemId')
+  @ApiAuth({
+    summary: 'Xóa item trong checklist',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  @ApiParam({ name: 'itemId', description: 'ID của item' })
+  deleteChecklistItem(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Param('itemId') itemId: Uuid,
+  ) {
+    return this.activitiesService.deleteChecklistItem(
+      activityId,
+      checklistId,
+      itemId,
+    );
+  }
+
   @Get(':id/checklists')
   @ApiAuth({
     summary: 'Lấy danh sách checklist của hoạt động',
@@ -201,6 +235,19 @@ export class ActivitiesController {
     @Body() dto: UpdateChecklistDto,
   ) {
     return this.activitiesService.updateChecklist(activityId, checklistId, dto);
+  }
+
+  @Delete(':id/checklists/:checklistId')
+  @ApiAuth({
+    summary: 'Xóa checklist của hoạt động',
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  deleteChecklist(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+  ) {
+    return this.activitiesService.deleteChecklist(activityId, checklistId);
   }
 
   @Get(':id/logs')

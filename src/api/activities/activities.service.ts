@@ -48,6 +48,7 @@ import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { CreateChecklistDto } from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -109,6 +110,186 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
   ) {
     super(activityRepo);
+  }
+
+  async deleteChecklistItem(
+    activityId: Uuid,
+    checklistId: Uuid,
+    itemId: Uuid,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      const item = await checklistItemRepo.findOne({
+        where: { id: itemId, checklistId },
+      });
+
+      if (!item) {
+        throw new NotFoundException('Item không tồn tại trong checklist');
+      }
+
+      await checklistItemRepo.remove(item);
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Xóa item thành công',
+      });
+    });
+  }
+
+  async deleteChecklist(
+    activityId: Uuid,
+    checklistId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+        relations: ['items'],
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      if (checklist.items?.length > 0) {
+        await checklistItemRepo.delete({
+          checklistId,
+        });
+      }
+
+      await checklistRepo.remove(checklist);
+
+      return new ResponseNoDataDto({
+        message: 'Xóa checklist thành công',
+      });
+    });
+  }
+
+  async createChecklist(
+    activityId: Uuid,
+    dto: CreateChecklistDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = checklistRepo.create({
+        activityId,
+        name: dto.name,
+      });
+
+      const savedChecklist = await checklistRepo.save(checklist);
+
+      if (dto.items?.length > 0) {
+        const items = dto.items.map((itemDto) =>
+          checklistItemRepo.create({
+            checklistId: savedChecklist.id,
+            content: itemDto.content,
+            isDone: itemDto.isDone || false,
+          }),
+        );
+
+        await checklistItemRepo.save(items);
+      }
+
+      const checklistWithItems = await checklistRepo.findOne({
+        where: { id: savedChecklist.id },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = checklistWithItems.items?.length || 0;
+      const completedItems =
+        checklistWithItems.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...checklistWithItems,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo checklist thành công',
+      });
+    });
   }
 
   async updateChecklist(
