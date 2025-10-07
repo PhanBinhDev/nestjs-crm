@@ -9,6 +9,7 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
+  ActivityStatus,
   ActivityType,
   AssigneeRole,
   AssignmentStatus,
@@ -1848,9 +1849,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       case QueryType.OVERDUE:
         qb.leftJoin('activity.assignees', 'assignee')
           .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.endTime < :now', { now: new Date() })
-          .andWhere('activity.status != :completed', {
-            completed: 'completed',
+          .andWhere('activity.status = :overdue', {
+            overdue: ActivityStatus.OVERDUE,
           });
         break;
       case QueryType.TODAY: {

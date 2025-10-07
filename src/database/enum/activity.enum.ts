@@ -30,9 +30,10 @@ export enum ParticipantRole {
 }
 
 export enum ActivityStatus {
-  NEW = 'new',
+  PENDING = 'pending',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
   OVERDUE = 'overdue',
 }
 
