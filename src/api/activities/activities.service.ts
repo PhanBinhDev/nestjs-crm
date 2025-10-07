@@ -49,7 +49,10 @@ import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { CreateChecklistDto } from './dto/create-checklist.req.dto';
+import {
+  CreateChecklistDto,
+  CreateChecklistItemDto,
+} from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -183,6 +186,73 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           excludeExtraneousValues: true,
         }),
         message: 'Xóa item thành công',
+      });
+    });
+  }
+
+  async addChecklistItem(
+    activityId: Uuid,
+    checklistId: Uuid,
+    dto: CreateChecklistItemDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      const newItem = checklistItemRepo.create({
+        checklistId,
+        content: dto.content,
+        isDone: dto.isDone || false,
+      });
+
+      await checklistItemRepo.save(newItem);
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Thêm mục mới vào checklist thành công',
       });
     });
   }
@@ -396,8 +466,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .createQueryBuilder('checklist')
       .leftJoinAndSelect('checklist.items', 'items')
       .where('checklist.activityId = :activityId', { activityId })
-      .orderBy('checklist.createdAt', 'ASC')
-      .addOrderBy('items.createdAt', 'ASC');
+      .orderBy('checklist.createdAt', 'DESC')
+      .addOrderBy('items.createdAt', 'DESC');
 
     const checklists = await qb.getMany();
 

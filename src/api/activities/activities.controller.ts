@@ -33,7 +33,10 @@ import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { CreateChecklistDto } from './dto/create-checklist.req.dto';
+import {
+  CreateChecklistDto,
+  CreateChecklistItemDto,
+} from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -189,6 +192,25 @@ export class ActivitiesController {
     @Body() dto: CreateChecklistDto,
   ) {
     return this.activitiesService.createChecklist(activityId, dto);
+  }
+
+  @Post(':id/checklists/:checklistId/items')
+  @ApiAuth({
+    summary: 'Thêm item vào checklist',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  addChecklistItem(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Body() dto: CreateChecklistItemDto,
+  ) {
+    return this.activitiesService.addChecklistItem(
+      activityId,
+      checklistId,
+      dto,
+    );
   }
 
   @Delete(':id/checklists/:checklistId/items/:itemId')
