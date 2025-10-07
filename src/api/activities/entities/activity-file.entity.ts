@@ -27,4 +27,3 @@ export class ActivityFileEntity extends AbstractEntity {
   @Column({ type: 'uuid' })
   fileId: string;
 }
-

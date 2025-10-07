@@ -18,6 +18,7 @@ import {
 import { ReactionType } from '@/database/enum/comments.enum';
 import { ValidationException } from '@/exceptions/validation.exception';
 import { BaseService } from '@/services/base.service';
+import { LinkPreviewService } from '@/services/link-preview.service';
 import { buildPaginator } from '@/utils/cursor-pagination';
 import { paginate } from '@/utils/offset-pagination';
 import {
@@ -75,8 +76,12 @@ import { ActivityParticipantEntity } from './entities/activity-participant.entit
 import { ActivityEntity } from './entities/activity.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
+import { Logger } from '@nestjs/common';
+
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
+  private readonly logger = new Logger(ActivitiesService.name);
+
   constructor(
     @InjectRepository(ActivityEntity)
     private readonly activityRepo: Repository<ActivityEntity>,
@@ -108,6 +113,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityLinkRepo: Repository<ActivityLinkEntity>,
     @InjectRepository(ActivityChecklistEntity)
     private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
+    private readonly linkPreviewService: LinkPreviewService,
   ) {
     super(activityRepo);
   }
@@ -2737,18 +2743,64 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Activity không tồn tại');
     }
 
+    // Fetch link preview data
+    let linkPreviewData = null;
+    if (this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
     const link = this.activityLinkRepo.create({
       activityId,
       title: dto.title,
       url: dto.url,
       description: dto.description,
       createdBy: userId,
+      // Lưu metadata từ link preview
+      thumbnail: linkPreviewData
+        ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
+        : undefined,
+      siteName: linkPreviewData?.siteName,
+      siteDescription: linkPreviewData?.description,
+      favicon: linkPreviewData?.favicon,
+      metadata: linkPreviewData
+        ? {
+            originalTitle: linkPreviewData.title,
+            allImages: linkPreviewData.images,
+            fetchedAt: new Date().toISOString(),
+          }
+        : undefined,
     });
 
     const savedLink = await this.activityLinkRepo.save(link);
 
+    // Load lại với relations để có thông tin creator
+    const linkWithCreator = await this.activityLinkRepo.findOne({
+      where: { id: savedLink.id },
+      relations: ['creator'],
+    });
+
+    // Transform data cho response
+    const responseData = {
+      ...linkWithCreator,
+      linkPreview: linkPreviewData
+        ? {
+            thumbnail: linkWithCreator.thumbnail,
+            siteName: linkWithCreator.siteName,
+            siteDescription: linkWithCreator.siteDescription,
+            favicon: linkWithCreator.favicon,
+          }
+        : undefined,
+    };
+
     return new ResponseDto<ActivityLinkResDto>({
-      data: plainToInstance(ActivityLinkResDto, savedLink, {
+      data: plainToInstance(ActivityLinkResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Thêm link thành công',
@@ -2768,11 +2820,26 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const links = await this.activityLinkRepo.find({
       where: { activityId },
+      relations: ['creator'],
       order: { createdAt: 'DESC' },
     });
 
+    // Transform data để include link preview
+    const linksWithPreview = links.map((link) => ({
+      ...link,
+      linkPreview:
+        link.thumbnail || link.siteName || link.siteDescription
+          ? {
+              thumbnail: link.thumbnail,
+              siteName: link.siteName,
+              siteDescription: link.siteDescription,
+              favicon: link.favicon,
+            }
+          : undefined,
+    }));
+
     return new ResponseDto<ActivityLinkResDto[]>({
-      data: plainToInstance(ActivityLinkResDto, links, {
+      data: plainToInstance(ActivityLinkResDto, linksWithPreview, {
         excludeExtraneousValues: true,
       }),
       message: 'Lấy danh sách link thành công',
@@ -2794,20 +2861,66 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const link = await this.activityLinkRepo.findOne({
       where: { id: linkId, activityId },
+      relations: ['creator'],
     });
 
     if (!link) {
       throw new NotFoundException('Link không tồn tại');
     }
 
+    // Nếu URL thay đổi, fetch preview mới
+    const shouldUpdatePreview = link.url !== dto.url;
+    let linkPreviewData = null;
+
+    if (shouldUpdatePreview && this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
+    // Cập nhật thông tin
     link.title = dto.title;
     link.url = dto.url;
     link.description = dto.description;
 
+    if (shouldUpdatePreview && linkPreviewData) {
+      link.thumbnail = this.linkPreviewService.getBestThumbnail(
+        linkPreviewData.images || [],
+      );
+      link.siteName = linkPreviewData.siteName;
+      link.siteDescription = linkPreviewData.description;
+      link.favicon = linkPreviewData.favicon;
+      link.metadata = {
+        originalTitle: linkPreviewData.title,
+        allImages: linkPreviewData.images,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
     const updatedLink = await this.activityLinkRepo.save(link);
 
+    const responseData = {
+      ...updatedLink,
+      linkPreview:
+        updatedLink.thumbnail ||
+        updatedLink.siteName ||
+        updatedLink.siteDescription
+          ? {
+              thumbnail: updatedLink.thumbnail,
+              siteName: updatedLink.siteName,
+              siteDescription: updatedLink.siteDescription,
+              favicon: updatedLink.favicon,
+            }
+          : undefined,
+    };
+
     return new ResponseDto<ActivityLinkResDto>({
-      data: plainToInstance(ActivityLinkResDto, updatedLink, {
+      data: plainToInstance(ActivityLinkResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Cập nhật link thành công',
