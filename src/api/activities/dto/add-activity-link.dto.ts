@@ -3,7 +3,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
   Matches,
   MaxLength,
 } from 'class-validator';
@@ -23,22 +22,9 @@ export class AddActivityLinkDto {
     description: 'URL của link (phải có http:// hoặc https://)',
     example: 'https://example.com/document',
   })
-  @IsUrl(
-    {
-      protocols: ['http', 'https'],
-      require_protocol: true,
-    },
-    {
-      message:
-        'URL phải có định dạng hợp lệ và bắt đầu với http:// hoặc https://',
-    },
-  )
-  @Matches(
-    /^https?:\/\/(?:[-\w.])+(?::[0-9]+)?(?:\/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?$/,
-    {
-      message: 'URL không đúng định dạng.',
-    },
-  )
+  @Matches(/^https?:\/\/.+/, {
+    message: 'URL phải bắt đầu với http:// hoặc https://',
+  })
   @IsNotEmpty()
   url: string;
 

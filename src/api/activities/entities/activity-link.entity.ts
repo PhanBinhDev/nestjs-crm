@@ -26,6 +26,22 @@ export class ActivityLinkEntity extends AbstractEntity {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  // Thêm các field metadata cho link preview
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  thumbnail?: string;
+
+  @Column({ type: 'text', nullable: true })
+  siteName?: string;
+
+  @Column({ type: 'text', nullable: true })
+  siteDescription?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  favicon?: string;
+
+  @Column({ type: 'json', nullable: true })
+  metadata?: Record<string, any>;
+
   @ManyToOne(() => UserEntity, { eager: true })
   @JoinColumn({ name: 'createdBy' })
   creator: WrapperType<UserEntity>;

@@ -1,5 +1,6 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { LinkPreviewService } from '@/services/link-preview.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { StagesEntity } from '../stages/entities/stage.entity';
@@ -43,6 +44,6 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
     ]),
   ],
   controllers: [ActivitiesController],
-  providers: [ActivitiesService],
+  providers: [ActivitiesService, LinkPreviewService],
 })
 export class ActivitiesModule {}
