@@ -20,6 +20,16 @@ import { ActivityCategoryResDto } from './activity-category.res.dto';
 import { ActivityChecklistResDto } from './activity-checklist.res.dto';
 import { ActivityFileResDto } from './activity-file.res.dto';
 
+export class WorkspaceMinimalResDto {
+  @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ example: 'Workspace Công nghệ' })
+  @Expose()
+  name: string;
+}
+
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
   @Expose()
@@ -128,6 +138,14 @@ export class ActivityResDto {
   @Expose()
   workspaceId: Uuid;
 
+  @ClassField(() => WorkspaceMinimalResDto, {
+    required: false,
+    description: 'Thông tin không gian làm việc',
+  })
+  @Expose()
+  @Type(() => WorkspaceMinimalResDto)
+  workspace?: WorkspaceMinimalResDto;
+
   @ApiProperty({
     example: 5,
     required: false,
@@ -192,7 +210,7 @@ export class ActivityResDto {
   files?: ActivityFileResDto[];
 
   @NumberField({
-    example: 0,
+    example: 75.5,
   })
   @Expose()
   progress: number;
