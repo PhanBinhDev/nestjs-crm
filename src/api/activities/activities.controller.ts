@@ -25,6 +25,7 @@ import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
+import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
@@ -694,5 +695,52 @@ export class ActivitiesController {
     @Param('linkId') linkId: Uuid,
   ) {
     return this.activitiesService.removeLinkFromActivity(activityId, linkId);
+  }
+
+  @Post(':id/follow')
+  @ApiAuth({
+    summary: 'Theo dõi activity',
+    type: ActivityFollowResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  followActivity(
+    @Param('id') activityId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.followActivity(activityId, userId);
+  }
+
+  @Delete(':id/follow')
+  @ApiAuth({
+    summary: 'Bỏ theo dõi activity',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  unfollowActivity(
+    @Param('id') activityId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.unfollowActivity(activityId, userId);
+  }
+
+  @Get('me/follows')
+  @ApiAuth({
+    summary: 'Lấy danh sách activity bản thân đang theo dõi',
+    type: ActivityResDto,
+    isArray: true,
+  })
+  getMyFollowedActivities(@CurrentUser('id') userId: Uuid) {
+    return this.activitiesService.getMyFollowedActivities(userId);
+  }
+
+  @Get(':id/follows')
+  @ApiAuth({
+    summary: 'Lấy danh sách người theo dõi activity',
+    type: ActivityFollowResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityFollowers(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityFollowers(activityId);
   }
 }

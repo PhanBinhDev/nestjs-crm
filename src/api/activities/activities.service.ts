@@ -78,6 +78,7 @@ import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { Logger } from '@nestjs/common';
@@ -118,9 +119,53 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityLinkRepo: Repository<ActivityLinkEntity>,
     @InjectRepository(ActivityChecklistEntity)
     private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
+    @InjectRepository(ActivityFollowEntity)
+    private readonly activityFollowRepo: Repository<ActivityFollowEntity>,
     private readonly linkPreviewService: LinkPreviewService,
   ) {
     super(activityRepo);
+  }
+
+  async followActivity(activityId: Uuid, userId: Uuid) {
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } });
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    await this.activityFollowRepo
+      .createQueryBuilder()
+      .insert()
+      .into(ActivityFollowEntity)
+      .values({ activityId, userId, createdBy: userId })
+      .onConflict('("activityId", "userId") DO NOTHING')
+      .execute();
+
+    const saved = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
+    return new ResponseDto({ data: saved, message: 'Theo dõi thành công' });
+  }
+
+  async unfollowActivity(activityId: Uuid, userId: Uuid) {
+    const existing = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
+    if (!existing) {
+      throw new NotFoundException('Bạn chưa theo dõi activity này');
+    }
+
+    await this.activityFollowRepo.remove(existing);
+    return new ResponseNoDataDto({ message: 'Bỏ theo dõi thành công' });
+  }
+
+  async getActivityFollowers(activityId: Uuid) {
+    const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
+    return new ResponseDto({ data: follows, message: 'Lấy danh sách người theo dõi thành công' });
+  }
+
+  async getMyFollowedActivities(userId: Uuid) {
+    const follows = await this.activityFollowRepo.find({
+      where: { userId },
+      relations: ['activity'],
+    });
+    const activities = follows.map((f) => f.activity);
+    return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
   }
 
   async getActivityProgress(
