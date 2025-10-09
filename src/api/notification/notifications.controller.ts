@@ -1,7 +1,7 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { Uuid } from '@/common/types/common.type';
 import { CurrentUser } from '@/decorators/current-user.decorator';
-import { ApiAuth } from '@/decorators/http.decorators';
+import { ApiAuth, ApiPublic } from '@/decorators/http.decorators';
 import {
   Body,
   Controller,
@@ -37,7 +37,7 @@ export class NotificationsController {
   }
 
   @Post('test/:id')
-  @ApiAuth({
+  @ApiPublic({
     summary: 'Gửi thông báo test đến thiết bị của user hiện tại',
     type: NotificationResDto,
   })

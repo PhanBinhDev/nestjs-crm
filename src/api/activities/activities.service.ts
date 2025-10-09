@@ -150,89 +150,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  private calculateDetailedProgress(activity: ActivityEntity): {
-    progress: number;
-    details: {
-      subTasksProgress: number;
-      checklistsProgress: number;
-      stageCompleted: boolean;
-      totalSubTasks: number;
-      completedSubTasks: number;
-      totalChecklistItems: number;
-      completedChecklistItems: number;
-    };
-  } {
-    const stageCompleted = activity.stage?.isCompleted || false;
-
-    const subTasks = activity.subActivities || [];
-    const totalSubTasks = subTasks.length;
-    const completedSubTasks = subTasks.filter(
-      (sub) => sub.stage?.isCompleted,
-    ).length;
-    const subTasksProgress =
-      totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : 0;
-
-    let totalChecklistItems = 0;
-    let completedChecklistItems = 0;
-
-    const checklists = activity.checklists || [];
-    checklists.forEach((checklist) => {
-      const items = checklist.items || [];
-      items.forEach((item) => {
-        totalChecklistItems++;
-        if (item.isDone) {
-          completedChecklistItems++;
-        }
-      });
-    });
-
-    const checklistsProgress =
-      totalChecklistItems > 0
-        ? (completedChecklistItems / totalChecklistItems) * 100
-        : 0;
-
-    // Logic tính progress tổng thể
-    let totalProgress = 0;
-    let weightCount = 0;
-
-    // Nếu có sub-tasks, tính trọng số
-    if (totalSubTasks > 0) {
-      totalProgress += subTasksProgress;
-      weightCount++;
-    }
-
-    // Nếu có checklist items, tính trọng số
-    if (totalChecklistItems > 0) {
-      totalProgress += checklistsProgress;
-      weightCount++;
-    }
-
-    // Nếu không có sub-tasks và checklists, dựa vào stage
-    if (weightCount === 0) {
-      totalProgress = stageCompleted ? 100 : 0;
-    } else {
-      totalProgress = totalProgress / weightCount;
-    }
-
-    // Nếu stage đã hoàn thành, đảm bảo progress ít nhất 100%
-    if (stageCompleted) {
-      totalProgress = Math.max(totalProgress, 100);
-    }
-
-    return {
-      progress: Math.round(totalProgress * 100) / 100,
-      details: {
-        subTasksProgress: Math.round(subTasksProgress * 100) / 100,
-        checklistsProgress: Math.round(checklistsProgress * 100) / 100,
-        stageCompleted,
-        totalSubTasks,
-        completedSubTasks,
-        totalChecklistItems,
-        completedChecklistItems,
-      },
-    };
-  }
-
   async deleteChecklistItem(
     activityId: Uuid,
     checklistId: Uuid,
@@ -2395,6 +2312,233 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
+  async addLinkToActivity(
+    activityId: Uuid,
+    dto: AddActivityLinkDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    // Fetch link preview data
+    let linkPreviewData = null;
+    if (this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
+    const link = this.activityLinkRepo.create({
+      activityId,
+      title: dto.title,
+      url: dto.url,
+      description: dto.description,
+      createdBy: userId,
+      // Lưu metadata từ link preview
+      thumbnail: linkPreviewData
+        ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
+        : undefined,
+      siteName: linkPreviewData?.siteName,
+      siteDescription: linkPreviewData?.description,
+      favicon: linkPreviewData?.favicon,
+      metadata: linkPreviewData
+        ? {
+            originalTitle: linkPreviewData.title,
+            allImages: linkPreviewData.images,
+            fetchedAt: new Date().toISOString(),
+          }
+        : undefined,
+    });
+
+    const savedLink = await this.activityLinkRepo.save(link);
+
+    // Load lại với relations để có thông tin creator
+    const linkWithCreator = await this.activityLinkRepo.findOne({
+      where: { id: savedLink.id },
+      relations: ['creator'],
+    });
+
+    // Transform data cho response
+    const responseData = {
+      ...linkWithCreator,
+      linkPreview: linkPreviewData
+        ? {
+            thumbnail: linkWithCreator.thumbnail,
+            siteName: linkWithCreator.siteName,
+            siteDescription: linkWithCreator.siteDescription,
+            favicon: linkWithCreator.favicon,
+          }
+        : undefined,
+    };
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Thêm link thành công',
+    });
+  }
+
+  async getActivityLinks(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const links = await this.activityLinkRepo.find({
+      where: { activityId },
+      relations: ['creator'],
+      order: { createdAt: 'DESC' },
+    });
+
+    // Transform data để include link preview
+    const linksWithPreview = links.map((link) => ({
+      ...link,
+      linkPreview:
+        link.thumbnail || link.siteName || link.siteDescription
+          ? {
+              thumbnail: link.thumbnail,
+              siteName: link.siteName,
+              siteDescription: link.siteDescription,
+              favicon: link.favicon,
+            }
+          : undefined,
+    }));
+
+    return new ResponseDto<ActivityLinkResDto[]>({
+      data: plainToInstance(ActivityLinkResDto, linksWithPreview, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách link thành công',
+    });
+  }
+
+  async updateActivityLink(
+    activityId: Uuid,
+    linkId: Uuid,
+    dto: AddActivityLinkDto,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: { id: linkId, activityId },
+      relations: ['creator'],
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    // Nếu URL thay đổi, fetch preview mới
+    const shouldUpdatePreview = link.url !== dto.url;
+    let linkPreviewData = null;
+
+    if (shouldUpdatePreview && this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
+    // Cập nhật thông tin
+    link.title = dto.title;
+    link.url = dto.url;
+    link.description = dto.description;
+
+    if (shouldUpdatePreview && linkPreviewData) {
+      link.thumbnail = this.linkPreviewService.getBestThumbnail(
+        linkPreviewData.images || [],
+      );
+      link.siteName = linkPreviewData.siteName;
+      link.siteDescription = linkPreviewData.description;
+      link.favicon = linkPreviewData.favicon;
+      link.metadata = {
+        originalTitle: linkPreviewData.title,
+        allImages: linkPreviewData.images,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    const updatedLink = await this.activityLinkRepo.save(link);
+
+    const responseData = {
+      ...updatedLink,
+      linkPreview:
+        updatedLink.thumbnail ||
+        updatedLink.siteName ||
+        updatedLink.siteDescription
+          ? {
+              thumbnail: updatedLink.thumbnail,
+              siteName: updatedLink.siteName,
+              siteDescription: updatedLink.siteDescription,
+              favicon: updatedLink.favicon,
+            }
+          : undefined,
+    };
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật link thành công',
+    });
+  }
+
+  async removeLinkFromActivity(
+    activityId: Uuid,
+    linkId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: {
+        id: linkId,
+        activityId,
+      },
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    await this.activityLinkRepo.remove(link);
+
+    return new ResponseNoDataDto({
+      message: 'Xóa link thành công',
+    });
+  }
+
   /**
    * Tính progress của activity
    * @param activity Activity entity với relations đã load
@@ -2911,230 +3055,81 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return { counts, summary };
   }
 
-  async addLinkToActivity(
-    activityId: Uuid,
-    dto: AddActivityLinkDto,
-    userId: Uuid,
-  ): Promise<ResponseDto<ActivityLinkResDto>> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
-
-    if (!activity) {
-      throw new NotFoundException('Activity không tồn tại');
-    }
-
-    // Fetch link preview data
-    let linkPreviewData = null;
-    if (this.linkPreviewService.isValidUrl(dto.url)) {
-      try {
-        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
-      } catch (error) {
-        this.logger.warn(
-          `Failed to fetch preview for ${dto.url}:`,
-          error.message,
-        );
-      }
-    }
-
-    const link = this.activityLinkRepo.create({
-      activityId,
-      title: dto.title,
-      url: dto.url,
-      description: dto.description,
-      createdBy: userId,
-      // Lưu metadata từ link preview
-      thumbnail: linkPreviewData
-        ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
-        : undefined,
-      siteName: linkPreviewData?.siteName,
-      siteDescription: linkPreviewData?.description,
-      favicon: linkPreviewData?.favicon,
-      metadata: linkPreviewData
-        ? {
-            originalTitle: linkPreviewData.title,
-            allImages: linkPreviewData.images,
-            fetchedAt: new Date().toISOString(),
-          }
-        : undefined,
-    });
-
-    const savedLink = await this.activityLinkRepo.save(link);
-
-    // Load lại với relations để có thông tin creator
-    const linkWithCreator = await this.activityLinkRepo.findOne({
-      where: { id: savedLink.id },
-      relations: ['creator'],
-    });
-
-    // Transform data cho response
-    const responseData = {
-      ...linkWithCreator,
-      linkPreview: linkPreviewData
-        ? {
-            thumbnail: linkWithCreator.thumbnail,
-            siteName: linkWithCreator.siteName,
-            siteDescription: linkWithCreator.siteDescription,
-            favicon: linkWithCreator.favicon,
-          }
-        : undefined,
+  private calculateDetailedProgress(activity: ActivityEntity): {
+    progress: number;
+    details: {
+      subTasksProgress: number;
+      checklistsProgress: number;
+      stageCompleted: boolean;
+      totalSubTasks: number;
+      completedSubTasks: number;
+      totalChecklistItems: number;
+      completedChecklistItems: number;
     };
+  } {
+    const stageCompleted = activity.stage?.isCompleted || false;
 
-    return new ResponseDto<ActivityLinkResDto>({
-      data: plainToInstance(ActivityLinkResDto, responseData, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Thêm link thành công',
+    const subTasks = activity.subActivities || [];
+    const totalSubTasks = subTasks.length;
+    const completedSubTasks = subTasks.filter(
+      (sub) => sub.stage?.isCompleted,
+    ).length;
+    const subTasksProgress =
+      totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : 0;
+
+    let totalChecklistItems = 0;
+    let completedChecklistItems = 0;
+
+    const checklists = activity.checklists || [];
+    checklists.forEach((checklist) => {
+      const items = checklist.items || [];
+      items.forEach((item) => {
+        totalChecklistItems++;
+        if (item.isDone) {
+          completedChecklistItems++;
+        }
+      });
     });
-  }
 
-  async getActivityLinks(
-    activityId: Uuid,
-  ): Promise<ResponseDto<ActivityLinkResDto[]>> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
+    const checklistsProgress =
+      totalChecklistItems > 0
+        ? (completedChecklistItems / totalChecklistItems) * 100
+        : 0;
 
-    if (!activity) {
-      throw new NotFoundException('Activity không tồn tại');
+    let totalProgress = 0;
+    let weightCount = 0;
+
+    if (totalSubTasks > 0) {
+      totalProgress += subTasksProgress;
+      weightCount++;
     }
 
-    const links = await this.activityLinkRepo.find({
-      where: { activityId },
-      relations: ['creator'],
-      order: { createdAt: 'DESC' },
-    });
-
-    // Transform data để include link preview
-    const linksWithPreview = links.map((link) => ({
-      ...link,
-      linkPreview:
-        link.thumbnail || link.siteName || link.siteDescription
-          ? {
-              thumbnail: link.thumbnail,
-              siteName: link.siteName,
-              siteDescription: link.siteDescription,
-              favicon: link.favicon,
-            }
-          : undefined,
-    }));
-
-    return new ResponseDto<ActivityLinkResDto[]>({
-      data: plainToInstance(ActivityLinkResDto, linksWithPreview, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Lấy danh sách link thành công',
-    });
-  }
-
-  async updateActivityLink(
-    activityId: Uuid,
-    linkId: Uuid,
-    dto: AddActivityLinkDto,
-  ): Promise<ResponseDto<ActivityLinkResDto>> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
-
-    if (!activity) {
-      throw new NotFoundException('Activity không tồn tại');
+    if (totalChecklistItems > 0) {
+      totalProgress += checklistsProgress;
+      weightCount++;
     }
 
-    const link = await this.activityLinkRepo.findOne({
-      where: { id: linkId, activityId },
-      relations: ['creator'],
-    });
-
-    if (!link) {
-      throw new NotFoundException('Link không tồn tại');
+    if (weightCount === 0) {
+      totalProgress = stageCompleted ? 100 : 0;
+    } else {
+      totalProgress = totalProgress / weightCount;
     }
 
-    // Nếu URL thay đổi, fetch preview mới
-    const shouldUpdatePreview = link.url !== dto.url;
-    let linkPreviewData = null;
-
-    if (shouldUpdatePreview && this.linkPreviewService.isValidUrl(dto.url)) {
-      try {
-        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
-      } catch (error) {
-        this.logger.warn(
-          `Failed to fetch preview for ${dto.url}:`,
-          error.message,
-        );
-      }
+    if (stageCompleted) {
+      totalProgress = Math.max(totalProgress, 100);
     }
 
-    // Cập nhật thông tin
-    link.title = dto.title;
-    link.url = dto.url;
-    link.description = dto.description;
-
-    if (shouldUpdatePreview && linkPreviewData) {
-      link.thumbnail = this.linkPreviewService.getBestThumbnail(
-        linkPreviewData.images || [],
-      );
-      link.siteName = linkPreviewData.siteName;
-      link.siteDescription = linkPreviewData.description;
-      link.favicon = linkPreviewData.favicon;
-      link.metadata = {
-        originalTitle: linkPreviewData.title,
-        allImages: linkPreviewData.images,
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-
-    const updatedLink = await this.activityLinkRepo.save(link);
-
-    const responseData = {
-      ...updatedLink,
-      linkPreview:
-        updatedLink.thumbnail ||
-        updatedLink.siteName ||
-        updatedLink.siteDescription
-          ? {
-              thumbnail: updatedLink.thumbnail,
-              siteName: updatedLink.siteName,
-              siteDescription: updatedLink.siteDescription,
-              favicon: updatedLink.favicon,
-            }
-          : undefined,
-    };
-
-    return new ResponseDto<ActivityLinkResDto>({
-      data: plainToInstance(ActivityLinkResDto, responseData, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật link thành công',
-    });
-  }
-
-  async removeLinkFromActivity(
-    activityId: Uuid,
-    linkId: Uuid,
-  ): Promise<ResponseNoDataDto> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
-
-    if (!activity) {
-      throw new NotFoundException('Activity không tồn tại');
-    }
-
-    const link = await this.activityLinkRepo.findOne({
-      where: {
-        id: linkId,
-        activityId,
+    return {
+      progress: Math.round(totalProgress * 100) / 100,
+      details: {
+        subTasksProgress: Math.round(subTasksProgress * 100) / 100,
+        checklistsProgress: Math.round(checklistsProgress * 100) / 100,
+        stageCompleted,
+        totalSubTasks,
+        completedSubTasks,
+        totalChecklistItems,
+        completedChecklistItems,
       },
-    });
-
-    if (!link) {
-      throw new NotFoundException('Link không tồn tại');
-    }
-
-    await this.activityLinkRepo.remove(link);
-
-    return new ResponseNoDataDto({
-      message: 'Xóa link thành công',
-    });
+    };
   }
 }
