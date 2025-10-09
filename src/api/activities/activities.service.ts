@@ -80,6 +80,7 @@ import { ActivityEntity } from './entities/activity.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { Logger } from '@nestjs/common';
+import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
@@ -119,6 +120,117 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly linkPreviewService: LinkPreviewService,
   ) {
     super(activityRepo);
+  }
+
+  async getActivityProgress(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityProgressResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+      relations: [
+        'stage',
+        'subActivities',
+        'subActivities.stage',
+        'checklists',
+        'checklists.items',
+      ],
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const progressDetails = this.calculateDetailedProgress(activity);
+
+    return new ResponseDto<ActivityProgressResDto>({
+      data: plainToInstance(ActivityProgressResDto, progressDetails, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tính toán progress thành công',
+    });
+  }
+
+  private calculateDetailedProgress(activity: ActivityEntity): {
+    progress: number;
+    details: {
+      subTasksProgress: number;
+      checklistsProgress: number;
+      stageCompleted: boolean;
+      totalSubTasks: number;
+      completedSubTasks: number;
+      totalChecklistItems: number;
+      completedChecklistItems: number;
+    };
+  } {
+    const stageCompleted = activity.stage?.isCompleted || false;
+
+    const subTasks = activity.subActivities || [];
+    const totalSubTasks = subTasks.length;
+    const completedSubTasks = subTasks.filter(
+      (sub) => sub.stage?.isCompleted,
+    ).length;
+    const subTasksProgress =
+      totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : 0;
+
+    let totalChecklistItems = 0;
+    let completedChecklistItems = 0;
+
+    const checklists = activity.checklists || [];
+    checklists.forEach((checklist) => {
+      const items = checklist.items || [];
+      items.forEach((item) => {
+        totalChecklistItems++;
+        if (item.isDone) {
+          completedChecklistItems++;
+        }
+      });
+    });
+
+    const checklistsProgress =
+      totalChecklistItems > 0
+        ? (completedChecklistItems / totalChecklistItems) * 100
+        : 0;
+
+    // Logic tính progress tổng thể
+    let totalProgress = 0;
+    let weightCount = 0;
+
+    // Nếu có sub-tasks, tính trọng số
+    if (totalSubTasks > 0) {
+      totalProgress += subTasksProgress;
+      weightCount++;
+    }
+
+    // Nếu có checklist items, tính trọng số
+    if (totalChecklistItems > 0) {
+      totalProgress += checklistsProgress;
+      weightCount++;
+    }
+
+    // Nếu không có sub-tasks và checklists, dựa vào stage
+    if (weightCount === 0) {
+      totalProgress = stageCompleted ? 100 : 0;
+    } else {
+      totalProgress = totalProgress / weightCount;
+    }
+
+    // Nếu stage đã hoàn thành, đảm bảo progress ít nhất 100%
+    if (stageCompleted) {
+      totalProgress = Math.max(totalProgress, 100);
+    }
+
+    return {
+      progress: Math.round(totalProgress * 100) / 100,
+      details: {
+        subTasksProgress: Math.round(subTasksProgress * 100) / 100,
+        checklistsProgress: Math.round(checklistsProgress * 100) / 100,
+        stageCompleted,
+        totalSubTasks,
+        completedSubTasks,
+        totalChecklistItems,
+        completedChecklistItems,
+      },
+    };
   }
 
   async deleteChecklistItem(
@@ -1167,7 +1279,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
               sender: userCreator,
               user: userAssignee,
-              workspaceId: dto.workspaceId,
             });
           }),
         );

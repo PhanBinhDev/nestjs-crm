@@ -1,19 +1,14 @@
-import { Uuid } from '@/common/types/common.type';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ArrayField } from '@/decorators/field.decorators';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsNotEmpty } from 'class-validator';
 
 export class CreateDeviceTokenDto {
-  @ApiProperty({
-    description: 'ID của user',
-    type: String,
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  userId: Uuid;
-
-  @ApiProperty({
+  @ArrayField(() => String, {
     description: 'Danh sách các token của thiết bị',
-    type: [String],
     example: ['token1', 'token2'],
   })
+  @IsArray()
+  @IsNotEmpty({ each: true })
   tokens: string[];
 
   @ApiPropertyOptional({

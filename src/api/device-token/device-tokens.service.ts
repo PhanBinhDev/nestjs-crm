@@ -12,8 +12,11 @@ export class DeviceTokensService {
     private readonly deviceTokenRepository: Repository<DeviceTokenEntity>,
   ) {}
 
-  async saveDeviceToken(createDeviceTokenDto: CreateDeviceTokenDto) {
-    const { userId, tokens, deviceInfo } = createDeviceTokenDto;
+  async saveDeviceToken(
+    createDeviceTokenDto: CreateDeviceTokenDto,
+    userId: Uuid,
+  ) {
+    const { tokens, deviceInfo } = createDeviceTokenDto;
 
     const record = await this.deviceTokenRepository.findOne({
       where: { userId, deviceInfo },

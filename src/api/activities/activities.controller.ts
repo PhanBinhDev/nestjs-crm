@@ -26,6 +26,7 @@ import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
+import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
 import { AddActivityLinkDto } from './dto/add-activity-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
@@ -53,6 +54,16 @@ import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 @Controller('activities')
 export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
+
+  @Get(':id/progress')
+  @ApiAuth({
+    summary: 'Lấy tiến độ hoàn thành công việc của activity',
+    type: ActivityProgressResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityProgress(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityProgress(activityId);
+  }
 
   @Get('category')
   @ApiAuth({

@@ -2,8 +2,16 @@ import { UserEntity } from '@/api/users/entities/user.entity';
 import { Uuid } from '@/common/types/common.type';
 import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth } from '@/decorators/http.decorators';
-import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { ApiParam, ApiTags } from '@nestjs/swagger';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
@@ -26,6 +34,21 @@ export class NotificationsController {
     @CurrentUser('id') userId: Uuid,
   ) {
     return this.notificationService.findAll(query, userId);
+  }
+
+  @Post('test/:id')
+  @ApiAuth({
+    summary: 'Gửi thông báo test đến thiết bị của user hiện tại',
+    type: NotificationResDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của user hiện tại',
+    type: 'string',
+    format: 'uuid',
+  })
+  async sendTestNotification(@Param('id') id: Uuid) {
+    return this.notificationService.sendTestNotification(id);
   }
 
   @Patch('read')

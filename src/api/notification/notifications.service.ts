@@ -4,6 +4,7 @@ import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagin
 import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { Uuid } from '@/common/types/common.type';
+import { NotificationType } from '@/database/enum/notifications.enum';
 import { buildPaginator } from '@/utils/cursor-pagination';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,6 +16,7 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
+import { SendPushNotificationDto } from './dto/send-push-notification.dto';
 import { NotificationEntity } from './entities/notification.entity';
 
 @Injectable()
@@ -88,13 +90,34 @@ export class NotificationsService {
       query,
     );
 
+    const unreadCount = await this.notificationRepo.count({
+      where: { userId: currentUser, isRead: false },
+    });
+
     return new CursorPaginatedDto<NotificationResDto>({
       data: plainToInstance(NotificationResDto, data, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
       message: 'Lấy danh sách thông báo thành công',
+      metadata: { unreadCount },
     });
+  }
+
+  async sendTestNotification(userId: Uuid) {
+    const createNotificationDto: SendPushNotificationDto = {
+      userId,
+      title: 'Test Notification',
+      message: 'This is a test notification',
+      type: NotificationType.GENERAL,
+      data: {
+        uri: 'https://dribbble.com/search/request-notification-permisison',
+      },
+    };
+
+    console.log('createNotificationDto', createNotificationDto);
+
+    return this.sendPushNotification(createNotificationDto);
   }
 
   async clearAll(userId: Uuid): Promise<ResponseNoDataDto> {
@@ -137,7 +160,7 @@ export class NotificationsService {
     return this.notificationRepo.save(dto);
   }
 
-  async sendPushNotification(dto: CreateNotificationDto) {
+  async sendPushNotification(dto: SendPushNotificationDto) {
     const userReceivedNoti = await this.userServices.findOne(dto.userId);
 
     const deviceTokens = await this.deviceTokenServices.findAllByUserId(
@@ -158,22 +181,22 @@ export class NotificationsService {
         Object.entries(dto.data || {}).map(([k, v]) => [k, String(v)]),
       ),
       timestamp: new Date().toISOString(),
+      uri: dto.data?.uri || '',
     };
 
     const message: admin.messaging.MulticastMessage = {
+      data,
+      tokens: deviceTokens,
       notification: {
         title: dto.title,
         body: dto.message,
       },
-      data,
-      tokens: deviceTokens,
       webpush: {
         headers: {
           Urgency: 'high',
         },
-        notification: {
-          title: dto.title,
-          body: dto.message,
+        fcmOptions: {
+          link: dto.data.uri || '/',
         },
       },
     };

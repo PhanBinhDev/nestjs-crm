@@ -1,5 +1,8 @@
+import { UserEntity } from '@/api/users/entities/user.entity';
+import { Uuid } from '@/common/types/common.type';
+import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, Index } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, OneToOne } from 'typeorm';
 
 @Entity('device-token')
 @Index('idx_device_token_user', ['userId'])
@@ -8,11 +11,16 @@ export class DeviceTokenEntity extends AbstractEntity {
     type: 'uuid',
     nullable: false,
   })
-  userId: string;
+  userId: Uuid;
+
+  @OneToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user: WrapperType<UserEntity>;
 
   @Column({
-    type: 'simple-array',
+    type: 'jsonb',
     nullable: false,
+    default: [],
   })
   tokens: string[];
 

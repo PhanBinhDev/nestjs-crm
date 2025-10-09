@@ -3,6 +3,9 @@ import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, type ApiPropertyOptions } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsBoolean,
   IsDate,
   IsDefined,
@@ -55,6 +58,72 @@ interface IEnumFieldOptions extends IFieldOptions {
 type IBooleanFieldOptions = IFieldOptions;
 type ITokenFieldOptions = IFieldOptions;
 type IClassFieldOptions = IFieldOptions;
+
+interface IArrayFieldOptions extends IFieldOptions {
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+}
+
+export function ArrayField<T>(
+  getItemType: () =>
+    | Constructor<T>
+    | StringConstructor
+    | NumberConstructor
+    | BooleanConstructor,
+  options: Omit<ApiPropertyOptions, 'type' | 'isArray'> &
+    IArrayFieldOptions = {},
+): PropertyDecorator {
+  const decorators = [Type(() => getItemType())];
+
+  if (options.nullable) {
+    decorators.push(IsNullable());
+  } else {
+    decorators.push(NotEquals(null));
+  }
+
+  if (options.swagger !== false) {
+    const { required = true, ...restOptions } = options;
+    decorators.push(
+      ApiProperty({
+        type: getItemType(),
+        isArray: true,
+        required: !!required,
+        ...restOptions,
+      }),
+    );
+  }
+
+  // Add array-specific validations
+  if (typeof options.minItems === 'number') {
+    decorators.push(ArrayMinSize(options.minItems));
+  }
+
+  if (typeof options.maxItems === 'number') {
+    decorators.push(ArrayMaxSize(options.maxItems));
+  }
+
+  if (options.uniqueItems) {
+    decorators.push(ArrayUnique());
+  }
+
+  return applyDecorators(...decorators);
+}
+
+export function ArrayFieldOptional<T>(
+  getItemType: () =>
+    | Constructor<T>
+    | StringConstructor
+    | NumberConstructor
+    | BooleanConstructor,
+  options: Omit<ApiPropertyOptions, 'type' | 'required' | 'isArray'> &
+    IArrayFieldOptions = {},
+): PropertyDecorator {
+  return applyDecorators(
+    IsOptional(),
+    ArrayField(getItemType, { required: false, ...options }),
+  );
+}
 
 export function NumberField(
   options: Omit<ApiPropertyOptions, 'type'> & INumberFieldOptions = {},

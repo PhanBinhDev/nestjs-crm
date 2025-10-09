@@ -1,14 +1,25 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
-import { AbstractEntity } from '@/database/entities/abstract.entity';
-import { Column, Entity, Index, ManyToOne } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  Index,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('notifications')
 @Index('idx_notification_user', ['userId'])
-@Index('idx_notification_workspace', ['workspaceId'])
 @Index('idx_notification_isRead', ['isRead'])
 @Index('idx_notification_type', ['type'])
-export class NotificationEntity extends AbstractEntity {
+export class NotificationEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: Uuid;
+
   @Column({ type: 'uuid' })
   userId: string;
 
@@ -25,19 +36,13 @@ export class NotificationEntity extends AbstractEntity {
   type: string;
 
   @Column({ type: 'json', nullable: true })
-  data: any;
+  data: Record<string, any>;
 
   @Column({ type: 'boolean', default: false })
   isRead: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
   readAt: Date;
-
-  @Column({ type: 'boolean', default: false })
-  isDeleted: boolean;
-
-  @Column({ type: 'uuid', nullable: true })
-  workspaceId?: string;
 
   @ManyToOne(() => UserEntity, (user) => user.notifications, {
     onDelete: 'CASCADE',
@@ -48,4 +53,22 @@ export class NotificationEntity extends AbstractEntity {
     onDelete: 'SET NULL',
   })
   sender?: WrapperType<UserEntity>;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
+
+  @CreateDateColumn({
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+    nullable: false,
+  })
+  createdAt: Date;
+
+  @UpdateDateColumn({
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+    nullable: false,
+  })
+  updatedAt: Date;
 }

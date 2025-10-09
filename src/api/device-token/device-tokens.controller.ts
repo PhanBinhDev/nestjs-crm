@@ -1,3 +1,5 @@
+import { Uuid } from '@/common/types/common.type';
+import { CurrentUser } from '@/decorators/current-user.decorator';
 import { ApiAuth } from '@/decorators/http.decorators';
 import { Body, Controller, Post } from '@nestjs/common';
 import { DeviceTokensService } from './device-tokens.service';
@@ -11,7 +13,13 @@ export class DeviceTokensController {
   @ApiAuth({
     summary: 'Lưu token thiết bị',
   })
-  saveDeviceToken(@Body() createDeviceTokenDto: CreateDeviceTokenDto) {
-    return this.deviceTokensService.saveDeviceToken(createDeviceTokenDto);
+  saveDeviceToken(
+    @Body() createDeviceTokenDto: CreateDeviceTokenDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.deviceTokensService.saveDeviceToken(
+      createDeviceTokenDto,
+      userId,
+    );
   }
 }
