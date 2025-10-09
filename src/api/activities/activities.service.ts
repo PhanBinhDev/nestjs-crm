@@ -74,11 +74,11 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
-import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { Logger } from '@nestjs/common';
@@ -127,7 +127,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   }
 
   async followActivity(activityId: Uuid, userId: Uuid) {
-    const activity = await this.activityRepo.findOne({ where: { id: activityId } });
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
     if (!activity) {
       throw new NotFoundException('Activity không tồn tại');
     }
@@ -140,12 +142,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .onConflict('("activityId", "userId") DO NOTHING')
       .execute();
 
-    const saved = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
+    const saved = await this.activityFollowRepo.findOne({
+      where: { activityId, userId },
+    });
     return new ResponseDto({ data: saved, message: 'Theo dõi thành công' });
   }
 
   async unfollowActivity(activityId: Uuid, userId: Uuid) {
-    const existing = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
+    const existing = await this.activityFollowRepo.findOne({
+      where: { activityId, userId },
+    });
     if (!existing) {
       throw new NotFoundException('Bạn chưa theo dõi activity này');
     }
@@ -155,8 +161,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   }
 
   async getActivityFollowers(activityId: Uuid) {
-    const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
-    return new ResponseDto({ data: follows, message: 'Lấy danh sách người theo dõi thành công' });
+    const follows = await this.activityFollowRepo.find({
+      where: { activityId },
+      relations: ['user'],
+    });
+    return new ResponseDto({
+      data: follows,
+      message: 'Lấy danh sách người theo dõi thành công',
+    });
   }
 
   async getMyFollowedActivities(userId: Uuid) {
@@ -165,7 +177,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       relations: ['activity'],
     });
     const activities = follows.map((f) => f.activity);
-    return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
+    return new ResponseDto({
+      data: activities,
+      message: 'Lấy danh sách activity đã theo dõi thành công',
+    });
   }
 
   async getActivityProgress(
@@ -793,7 +808,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const sortOrder = query.order || 'DESC';
 
     qb.orderBy(`comment.${sortField}`, sortOrder as 'ASC' | 'DESC');
-
     qb.addOrderBy('replies.createdAt', 'ASC');
 
     const comments = await qb.getMany();
@@ -803,16 +817,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         comment.reactions || [],
       );
 
+      // Xử lý replies với hasUserReacted
       const processedReplies =
         comment.replies?.map((reply) => {
           const replyReactionsByType = this.aggregateCommentReactions(
             reply.reactions || [],
           );
 
+          const userReplyReaction = reply.reactions?.find(
+            (r) => r.userId === currentUserId,
+          );
+
           return {
             ...reply,
             reactionCounts: replyReactionsByType.counts,
             reactionSummary: replyReactionsByType.summary,
+            currentUserReaction: userReplyReaction
+              ? userReplyReaction.type
+              : null,
+            hasUserReacted: !!userReplyReaction,
           };
         }) || [];
 

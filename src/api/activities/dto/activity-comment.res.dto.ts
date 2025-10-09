@@ -1,13 +1,8 @@
-import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
-import { ReactionType } from '@/database/enum/comments.enum';
 import {
   BooleanField,
-  BooleanFieldOptional,
   ClassField,
-  ClassFieldOptional,
-  EnumFieldOptional,
   StringField,
   StringFieldOptional,
   UUIDField,
@@ -62,50 +57,27 @@ export class ActivityCommentResDto extends AuditResDto {
   @Expose()
   editedAt?: Date;
 
-  @ApiPropertyOptional()
-  @Expose()
-  reactions?: Record<string, number>;
-
-  @ApiPropertyOptional({ description: 'Counts of reactions by type' })
-  @Expose()
-  reactionCounts?: Record<string, number>;
-
-  @ApiPropertyOptional({
-    description: 'Detailed summary of reactions with user info',
-  })
-  @Expose()
-  reactionSummary?: Record<string, ReactionSummaryDto>;
-
-  @EnumFieldOptional(() => ReactionType, {
-    description: "Current user's reaction type if any",
-  })
-  @Expose()
-  currentUserReaction?: ReactionType;
-
-  @BooleanFieldOptional({
-    description: 'Whether current user has reacted to this comment',
-  })
-  @Expose()
-  hasUserReacted?: boolean;
-
   @ApiProperty({ description: 'Total reaction count' })
   @Expose()
-  get totalReactions(): number {
-    if (this.reactionCounts) {
-      return Object.values(this.reactionCounts).reduce(
-        (sum, count) => sum + count,
-        0,
-      );
-    }
-    return 0;
-  }
+  totalReactions: number;
 
-  @ClassField(() => UserResDto)
+  @ApiProperty({ description: 'Reaction counts by type' })
   @Expose()
-  @Type(() => UserResDto)
-  user: UserResDto;
+  reactionCounts: Record<string, number>;
 
-  @ClassFieldOptional(() => ActivityCommentResDto, { each: true })
+  @ApiProperty({ description: 'Reaction summary with users' })
+  @Expose()
+  reactionSummary: Record<string, ReactionSummaryDto>;
+
+  @ApiPropertyOptional({ description: 'Current user reaction type' })
+  @Expose()
+  currentUserReaction?: string;
+
+  @BooleanField({ description: 'Whether current user has reacted' })
+  @Expose()
+  hasUserReacted: boolean;
+
+  @ClassField(() => ActivityCommentResDto, { each: true })
   @Expose()
   @Type(() => ActivityCommentResDto)
   replies?: ActivityCommentResDto[];
