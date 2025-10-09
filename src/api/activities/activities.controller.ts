@@ -131,8 +131,14 @@ export class ActivitiesController {
     @Param('id') activityId: Uuid,
     @Param('commentId') commentId: Uuid,
     @Query() query: PageOptionsDto,
+    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.getReplies(activityId, commentId, query);
+    return this.activitiesService.getReplies(
+      activityId,
+      commentId,
+      query,
+      userId,
+    );
   }
 
   @Patch(':id/comments/:commentId')

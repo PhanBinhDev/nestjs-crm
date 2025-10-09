@@ -880,6 +880,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     commentId: Uuid,
     query: PageOptionsDto,
+    currentUserId: Uuid, // Thêm currentUserId parameter
   ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -900,6 +901,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const qb = this.activityCommentRepo
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
+      .leftJoinAndSelect('comment.reactions', 'reactions')
+      .leftJoinAndSelect('reactions.user', 'reactionUser')
       .where('comment.parentCommentId = :parentCommentId', {
         parentCommentId: commentId,
       })
@@ -927,6 +930,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const { data, cursor } = await paginator.paginate(qb);
 
+    // Xử lý data để thêm reaction information
+    const processedData = data.map((reply) => {
+      const reactionsByType = this.aggregateCommentReactions(
+        reply.reactions || [],
+      );
+
+      const userReaction = reply.reactions?.find(
+        (r) => r.userId === currentUserId,
+      );
+
+      return {
+        ...reply,
+        reactionCounts: reactionsByType.counts,
+        reactionSummary: reactionsByType.summary,
+        currentUserReaction: userReaction ? userReaction.type : null,
+        hasUserReacted: !!userReaction,
+      };
+    });
+
     const metaDto = new CursorPaginationDto(
       totalRecords,
       cursor.afterCursor,
@@ -935,7 +957,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     );
 
     return new CursorPaginatedDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, data, {
+      data: plainToInstance(ActivityCommentResDto, processedData, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
