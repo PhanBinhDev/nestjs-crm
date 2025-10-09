@@ -9,6 +9,7 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
+  ActivityStatus,
   ActivityType,
   AssigneeRole,
   AssignmentStatus,
@@ -796,6 +797,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     commentId: Uuid,
     query: PageOptionsDto,
+    currentUserId: Uuid, // Thêm currentUserId parameter
   ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -816,6 +818,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const qb = this.activityCommentRepo
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
+      .leftJoinAndSelect('comment.reactions', 'reactions')
+      .leftJoinAndSelect('reactions.user', 'reactionUser')
       .where('comment.parentCommentId = :parentCommentId', {
         parentCommentId: commentId,
       })
@@ -843,6 +847,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const { data, cursor } = await paginator.paginate(qb);
 
+    // Xử lý data để thêm reaction information
+    const processedData = data.map((reply) => {
+      const reactionsByType = this.aggregateCommentReactions(
+        reply.reactions || [],
+      );
+
+      const userReaction = reply.reactions?.find(
+        (r) => r.userId === currentUserId,
+      );
+
+      return {
+        ...reply,
+        reactionCounts: reactionsByType.counts,
+        reactionSummary: reactionsByType.summary,
+        currentUserReaction: userReaction ? userReaction.type : null,
+        hasUserReacted: !!userReaction,
+      };
+    });
+
     const metaDto = new CursorPaginationDto(
       totalRecords,
       cursor.afterCursor,
@@ -851,7 +874,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     );
 
     return new CursorPaginatedDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, data, {
+      data: plainToInstance(ActivityCommentResDto, processedData, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
@@ -1444,9 +1467,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     if (query.stageId)
       qb.andWhere('activity.stageId = :stageId', { stageId: query.stageId });
-    if (query.category)
-      qb.andWhere('activity.category = :category', {
-        category: query.category,
+    if (query.categoryId)
+      qb.andWhere('activity.categoryId = :categoryId', {
+        categoryId: query.categoryId,
       });
     if (query.mandatory !== undefined)
       qb.andWhere('activity.mandatory = :mandatory', {
@@ -2118,53 +2141,166 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     query: QueryActivityDto,
     type: QueryType,
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
-    const qb = this.activityRepo.createQueryBuilder('activity');
+    const qb = this.activityRepo
+      .createQueryBuilder('activity')
+      .leftJoinAndSelect('activity.workspace', 'workspace')
+      .leftJoinAndSelect('activity.assignees', 'assignees')
+      .leftJoinAndSelect('assignees.user', 'assigneeUser')
+      .leftJoinAndSelect('activity.stage', 'stage')
+      .leftJoinAndSelect('activity.category', 'category')
+      .leftJoinAndSelect('activity.subActivities', 'subActivities')
+      .leftJoinAndSelect('subActivities.stage', 'subStage')
+      .leftJoinAndSelect('activity.checklists', 'checklists')
+      .leftJoinAndSelect('checklists.items', 'items')
+      .leftJoinAndSelect('activity.files', 'files')
+      .leftJoinAndSelect('files.file', 'file');
 
     switch (type) {
       case QueryType.CREATED_BY_ME:
         qb.where('activity.createdBy = :userId', { userId });
         break;
+
       case QueryType.ASSIGNED_TO_ME:
-        qb.leftJoin('activity.assignees', 'assignee').where(
-          'assignee.userId = :userId',
-          { userId },
+        qb.where('assignees.userId = :userId', { userId });
+        break;
+
+      case QueryType.ASSIGNED_BY_STAGE_GROUP:
+        qb.where('assignees.userId = :userId', { userId });
+        break;
+
+      case QueryType.OVERDUE:
+        qb.where('assignees.userId = :userId', { userId })
+          .andWhere('activity.endTime < :now', { now: new Date() })
+          .andWhere('activity.status != :completedStatus', {
+            completedStatus: ActivityStatus.COMPLETED,
+          })
+          .andWhere('activity.endTime IS NOT NULL');
+        break;
+
+      case QueryType.IN_PROGRESS:
+        qb.where('assignees.userId = :userId', { userId }).andWhere(
+          '(activity.status = :inProgressStatus OR ' +
+            '(activity.startTime <= :now AND activity.status != :completedStatus))',
+          {
+            inProgressStatus: ActivityStatus.IN_PROGRESS,
+            now: new Date(),
+            completedStatus: ActivityStatus.COMPLETED,
+          },
         );
         break;
-      case QueryType.OVERDUE:
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.endTime < :now', { now: new Date() })
-          .andWhere('activity.status != :completed', {
-            completed: 'completed',
-          });
-        break;
+
       case QueryType.TODAY: {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
         tomorrow.setDate(today.getDate() + 1);
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
+        qb.where('assignees.userId = :userId', { userId })
           .andWhere('activity.startTime >= :today', { today })
           .andWhere('activity.startTime < :tomorrow', { tomorrow });
         break;
       }
+
       case QueryType.COMPLETED:
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.status = :completed', { completed: 'completed' });
+        qb.where('assignees.userId = :userId', { userId }).andWhere(
+          'activity.status = :status',
+          { status: ActivityStatus.COMPLETED },
+        );
         break;
+
+      case QueryType.ALL:
+        break;
+
       default:
         break;
     }
 
+    if (query.stageGroupStatus) {
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
+        stageGroupStatus: query.stageGroupStatus,
+      });
+    }
+
+    if (query.workspaceId) {
+      qb.andWhere('activity.workspaceId = :workspaceId', {
+        workspaceId: query.workspaceId,
+      });
+    }
+
+    if (query.assigneeId) {
+      qb.leftJoin('activity.assignees', 'filterAssignee').andWhere(
+        'filterAssignee.userId = :assigneeId',
+        {
+          assigneeId: query.assigneeId,
+        },
+      );
+    }
+
+    if (query.q) {
+      qb.andWhere(
+        'activity.name ILIKE :search OR activity.description ILIKE :search',
+        { search: `%${query.q}%` },
+      );
+    }
+
+    if (query.type) {
+      qb.andWhere('activity.type = :type', { type: query.type });
+    }
+
+    if (query.priority) {
+      qb.andWhere('activity.priority = :priority', {
+        priority: query.priority,
+      });
+    }
+
+    if (query.stageId) {
+      qb.andWhere('activity.stageId = :stageId', { stageId: query.stageId });
+    }
+
+    if (query.categoryId) {
+      qb.andWhere('activity.categoryId = :categoryId', {
+        categoryId: query.categoryId,
+      });
+    }
+
+    if (query.mandatory !== undefined) {
+      qb.andWhere('activity.mandatory = :mandatory', {
+        mandatory: query.mandatory,
+      });
+    }
+
+    if (query.startTimeFrom) {
+      qb.andWhere('activity.startTime >= :startTimeFrom', {
+        startTimeFrom: query.startTimeFrom,
+      });
+    }
+
+    if (query.endTimeTo) {
+      qb.andWhere('activity.endTime <= :endTimeTo', {
+        endTimeTo: query.endTimeTo,
+      });
+    }
+
+    if (!query.includeSubTasks) {
+      qb.andWhere('activity.parentId IS NULL');
+    }
+
     qb.orderBy('activity.createdAt', 'DESC');
+
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
       takeAll: false,
     });
+
+    const activitiesWithProgress = activities.map((activity) => {
+      const progress = this.calculateProgress(activity);
+      return {
+        ...activity,
+        progress,
+      };
+    });
+
     return new OffsetPaginatedDto({
-      data: plainToInstance(ActivityResDto, activities, {
+      data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
@@ -2175,7 +2311,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     dto: CreateEventFeedbackDto,
   ): Promise<ResponseDto<EventFeedbackResDto>> {
-    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -2186,7 +2321,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Kiểm tra đã có feedback với email này chưa
     const existingFeedback = await this.eventFeedbackRepo.findOne({
       where: { activityId, email: dto.email },
     });
