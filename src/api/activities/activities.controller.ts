@@ -326,15 +326,18 @@ export class ActivitiesController {
     enum: QueryType,
     required: false,
     description:
-      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed',
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, all',
   })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
-    @Query('queryType') type: QueryType,
   ) {
-    if (type)
-      return this.activitiesService.findFilteredActivities(userId, query, type);
+    if (query.queryType)
+      return this.activitiesService.findFilteredActivities(
+        userId,
+        query,
+        query.queryType,
+      );
 
     return this.activitiesService.findAll(query);
   }
