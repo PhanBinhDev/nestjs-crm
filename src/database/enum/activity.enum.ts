@@ -63,6 +63,7 @@ export enum QueryType {
   IN_PROGRESS = 'in_progress',
   TODAY = 'today',
   COMPLETED = 'completed',
+  TODO = 'todo',
   ALL = 'all',
 }
 
@@ -75,7 +76,7 @@ export enum ActivityLogActionEnum {
   COMMENT_UPDATED = 'comment_updated',
   COMMENT_DELETED = 'comment_deleted',
   DELETE_SUB_TASK = 'delete_sub_task',
-  FOLLOW = 'follow'
+  FOLLOW = 'follow',
 }
 
 export enum ActivityLogQueryType {
