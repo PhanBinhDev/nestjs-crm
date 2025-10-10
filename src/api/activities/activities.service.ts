@@ -2334,7 +2334,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         break;
 
       case QueryType.OVERDUE: {
-        // Activities quá hạn
+        // Activities quá hạn - KHÔNG bao gồm task ở cột done và closed
         const now = new Date();
         qb.where(
           '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
@@ -2342,10 +2342,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         )
           .andWhere('activity.endTime IS NOT NULL')
           .andWhere('activity.endTime < :now', { now })
-          .andWhere(
-            '(stage.isCompleted IS NULL OR stage.isCompleted = :notCompleted)',
-            { notCompleted: false },
-          );
+          .andWhere('stage.stageGroup NOT IN (:...excludedGroups)', {
+            excludedGroups: ['done', 'closed'],
+          });
         break;
       }
 
