@@ -318,7 +318,7 @@ export class ActivitiesController {
   @Get('filter')
   @ApiAuth({
     summary:
-      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành)',
+      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành, cần làm)',
     type: ActivityResDto,
     isArray: true,
   })
@@ -327,7 +327,7 @@ export class ActivitiesController {
     enum: QueryType,
     required: false,
     description:
-      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, all',
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, todo, all',
   })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,

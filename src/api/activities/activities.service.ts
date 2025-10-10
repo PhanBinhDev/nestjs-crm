@@ -2334,7 +2334,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         break;
 
       case QueryType.OVERDUE: {
-        // Activities quá hạn
+        // Activities quá hạn - KHÔNG bao gồm task ở cột done và closed
         const now = new Date();
         qb.where(
           '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
@@ -2342,10 +2342,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         )
           .andWhere('activity.endTime IS NOT NULL')
           .andWhere('activity.endTime < :now', { now })
-          .andWhere(
-            '(stage.isCompleted IS NULL OR stage.isCompleted = :notCompleted)',
-            { notCompleted: false },
-          );
+          .andWhere('stage.stageGroup NOT IN (:...excludedGroups)', {
+            excludedGroups: ['done', 'closed'],
+          });
         break;
       }
 
@@ -2405,6 +2404,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           });
         break;
 
+      case QueryType.TODO:
+        // Activities cần làm - chưa bắt đầu hoặc đang chờ
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        ).andWhere('stage.stageGroup = :notStartedGroup', {
+          notStartedGroup: 'not_started',
+        });
+        break;
+
       case QueryType.ALL:
         // Lấy tất cả activities - không filter theo user
         qb.where('1 = 1');
@@ -2424,9 +2433,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       query.stageGroupStatus &&
       type !== QueryType.COMPLETED &&
       type !== QueryType.IN_PROGRESS &&
-      type !== QueryType.OVERDUE
+      type !== QueryType.OVERDUE &&
+      type !== QueryType.TODO
     ) {
-      // Chỉ áp dụng stageGroupStatus filter khi KHÔNG phải COMPLETED, IN_PROGRESS, hoặc OVERDUE
+      // Chỉ áp dụng stageGroupStatus filter khi KHÔNG phải COMPLETED, IN_PROGRESS, OVERDUE, hoặc TODO
       // vì các loại này đã có logic riêng cho stageGroup
       qb.andWhere('stage.stageGroup = :stageGroupStatus', {
         stageGroupStatus: query.stageGroupStatus,
