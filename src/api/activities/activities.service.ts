@@ -1562,9 +1562,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
   async findAll(
     query: QueryActivityDto,
-  ): Promise<OffsetPaginatedDto<ActivityResDto>> {
+  ): Promise<ResponseDto<ActivityResDto[]>> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
+      .where('activity.workspaceId = :workspaceId', {
+        workspaceId: query.workspaceId,
+      })
       .leftJoinAndSelect('activity.workspace', 'workspace')
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
@@ -1581,32 +1584,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('files.file', 'file')
       .leftJoinAndSelect('activity.category', 'category')
       .leftJoinAndSelect('activity.stage', 'stage');
-
-    // Base filter - luôn có WHERE clause
-    qb.where('1 = 1');
-
-    // Only filter by workspace if workspaceId is provided
-    if (query.workspaceId) {
-      qb.andWhere('activity.workspaceId = :workspaceId', {
-        workspaceId: query.workspaceId,
-      });
-    }
-
-    // Filter by assigneeId - FIX: Cần kiểm tra assignee có tồn tại không
-    if (query.assigneeId) {
-      // Chỉ lấy activities mà có assignee này
-      qb.andWhere(
-        'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :assigneeId)',
-        { assigneeId: query.assigneeId },
-      );
-    }
-
-    // Filter by stageGroupStatus - sửa lại logic
-    if (query.stageGroupStatus) {
-      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
-        stageGroupStatus: query.stageGroupStatus,
-      });
-    }
 
     if (!query.includeSubTasks) {
       qb.andWhere('activity.parentId IS NULL');
@@ -1648,21 +1625,17 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     qb.orderBy('activity.createdAt', 'DESC');
 
-    const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
-      skipCount: false,
-      takeAll: true,
-    });
+    const activities = await qb.getMany();
 
     const activitiesWithProgress = activities.map((activity) => {
       const progress = this.calculateProgress(activity);
       return { ...activity, progress };
     });
 
-    return new OffsetPaginatedDto({
+    return new ResponseDto<ActivityResDto[]>({
       data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
-      meta: metaDto,
       message: 'Lấy danh sách hoạt động thành công',
     });
   }
