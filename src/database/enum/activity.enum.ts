@@ -75,6 +75,7 @@ export enum ActivityLogActionEnum {
   COMMENT_UPDATED = 'comment_updated',
   COMMENT_DELETED = 'comment_deleted',
   DELETE_SUB_TASK = 'delete_sub_task',
+  FOLLOW = 'follow'
 }
 
 export enum ActivityLogQueryType {

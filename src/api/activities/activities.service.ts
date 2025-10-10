@@ -126,33 +126,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     super(activityRepo);
   }
 
-  async followActivity(activityId: Uuid, userId: Uuid) {
-    const activity = await this.activityRepo.findOne({ where: { id: activityId } });
-    if (!activity) {
-      throw new NotFoundException('Activity không tồn tại');
-    }
-
-    await this.activityFollowRepo
-      .createQueryBuilder()
-      .insert()
-      .into(ActivityFollowEntity)
-      .values({ activityId, userId, createdBy: userId })
-      .onConflict('("activityId", "userId") DO NOTHING')
-      .execute();
-
-    const saved = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
-    return new ResponseDto({ data: saved, message: 'Theo dõi thành công' });
-  }
-
-  async unfollowActivity(activityId: Uuid, userId: Uuid) {
-    const existing = await this.activityFollowRepo.findOne({ where: { activityId, userId } });
-    if (!existing) {
-      throw new NotFoundException('Bạn chưa theo dõi activity này');
-    }
-
-    await this.activityFollowRepo.remove(existing);
-    return new ResponseNoDataDto({ message: 'Bỏ theo dõi thành công' });
-  }
 
   async getActivityFollowers(activityId: Uuid) {
     const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
@@ -166,6 +139,68 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
     const activities = follows.map((f) => f.activity);
     return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
+  }
+
+  async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
+    try {
+      // Validate activity exists
+      const activity = await this.activityRepo.findOne({ where: { id: activityId } });
+      if (!activity) {
+        throw new NotFoundException('Activity không tồn tại');
+      }
+
+      const values = userIds.map((uid) => ({ activityId, userId: uid, createdBy: actorId }));
+
+      if (values.length === 0) {
+        return new ResponseDto({ 
+          data: { activityId, userIds: [] }, 
+          message: 'Không có userId nào' 
+        });
+      }
+
+      await this.activityFollowRepo
+        .createQueryBuilder()
+        .insert()
+        .into(ActivityFollowEntity)
+        .values(values)
+        .onConflict('("activityId", "userId") DO NOTHING')
+        .execute();
+
+      return new ResponseDto({ 
+        data: { activityId, userIds }, 
+        message: 'Theo dõi thành công' 
+      });
+    } catch (error) {
+      this.logger.error('Error in batchFollow:', error);
+      throw error;
+    }
+  }
+
+  async batchUnfollow(activityId: Uuid, userIds: Uuid[]) {
+    try {
+      if (!userIds?.length) {
+        return new ResponseDto({ 
+          data: { activityId, userIds: [] }, 
+          message: 'Không có userId nào' 
+        });
+      }
+
+      await this.activityFollowRepo
+        .createQueryBuilder()
+        .delete()
+        .from(ActivityFollowEntity)
+        .where('"activityId" = :activityId', { activityId })
+        .andWhere('"userId" IN (:...userIds)', { userIds })
+        .execute();
+
+      return new ResponseDto({ 
+        data: { activityId, userIds }, 
+        message: 'Bỏ theo dõi thành công' 
+      });
+    } catch (error) {
+      this.logger.error('Error in batchUnfollow:', error);
+      throw error;
+    }
   }
 
   async getActivityProgress(
@@ -1271,7 +1306,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         await notificationRepo.save(notifications);
       }
 
-      const { assignees: _, ...activityData } = dto;
+      // Remove follows from activityData before creating ActivityEntity
+      const { assignees: _, follows: __, ...activityData } = dto;
       const activity = activityRepo.create({
         ...activityData,
         position: count + 1,
@@ -1451,14 +1487,47 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+      // Handle follows
+      if (dto.follows?.length) {
+        const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
+        const follows = dto.follows.map(userId => ({
+          activityId: savedActivity.id,
+          userId,
+          createdBy: userId
+        }));
+        
+        await activityFollowRepo
+          .createQueryBuilder()
+          .insert()
+          .into(ActivityFollowEntity)
+          .values(follows)
+          .onConflict('("activityId", "userId") DO NOTHING')
+          .execute();
+
+        // Log follow actions
+        const followLog = activityLogRepo.create({
+          activity: savedActivity,
+          user: userCreator,
+          action: ActivityLogActionEnum.FOLLOW,
+          message: `Thêm ${follows.length} người theo dõi`,
+          metadata: {
+            type: 'FOLLOW',
+            userIds: dto.follows
+          },
+        });
+        await activityLogRepo.save(followLog);
+      }
+
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
         relations: [
-          'subActivities',
+          'subActivities', 
           'assignees',
           'assignees.user',
           'files',
           'files.file',
+          'follows',
+          'follows.user'
         ],
       });
 
