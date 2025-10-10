@@ -9,7 +9,6 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
-  ActivityStatus,
   ActivityType,
   AssigneeRole,
   AssignmentStatus,
@@ -74,11 +73,11 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
-import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { Logger } from '@nestjs/common';
@@ -128,8 +127,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
 
   async getActivityFollowers(activityId: Uuid) {
-    const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
-    return new ResponseDto({ data: follows, message: 'Lấy danh sách người theo dõi thành công' });
+    const follows = await this.activityFollowRepo.find({
+      where: { activityId },
+      relations: ['user'],
+    });
+    return new ResponseDto({
+      data: follows,
+      message: 'Lấy danh sách người theo dõi thành công',
+    });
   }
 
   async getMyFollowedActivities(userId: Uuid) {
@@ -138,7 +143,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       relations: ['activity'],
     });
     const activities = follows.map((f) => f.activity);
-    return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
+    return new ResponseDto({
+      data: activities,
+      message: 'Lấy danh sách activity đã theo dõi thành công',
+    });
   }
 
   async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
@@ -828,7 +836,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const sortOrder = query.order || 'DESC';
 
     qb.orderBy(`comment.${sortField}`, sortOrder as 'ASC' | 'DESC');
-
     qb.addOrderBy('replies.createdAt', 'ASC');
 
     const comments = await qb.getMany();
@@ -838,16 +845,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         comment.reactions || [],
       );
 
+      // Xử lý replies với hasUserReacted
       const processedReplies =
         comment.replies?.map((reply) => {
           const replyReactionsByType = this.aggregateCommentReactions(
             reply.reactions || [],
           );
 
+          const userReplyReaction = reply.reactions?.find(
+            (r) => r.userId === currentUserId,
+          );
+
           return {
             ...reply,
             reactionCounts: replyReactionsByType.counts,
             reactionSummary: replyReactionsByType.summary,
+            currentUserReaction: userReplyReaction
+              ? userReplyReaction.type
+              : null,
+            hasUserReacted: !!userReplyReaction,
           };
         }) || [];
 
@@ -1545,9 +1561,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
-      .andWhere('activity.workspaceId = :workspaceId', {
-        workspaceId: query.workspaceId,
-      })
+      .leftJoinAndSelect('activity.workspace', 'workspace')
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
       .leftJoinAndSelect('activity.feedbacks', 'feedbacks')
@@ -1563,6 +1577,32 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('files.file', 'file')
       .leftJoinAndSelect('activity.category', 'category')
       .leftJoinAndSelect('activity.stage', 'stage');
+
+    // Base filter - luôn có WHERE clause
+    qb.where('1 = 1');
+
+    // Only filter by workspace if workspaceId is provided
+    if (query.workspaceId) {
+      qb.andWhere('activity.workspaceId = :workspaceId', {
+        workspaceId: query.workspaceId,
+      });
+    }
+
+    // Filter by assigneeId - FIX: Cần kiểm tra assignee có tồn tại không
+    if (query.assigneeId) {
+      // Chỉ lấy activities mà có assignee này
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :assigneeId)',
+        { assigneeId: query.assigneeId },
+      );
+    }
+
+    // Filter by stageGroupStatus - sửa lại logic
+    if (query.stageGroupStatus) {
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
+        stageGroupStatus: query.stageGroupStatus,
+      });
+    }
 
     if (!query.includeSubTasks) {
       qb.andWhere('activity.parentId IS NULL');
@@ -1601,6 +1641,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       qb.andWhere('activity.createdBy = :createdBy', {
         createdBy: query.createdBy,
       });
+
     qb.orderBy('activity.createdAt', 'DESC');
 
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
@@ -2275,60 +2316,114 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         break;
 
       case QueryType.ASSIGNED_TO_ME:
-        qb.where('assignees.userId = :userId', { userId });
-        break;
-
-      case QueryType.ASSIGNED_BY_STAGE_GROUP:
-        qb.where('assignees.userId = :userId', { userId });
-        break;
-
-      case QueryType.OVERDUE:
-        qb.where('assignees.userId = :userId', { userId })
-          .andWhere('activity.endTime < :now', { now: new Date() })
-          .andWhere('activity.status != :completedStatus', {
-            completedStatus: ActivityStatus.COMPLETED,
-          })
-          .andWhere('activity.endTime IS NOT NULL');
-        break;
-
-      case QueryType.IN_PROGRESS:
-        qb.where('assignees.userId = :userId', { userId }).andWhere(
-          '(activity.status = :inProgressStatus OR ' +
-            '(activity.startTime <= :now AND activity.status != :completedStatus))',
-          {
-            inProgressStatus: ActivityStatus.IN_PROGRESS,
-            now: new Date(),
-            completedStatus: ActivityStatus.COMPLETED,
-          },
+        qb.where(
+          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId)',
+          { userId },
         );
         break;
 
+      case QueryType.ASSIGNED_BY_STAGE_GROUP:
+        qb.where(
+          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId)',
+          { userId },
+        );
+        break;
+
+      case QueryType.OVERDUE: {
+        // Activities quá hạn
+        const now = new Date();
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        )
+          .andWhere('activity.endTime IS NOT NULL')
+          .andWhere('activity.endTime < :now', { now })
+          .andWhere(
+            '(stage.isCompleted IS NULL OR stage.isCompleted = :notCompleted)',
+            { notCompleted: false },
+          );
+        break;
+      }
+
+      case QueryType.IN_PROGRESS:
+        // Activities đang in progress - dựa vào stageGroup
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        ).andWhere('stage.stageGroup = :activeGroup', {
+          activeGroup: 'active',
+        });
+        break;
+
       case QueryType.TODAY: {
+        // Activities diễn ra hôm nay
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        qb.where('assignees.userId = :userId', { userId })
-          .andWhere('activity.startTime >= :today', { today })
-          .andWhere('activity.startTime < :tomorrow', { tomorrow });
+        const startOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+        );
+        const endOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          23,
+          59,
+          59,
+          999,
+        );
+
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        ).andWhere(
+          '(' +
+            '(activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay) OR ' +
+            '(activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay) OR ' +
+            '(activity.startTime <= :startOfDay AND activity.endTime >= :endOfDay)' +
+            ')',
+          { startOfDay, endOfDay },
+        );
         break;
       }
 
       case QueryType.COMPLETED:
-        qb.where('assignees.userId = :userId', { userId }).andWhere(
-          'activity.status = :status',
-          { status: ActivityStatus.COMPLETED },
-        );
+        // Activities đã hoàn thành - CHỈ lấy done, KHÔNG lấy closed
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        )
+          .andWhere('stage.stageGroup = :doneGroup', {
+            doneGroup: 'done',
+          })
+          .andWhere('stage.stageGroup != :closedGroup', {
+            closedGroup: 'closed',
+          });
         break;
 
       case QueryType.ALL:
+        // Lấy tất cả activities - không filter theo user
+        qb.where('1 = 1');
         break;
 
       default:
+        // Fallback
+        qb.where(
+          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
+          { userId },
+        );
         break;
     }
 
-    if (query.stageGroupStatus) {
+    // Apply additional filters
+    if (
+      query.stageGroupStatus &&
+      type !== QueryType.COMPLETED &&
+      type !== QueryType.IN_PROGRESS &&
+      type !== QueryType.OVERDUE
+    ) {
+      // Chỉ áp dụng stageGroupStatus filter khi KHÔNG phải COMPLETED, IN_PROGRESS, hoặc OVERDUE
+      // vì các loại này đã có logic riêng cho stageGroup
       qb.andWhere('stage.stageGroup = :stageGroupStatus', {
         stageGroupStatus: query.stageGroupStatus,
       });
@@ -2341,12 +2436,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     if (query.assigneeId) {
-      qb.leftJoin('activity.assignees', 'filterAssignee').andWhere(
-        'filterAssignee.userId = :assigneeId',
-        {
-          assigneeId: query.assigneeId,
-        },
-      );
+      // Chỉ áp dụng filter assigneeId cho ALL và CREATED_BY_ME
+      if (type === QueryType.ALL || type === QueryType.CREATED_BY_ME) {
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :assigneeId)',
+          { assigneeId: query.assigneeId },
+        );
+      }
     }
 
     if (query.q) {

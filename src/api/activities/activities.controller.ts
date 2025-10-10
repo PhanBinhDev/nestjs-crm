@@ -24,6 +24,7 @@ import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
 import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
 import { FollowUsersDto } from './dto/follow-users.dto';
@@ -327,15 +328,18 @@ export class ActivitiesController {
     enum: QueryType,
     required: false,
     description:
-      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed',
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, all',
   })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
-    @Query('queryType') type: QueryType,
   ) {
-    if (type)
-      return this.activitiesService.findFilteredActivities(userId, query, type);
+    if (query.queryType)
+      return this.activitiesService.findFilteredActivities(
+        userId,
+        query,
+        query.queryType,
+      );
 
     return this.activitiesService.findAll(query);
   }
