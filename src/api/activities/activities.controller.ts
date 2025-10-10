@@ -738,7 +738,7 @@ export class ActivitiesController {
     return this.activitiesService.batchFollow(activityId, dto.userIds, actorId);
   }
 
-  @Delete(':id/follow/batch')
+  @Post(':id/unfollow/batch')
   @ApiAuth({
     summary: 'Bỏ theo dõi activity cho danh sách user',
     type: ResponseNoDataDto,
