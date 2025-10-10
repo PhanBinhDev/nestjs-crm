@@ -1,38 +1,44 @@
-import { Module, Logger } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { AllConfigType } from '@/config/config.type';
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import * as fs from 'node:fs';
-import path from 'node:path';
 
 @Module({
   imports: [ConfigModule],
   providers: [
     {
       provide: 'FIREBASE_ADMIN',
-      useFactory: () => {
-        const logger = new Logger('FirebaseModule');
-        const serviceAccountPath = path.join(
-          process.cwd(),
-          'serviceAccountKey.json',
+      useFactory: (configService: ConfigService<AllConfigType>) => {
+        const serviceAccountJson = configService.getOrThrow(
+          'noti.serviceAccountKey',
+          {
+            infer: true,
+          },
         );
 
-        try {
-          if (!fs.existsSync(serviceAccountPath)) {
-            logger.warn(`Firebase service account file not found at ${serviceAccountPath}. Firebase features will be disabled.`);
-            return null;
-          }
-
-          const rawData = fs.readFileSync(serviceAccountPath, 'utf8');
-          const serviceAccount = JSON.parse(rawData);
-
-          return admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-          });
-        } catch (error) {
-          logger.error('Failed to initialize Firebase:', error.message);
-          return null;
+        if (!serviceAccountJson) {
+          throw new Error(
+            'Firebase service account key is not provided in configuration.',
+          );
         }
+
+        const serviceAccount = JSON.parse(serviceAccountJson);
+
+        if (
+          serviceAccount.private_key &&
+          typeof serviceAccount.private_key === 'string'
+        ) {
+          serviceAccount.private_key = serviceAccount.private_key.replace(
+            /\\n/g,
+            '\n',
+          );
+        }
+
+        return admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
       },
+      inject: [ConfigService],
     },
   ],
   exports: ['FIREBASE_ADMIN'],

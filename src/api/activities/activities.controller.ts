@@ -26,8 +26,6 @@ import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
 import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
 import { ActivityLinkResDto } from './dto/activity-link.res.dto';
-import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
-import { FollowUsersDto } from './dto/follow-users.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
@@ -44,6 +42,7 @@ import {
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
+import { FollowUsersDto } from './dto/follow-users.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { ToggleReactionReqDto } from './dto/toggle-reaction.req.dto';
@@ -702,7 +701,6 @@ export class ActivitiesController {
     return this.activitiesService.removeLinkFromActivity(activityId, linkId);
   }
 
-
   @Get('me/follows')
   @ApiAuth({
     summary: 'Lấy danh sách activity bản thân đang theo dõi',
@@ -724,26 +722,35 @@ export class ActivitiesController {
     return this.activitiesService.getActivityFollowers(activityId);
   }
 
-  @Post('follow/batch')
+  @Post(':id/follow/batch')
   @ApiAuth({
     summary: 'Theo dõi activity cho danh sách user',
     type: ResponseNoDataDto,
   })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity cần theo dõi',
+    format: 'uuid',
+  })
   batchFollow(
+    @Param('id') activityId: Uuid,
     @Body() dto: FollowUsersDto,
     @CurrentUser('id') actorId: Uuid,
   ) {
-    return this.activitiesService.batchFollow(dto.activityId as Uuid, dto.userIds as Uuid[], actorId);
+    return this.activitiesService.batchFollow(activityId, dto.userIds, actorId);
   }
 
-  @Delete('follow/batch')
+  @Delete(':id/follow/batch')
   @ApiAuth({
     summary: 'Bỏ theo dõi activity cho danh sách user',
     type: ResponseNoDataDto,
   })
-  batchUnfollow(
-    @Body() dto: FollowUsersDto,
-  ) {
-    return this.activitiesService.batchUnfollow(dto.activityId as Uuid, dto.userIds as Uuid[]);
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity cần theo dõi',
+    format: 'uuid',
+  })
+  batchUnfollow(@Param('id') activityId: Uuid, @Body() dto: FollowUsersDto) {
+    return this.activitiesService.batchUnfollow(activityId, dto.userIds);
   }
 }

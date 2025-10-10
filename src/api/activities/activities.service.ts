@@ -125,7 +125,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     super(activityRepo);
   }
 
-
   async getActivityFollowers(activityId: Uuid) {
     const follows = await this.activityFollowRepo.find({
       where: { activityId },
@@ -151,18 +150,23 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
   async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
     try {
-      // Validate activity exists
-      const activity = await this.activityRepo.findOne({ where: { id: activityId } });
+      const activity = await this.activityRepo.findOne({
+        where: { id: activityId },
+      });
       if (!activity) {
         throw new NotFoundException('Activity không tồn tại');
       }
 
-      const values = userIds.map((uid) => ({ activityId, userId: uid, createdBy: actorId }));
+      const values = userIds.map((uid) => ({
+        activityId,
+        userId: uid,
+        createdBy: actorId,
+      }));
 
       if (values.length === 0) {
-        return new ResponseDto({ 
-          data: { activityId, userIds: [] }, 
-          message: 'Không có userId nào' 
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
         });
       }
 
@@ -174,9 +178,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .onConflict('("activityId", "userId") DO NOTHING')
         .execute();
 
-      return new ResponseDto({ 
-        data: { activityId, userIds }, 
-        message: 'Theo dõi thành công' 
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Theo dõi thành công',
       });
     } catch (error) {
       this.logger.error('Error in batchFollow:', error);
@@ -187,9 +191,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async batchUnfollow(activityId: Uuid, userIds: Uuid[]) {
     try {
       if (!userIds?.length) {
-        return new ResponseDto({ 
-          data: { activityId, userIds: [] }, 
-          message: 'Không có userId nào' 
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
         });
       }
 
@@ -201,9 +205,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .andWhere('"userId" IN (:...userIds)', { userIds })
         .execute();
 
-      return new ResponseDto({ 
-        data: { activityId, userIds }, 
-        message: 'Bỏ theo dõi thành công' 
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Bỏ theo dõi thành công',
       });
     } catch (error) {
       this.logger.error('Error in batchUnfollow:', error);
@@ -1506,12 +1510,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       // Handle follows
       if (dto.follows?.length) {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
-        const follows = dto.follows.map(userId => ({
+        const follows = dto.follows.map((userId) => ({
           activityId: savedActivity.id,
           userId,
-          createdBy: userId
+          createdBy: userId,
         }));
-        
+
         await activityFollowRepo
           .createQueryBuilder()
           .insert()
@@ -1528,7 +1532,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           message: `Thêm ${follows.length} người theo dõi`,
           metadata: {
             type: 'FOLLOW',
-            userIds: dto.follows
+            userIds: dto.follows,
           },
         });
         await activityLogRepo.save(followLog);
@@ -1537,13 +1541,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
         relations: [
-          'subActivities', 
+          'subActivities',
           'assignees',
           'assignees.user',
           'files',
           'files.file',
           'follows',
-          'follows.user'
+          'follows.user',
         ],
       });
 

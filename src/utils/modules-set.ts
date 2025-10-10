@@ -1,6 +1,7 @@
 import { ApiModule } from '@/api/api.module';
 import { AuthModule } from '@/api/auth/auth.module';
 import authConfig from '@/api/auth/config/auth.config';
+import notiConfig from '@/api/notification/config/noti.config';
 import { BackgroundModule } from '@/background/background.module';
 import backgroundConfig from '@/background/config/background.config';
 import appConfig from '@/config/app.config';
@@ -29,6 +30,7 @@ function generateModulesSet() {
         backgroundConfig,
         mailConfig,
         redisConfig,
+        notiConfig,
       ],
       envFilePath: ['.env'],
     }),
