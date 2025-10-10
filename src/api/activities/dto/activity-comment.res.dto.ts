@@ -1,3 +1,4 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import {
@@ -56,6 +57,13 @@ export class ActivityCommentResDto extends AuditResDto {
   @ApiPropertyOptional()
   @Expose()
   editedAt?: Date;
+
+  @ClassField(() => UserResDto, {
+    description: 'Thông tin người tạo bình luận',
+  })
+  @Type(() => UserResDto)
+  @Expose()
+  user: UserResDto;
 
   @ApiProperty({ description: 'Total reaction count' })
   @Expose()

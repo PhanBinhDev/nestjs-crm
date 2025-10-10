@@ -93,7 +93,6 @@ export class ActivitiesController {
     type: ActivityCommentResDto,
   })
   createComment(
-    @Param('id') activityId: Uuid,
     @Body() dto: CreateActivityCommentDto,
     @CurrentUser('id') userId: Uuid,
   ) {

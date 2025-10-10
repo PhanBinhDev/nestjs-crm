@@ -186,5 +186,5 @@ export class CreateActivityDto {
     ],
     each: true,
   })
-  follows?: string[];
+  follows?: Uuid[];
 }

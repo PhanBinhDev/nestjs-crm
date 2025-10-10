@@ -849,7 +849,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         comment.reactions || [],
       );
 
-      // Xử lý replies với hasUserReacted
       const processedReplies =
         comment.replies?.map((reply) => {
           const replyReactionsByType = this.aggregateCommentReactions(
@@ -860,10 +859,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             (r) => r.userId === currentUserId,
           );
 
+          const totalReplyReactions = Object.values(
+            replyReactionsByType.counts || {},
+          ).reduce((s, v) => s + v, 0);
+
           return {
             ...reply,
             reactionCounts: replyReactionsByType.counts,
             reactionSummary: replyReactionsByType.summary,
+            totalReactions: totalReplyReactions,
             currentUserReaction: userReplyReaction
               ? userReplyReaction.type
               : null,
@@ -875,6 +879,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         (r) => r.userId === currentUserId,
       );
 
+      const totalReactions = Object.values(reactionsByType.counts || {}).reduce(
+        (s, v) => s + v,
+        0,
+      );
+
       return {
         ...comment,
         reactionCounts: reactionsByType.counts,
@@ -882,6 +891,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         currentUserReaction: userReaction ? userReaction.type : null,
         hasUserReacted: !!userReaction,
         replies: processedReplies,
+        totalReactions,
       };
     });
 
@@ -897,7 +907,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     commentId: Uuid,
     query: PageOptionsDto,
-    currentUserId: Uuid, // Thêm currentUserId parameter
+    currentUserId: Uuid,
   ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -994,7 +1004,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
       const userRepo = manager.getRepository(UserEntity);
 
-      // Validate activity exists
       const activity = await activityRepo.findOne({
         where: { id: activityId },
       });
@@ -1288,6 +1297,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
       const notificationRepo = manager.getRepository(NotificationEntity);
+      const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
@@ -1347,7 +1357,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
       await activityLogRepo.save(mainActivityLog);
 
-      // Handle subtasks and logging
       if (dto.subtask?.length > 0) {
         const subActivities: ActivityEntity[] = [];
         const logs: ActivityLogEntity[] = [];
@@ -1444,22 +1453,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // Handle file attachments
       if (dto.attachments && dto.attachments.length > 0) {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
 
-        console.log('Processing file attachments:', dto.attachments);
-
         for (const fileId of dto.attachments) {
           try {
-            // Validate fileId format
             if (!fileId || typeof fileId !== 'string') {
-              console.error('Invalid fileId:', fileId);
               continue;
             }
 
-            // Verify file exists by URL (frontend sends URL, not ID)
             const file = await manager.getRepository(FileEntity).findOne({
               where: { url: fileId },
             });
@@ -1469,18 +1472,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               continue;
             }
 
-            // Create ActivityFileEntity
             const activityFile = activityFileRepo.create({
               activityId: savedActivity.id,
-              fileId: file.id, // Use actual file ID, not URL
+              fileId: file.id,
               createdBy: userId,
             });
 
-            const savedActivityFile = await activityFileRepo.save(activityFile);
-            console.log(
-              'ActivityFile saved successfully:',
-              savedActivityFile.id,
-            );
+            await activityFileRepo.save(activityFile);
 
             // Log file attachment
             const fileLog = activityLogRepo.create({
@@ -1507,7 +1505,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // Handle follows
       if (dto.follows?.length) {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
         const follows = dto.follows.map((userId) => ({
