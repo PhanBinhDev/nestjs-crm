@@ -25,7 +25,7 @@ export class NotificationsService {
 
   constructor(
     @Inject('FIREBASE_ADMIN')
-    private readonly firebaseAdmin: admin.app.App | null,
+    private readonly firebaseAdmin: admin.app.App,
     @InjectRepository(NotificationEntity)
     private readonly notificationRepo: Repository<NotificationEntity>,
     private readonly userServices: UserService,
@@ -162,15 +162,6 @@ export class NotificationsService {
   }
 
   async sendPushNotification(dto: SendPushNotificationDto) {
-    // Kiểm tra nếu Firebase không được cấu hình
-    if (!this.firebaseAdmin) {
-      this.logger.warn(
-        'Firebase is not configured. Push notification will be skipped.',
-      );
-      // Vẫn tạo notification trong database
-      return await this.createNotification(dto);
-    }
-
     const userReceivedNoti = await this.userServices.findOne(dto.userId);
 
     const deviceTokens = await this.deviceTokenServices.findAllByUserId(

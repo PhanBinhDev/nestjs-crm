@@ -3141,7 +3141,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Log type change
     if (dto.type !== undefined && dto.type !== oldValues.type) {
       logPromises.push(
         activityLogRepo.save(
@@ -3150,8 +3149,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             user,
             action: ActivityLogActionEnum.UPDATED,
             message: `Thay đổi loại hoạt động từ ${oldValues.type} sang ${dto.type}`,
-            oldValue: oldValues.type,
-            newValue: dto.type,
             metadata: {
               type: 'TYPE_CHANGE',
               field: 'type',
@@ -3161,7 +3158,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Log description change
     if (
       dto.description !== undefined &&
       dto.description !== oldValues.description
@@ -3172,7 +3168,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: `Cập nhật mô tả hoạt động thành "${dto.description || 'chưa có'}"`,
+            message: dto.description
+              ? `Cập nhật mô tả hoạt động thành "${dto.description}"`
+              : 'Xóa mô tả hoạt động',
             metadata: {
               type: 'DESCRIPTION_CHANGE',
             },

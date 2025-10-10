@@ -14,7 +14,7 @@ import {
 } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ActivityAssigneeDto } from './activity-assignee.dto';
 import { ActivityChecklistDto } from './activity-checklist.dto';
 
@@ -39,6 +39,7 @@ export class CreateActivityDto {
 
   @StringFieldOptional({
     example: 'Mô tả chi tiết về hoạt động',
+    minLength: 0,
   })
   description?: string;
 
@@ -179,8 +180,11 @@ export class CreateActivityDto {
 
   @UUIDFieldOptional({
     description: 'Danh sách ID người dùng sẽ theo dõi hoạt động này',
-    example: ['b1d94e3e-8fb3-5be3-bd11-8c19f6dbe4b9', 'c2e05f4f-9gc4-6cf4-ce22-9d20g7ecf5ca'],
-    each: true
+    example: [
+      'b1d94e3e-8fb3-5be3-bd11-8c19f6dbe4b9',
+      'c2e05f4f-9gc4-6cf4-ce22-9d20g7ecf5ca',
+    ],
+    each: true,
   })
   follows?: string[];
 }

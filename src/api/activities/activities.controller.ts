@@ -423,7 +423,6 @@ export class ActivitiesController {
     name: 'id',
     description: 'ID của activity cần cập nhật',
   })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
   updateActivity(
     @Param('id') id: Uuid,
     @Body() dto: UpdateActivityDto,
