@@ -5,6 +5,7 @@ import { LinkPreviewService } from '@/services/link-preview.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { StagesEntity } from '../stages/entities/stage.entity';
+import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
@@ -44,6 +45,7 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
       ActivityLinkEntity,
       ActivityFollowEntity,
       ActivityCommentReactionEntity,
+      WorkspaceMembers,
     ]),
     NotificationQueueModule,
   ],

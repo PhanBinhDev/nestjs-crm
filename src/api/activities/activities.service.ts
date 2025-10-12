@@ -81,11 +81,13 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { JobName, QueueName } from '@/constants/job.constant';
 import { NotificationType } from '@/database/enum/notifications.enum';
+import { WorkspaceMemberStatus } from '@/database/enum/workspace.enum';
 import { upperCaseFirst } from '@/utils/index.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
+import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 
 @Injectable()
@@ -128,6 +130,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly linkPreviewService: LinkPreviewService,
     @InjectQueue(QueueName.NOTIFICATION)
     private readonly notificationQueue: Queue,
+    @InjectRepository(WorkspaceMembers)
+    private readonly workspaceMemberRepo: Repository<WorkspaceMembers>,
   ) {
     super(activityRepo);
   }
@@ -1585,9 +1589,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         };
 
         await this.notificationQueue.add(
-          notifType === 'assignee'
-            ? JobName.TASK_CREATED_ASSIGNEE
-            : JobName.TASK_CREATED_FOLLOWED,
+          JobName.NOTIFICATION,
           notificationData,
           {
             attempts: 3,
@@ -1945,7 +1947,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         assignees: activity.assignees || [],
       };
 
-      await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
+      const { hasStageChange, hasPositionChange } =
+        await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
+
+      // if (hasStageChange) {
+      //   oldValues.stageName = activity.stage?.title;
+      // }
 
       if (dto.assignees !== undefined) {
         await this.updateActivityAssignees(
@@ -2209,7 +2216,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     userId: Uuid,
     dto: AssignUserToActivityDto,
-    currentUserId: Uuid, // Thêm parameter
+    currentUserId: Uuid,
   ): Promise<ResponseDto<ActivityAssigneeResDto>> {
     return this.dataSource.transaction(async (manager) => {
       const activityAssigneeRepo = manager.getRepository(
@@ -2297,7 +2304,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     semesterId: Uuid,
   ): Promise<ResponseNoDataDto> {
-    // Kiểm tra activity tồn tại
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
       relations: ['semester'],
@@ -2751,6 +2757,28 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         : undefined,
     };
 
+    const members = await this.getMembersInWorkspace(activity.workspaceId);
+
+    for (const member of members) {
+      const notificationData: SendPushNotificationDto = {
+        userId: member.id,
+        title: 'Thêm link mới',
+        message: `${activity.name} có link mới được thêm vào bởi ${linkWithCreator.creator.name}.`,
+        type: NotificationType.ACTIVITY,
+        data: {
+          uri: `/workspaces/${activity.workspaceId}`,
+          open: activity.id,
+        },
+      };
+
+      await this.notificationQueue.add(JobName.NOTIFICATION, notificationData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    }
+
     return new ResponseDto<ActivityLinkResDto>({
       data: plainToInstance(ActivityLinkResDto, responseData, {
         excludeExtraneousValues: true,
@@ -2906,11 +2934,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  /**
-   * Tính progress của activity
-   * @param activity Activity entity với relations đã load
-   * @returns Progress percentage (0-100)
-   */
   private calculateProgress(activity: ActivityEntity): number {
     const hasSubActivities = activity.subActivities?.length > 0;
     const hasChecklists = activity.checklists?.length > 0;
@@ -2926,7 +2949,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const subTaskCount = activity.subActivities.length;
       const subTaskWeight = 100 / (subTaskCount + 1);
 
-      // Tính progress của các subtask
       activity.subActivities.forEach((subActivity) => {
         totalWeight += subTaskWeight;
         if (subActivity.stage?.isCompleted) {
@@ -2934,14 +2956,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       });
 
-      // Thêm weight cho task chính
       totalWeight += subTaskWeight;
       if (activity.stage?.isCompleted) {
         completedWeight += subTaskWeight;
       }
     }
 
-    // Case 3: Task có checklists
     if (hasChecklists) {
       let totalChecklistItems = 0;
       let completedChecklistItems = 0;
@@ -2958,30 +2978,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
 
       if (totalChecklistItems > 0) {
-        // Nếu có cả subtask và checklist, chia weight
         if (hasSubActivities) {
           const checklistWeight = 50;
           const subTaskActualWeight = 50;
 
-          // Rescale subtask progress
           const subTaskProgress =
             totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
           completedWeight = (subTaskProgress * subTaskActualWeight) / 100;
           totalWeight = subTaskActualWeight;
 
-          // Add checklist progress
           const checklistProgress =
             (completedChecklistItems / totalChecklistItems) * checklistWeight;
           completedWeight += checklistProgress;
           totalWeight += checklistWeight;
         } else {
-          // Chỉ có checklist
           const itemWeight = 100 / (totalChecklistItems + 1); // +1 cho task chính
 
           completedWeight = completedChecklistItems * itemWeight;
           totalWeight = totalChecklistItems * itemWeight;
 
-          // Thêm weight cho task chính
           totalWeight += itemWeight;
           if (activity.stage?.isCompleted) {
             completedWeight += itemWeight;
@@ -2990,11 +3005,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
     }
 
-    // Tính phần trăm cuối cùng
     const progress =
       totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
 
-    // Làm tròn đến 2 chữ số thập phân
     return Math.round(progress * 100) / 100;
   }
 
@@ -3002,7 +3015,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     dto: UpdateActivityDto,
     oldValues: any,
     activityRepo: Repository<ActivityEntity>,
-  ): Promise<void> {
+  ): Promise<{ hasStageChange: boolean; hasPositionChange: boolean }> {
     const hasStageChange =
       dto.stageId !== undefined && dto.stageId !== oldValues.stageId;
     const hasPositionChange =
@@ -3055,6 +3068,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           .execute();
       }
     }
+
+    return {
+      hasStageChange,
+      hasPositionChange,
+    };
   }
 
   private async updateActivityAssignees(
@@ -3498,5 +3516,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         completedChecklistItems,
       },
     };
+  }
+
+  private async getMembersInWorkspace(workspaceId: Uuid) {
+    const members = await this.workspaceMemberRepo.find({
+      where: {
+        workspaceId,
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+      relations: ['user'],
+    });
+    return members.map((member) => member.user);
   }
 }

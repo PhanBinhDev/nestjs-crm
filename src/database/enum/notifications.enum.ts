@@ -5,4 +5,5 @@ export enum NotificationType {
   COMMENT = 'comment',
   REMINDER = 'reminder',
   FOLLOW = 'follow',
+  ACTIVITY = 'activity',
 }

@@ -24,6 +24,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspacesService } from './workspaces.service';
@@ -115,7 +116,7 @@ export class WorkspacesController {
   })
   update(
     @Param('workspaceId') workspaceId: Uuid,
-    @Body() updateWorkspaceDto: CreateWorkspaceDto,
+    @Body() updateWorkspaceDto: UpdateWorkspaceDto,
     @UploadedFile() avatar?: Express.Multer.File,
   ) {
     return this.workspacesService.update(

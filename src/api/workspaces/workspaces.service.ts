@@ -36,6 +36,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
@@ -397,12 +398,11 @@ export class WorkspacesService {
 
   async update(
     id: Uuid,
-    dto: CreateWorkspaceDto,
+    dto: UpdateWorkspaceDto,
     avatar?: Express.Multer.File,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
     const { members: _members, ...body } = dto;
 
-    // Upload avatar nếu có
     if (avatar) {
       const avatarPath = await this.uploadService.saveFile(avatar);
       body.avatar = avatarPath;
