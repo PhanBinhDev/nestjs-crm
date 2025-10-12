@@ -666,6 +666,7 @@ export class StagesService {
         stageGroup: StageGroup.ACTIVE,
         isBuiltIn: true,
         groupPosition: 1,
+        isOverdue: true,
       },
       {
         title: 'DONE',

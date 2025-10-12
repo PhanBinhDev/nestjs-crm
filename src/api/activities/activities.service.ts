@@ -31,7 +31,6 @@ import { plainToInstance } from 'class-transformer';
 import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
-import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -80,7 +79,13 @@ import { ActivityParticipantEntity } from './entities/activity-participant.entit
 import { ActivityEntity } from './entities/activity.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
+import { JobName, QueueName } from '@/constants/job.constant';
+import { NotificationType } from '@/database/enum/notifications.enum';
+import { upperCaseFirst } from '@/utils/index.util';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
 import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 
 @Injectable()
@@ -121,6 +126,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     @InjectRepository(ActivityFollowEntity)
     private readonly activityFollowRepo: Repository<ActivityFollowEntity>,
     private readonly linkPreviewService: LinkPreviewService,
+    @InjectQueue(QueueName.NOTIFICATION)
+    private readonly notificationQueue: Queue,
   ) {
     super(activityRepo);
   }
@@ -1282,6 +1289,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     userId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
     return this.dataSource.transaction(async (manager) => {
+      const userNotifications = new Map<Uuid, 'assignee' | 'follow'>();
+
       const userCreator = await manager.getRepository(UserEntity).findOne({
         where: { id: userId },
       });
@@ -1296,8 +1305,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         ActivityChecklistItemEntity,
       );
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
-      const notificationRepo = manager.getRepository(NotificationEntity);
-      const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
@@ -1306,42 +1313,26 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       let assignees: ActivityAssigneeEntity[] = [];
       if (dto.assignees?.length > 0) {
         const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
-        assignees = dto.assignees.map((assigneeDto) =>
-          assigneeRepo.create({
+        assignees = dto.assignees.map((assigneeDto) => {
+          if (assigneeDto.userId !== userId) {
+            userNotifications.set(assigneeDto.userId, 'assignee');
+          }
+          return assigneeRepo.create({
             userId: assigneeDto.userId,
             role: assigneeDto.role || AssigneeRole.COLLABORATOR,
             note: assigneeDto.note,
             assignedAt: new Date(),
             assignedBy: userId,
             status: AssignmentStatus.PENDING,
-          }),
-        );
-
-        const notifications = await Promise.all(
-          dto.assignees.map(async (assigneeDto) => {
-            const userAssignee = await this.userRepo.findOne({
-              where: { id: assigneeDto.userId },
-            });
-
-            return notificationRepo.create({
-              userId: assigneeDto.userId,
-              title: `Có ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} mới`,
-              message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
-              sender: userCreator,
-              user: userAssignee,
-            });
-          }),
-        );
-
-        await notificationRepo.save(notifications);
+          });
+        });
       }
 
-      // Remove follows from activityData before creating ActivityEntity
       const { assignees: _, follows: __, ...activityData } = dto;
       const activity = activityRepo.create({
         ...activityData,
         position: count + 1,
-        assignees: assignees,
+        assignees,
       });
       const savedActivity = await activityRepo.save(activity);
 
@@ -1350,10 +1341,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         user: userCreator,
         action: ActivityLogActionEnum.CREATED,
         message: 'Tạo hoạt động mới',
-        metadata: {
-          type: 'MAIN_ACTIVITY',
-          activityType: dto.type,
-        },
       });
       await activityLogRepo.save(mainActivityLog);
 
@@ -1507,11 +1494,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       if (dto.follows?.length) {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
-        const follows = dto.follows.map((userId) => ({
-          activityId: savedActivity.id,
-          userId,
-          createdBy: userId,
-        }));
+        const follows = dto.follows.map((followUserId) => {
+          if (followUserId !== userId && !userNotifications.has(followUserId)) {
+            userNotifications.set(followUserId, 'follow');
+          }
+          return {
+            activityId: savedActivity.id,
+            userId: followUserId,
+            createdBy: userId,
+          };
+        });
 
         await activityFollowRepo
           .createQueryBuilder()
@@ -1521,7 +1513,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           .onConflict('("activityId", "userId") DO NOTHING')
           .execute();
 
-        // Log follow actions
         const followLog = activityLogRepo.create({
           activity: savedActivity,
           user: userCreator,
@@ -1547,6 +1538,65 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           'follows.user',
         ],
       });
+
+      for (const [notifUserId, notifType] of userNotifications) {
+        const activityLabel =
+          dto?.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
+        const activityName = savedActivity?.name || 'hoạt động';
+        const creatorName = upperCaseFirst(userCreator?.name || 'Người tạo');
+        const workspaceName =
+          (savedActivity as any)?.workspaceName ||
+          savedActivity?.workspace?.name;
+        const start = savedActivity?.startTime
+          ? new Date(savedActivity.startTime)
+          : null;
+        const end = savedActivity?.endTime
+          ? new Date(savedActivity.endTime)
+          : null;
+
+        const timePart = end
+          ? `, hạn ${end.toLocaleString()}`
+          : start
+            ? `, bắt đầu ${start.toLocaleString()}`
+            : '';
+
+        const workspacePart = workspaceName ? ` trong ${workspaceName}` : '';
+
+        const message =
+          notifType === 'assignee'
+            ? `Bạn được giao ${activityLabel} "${activityName}" bởi ${creatorName}${workspacePart}${timePart}`
+            : `${creatorName} đã thêm bạn theo dõi ${activityLabel} "${activityName}"${workspacePart}`;
+
+        const notificationData: SendPushNotificationDto = {
+          userId: notifUserId,
+          type:
+            notifType === 'assignee'
+              ? NotificationType.MENTION
+              : NotificationType.FOLLOW,
+          title:
+            notifType === 'assignee'
+              ? 'Bạn được giao một công việc mới'
+              : `${upperCaseFirst(userCreator.name)} đã thêm bạn theo dõi một công việc`,
+          message,
+          data: {
+            uri: `/workspaces/${savedActivity.workspaceId}`,
+            open: savedActivity.id,
+          },
+        };
+
+        await this.notificationQueue.add(
+          notifType === 'assignee'
+            ? JobName.TASK_CREATED_ASSIGNEE
+            : JobName.TASK_CREATED_FOLLOWED,
+          notificationData,
+          {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 1000 },
+            removeOnComplete: true,
+            removeOnFail: false,
+          },
+        );
+      }
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, result, {
@@ -2585,7 +2635,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
   async getEventFeedbackStats(activityId: Uuid): Promise<ResponseDto<any>> {
-    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -2596,7 +2645,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Lấy tất cả feedbacks để tính toán thống kê
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
       select: ['rating'],
@@ -2615,12 +2663,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     }
 
-    // Tính điểm trung bình
     const ratingValues = feedbacks.map((f) => f.rating);
     const averageRating =
       ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 
-    // Tính phân bố điểm
     const ratingDistribution = feedbacks.reduce(
       (acc, feedback) => {
         const rating = feedback.rating;
@@ -2633,7 +2679,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return new ResponseDto({
       data: {
         totalFeedbacks,
-        averageRating: Math.round(averageRating * 100) / 100, // Làm tròn 2 chữ số thập phân
+        averageRating: Math.round(averageRating * 100) / 100,
         ratingDistribution,
       },
       message: 'Lấy thống kê đánh giá sự kiện thành công',
@@ -2653,7 +2699,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Activity không tồn tại');
     }
 
-    // Fetch link preview data
     let linkPreviewData = null;
     if (this.linkPreviewService.isValidUrl(dto.url)) {
       try {
@@ -2672,7 +2717,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       url: dto.url,
       description: dto.description,
       createdBy: userId,
-      // Lưu metadata từ link preview
       thumbnail: linkPreviewData
         ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
         : undefined,
@@ -2690,13 +2734,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const savedLink = await this.activityLinkRepo.save(link);
 
-    // Load lại với relations để có thông tin creator
     const linkWithCreator = await this.activityLinkRepo.findOne({
       where: { id: savedLink.id },
       relations: ['creator'],
     });
 
-    // Transform data cho response
     const responseData = {
       ...linkWithCreator,
       linkPreview: linkPreviewData
@@ -2734,7 +2776,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       order: { createdAt: 'DESC' },
     });
 
-    // Transform data để include link preview
     const linksWithPreview = links.map((link) => ({
       ...link,
       linkPreview:
@@ -2778,7 +2819,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Link không tồn tại');
     }
 
-    // Nếu URL thay đổi, fetch preview mới
     const shouldUpdatePreview = link.url !== dto.url;
     let linkPreviewData = null;
 
@@ -2793,7 +2833,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
     }
 
-    // Cập nhật thông tin
     link.title = dto.title;
     link.url = dto.url;
     link.description = dto.description;
@@ -3099,9 +3138,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`,
-            oldValue: oldValues.priority,
-            newValue: dto.priority,
+            message: oldValues.priority
+              ? `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`
+              : `Thiết lập độ ưu tiên: ${dto.priority}`,
             metadata: {
               type: 'PRIORITY_CHANGE',
               field: 'priority',
@@ -3118,7 +3157,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi loại hoạt động từ ${oldValues.type} sang ${dto.type}`,
+            message: `Thay đổi loại hoạt động thành ${dto.type}`,
             metadata: {
               type: 'TYPE_CHANGE',
               field: 'type',
@@ -3156,7 +3195,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: `Cập nhập địa điểm từ "${oldValues.location || 'chưa có'}" thành "${dto.location || 'chưa có'}"`,
+            message: oldValues.location
+              ? `Cập nhập địa điểm từ "${oldValues.location || 'chưa có'}" thành "${dto.location || 'chưa có'}"`
+              : `Thêm địa điểm: "${dto.location || 'chưa có'}"`,
             metadata: {
               type: 'LOCATION_CHANGE',
             },

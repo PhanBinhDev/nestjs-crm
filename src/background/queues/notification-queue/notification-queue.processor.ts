@@ -1,4 +1,4 @@
-import { JobName, QueueName } from '@/constants/job.constant';
+import { QueueName } from '@/constants/job.constant';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -31,9 +31,9 @@ export class NotificationProcessor extends WorkerHost {
       `Processing job ${job.id} of type ${job.name} with data ${JSON.stringify(job.data)}...`,
     );
 
-    switch (job.name) {
-      case JobName.NOTIFICATION:
-      // return await this.
-    }
+    const res = await this.notificationQueueService.addNotificationJob(
+      job.data,
+    );
+    return res;
   }
 }
