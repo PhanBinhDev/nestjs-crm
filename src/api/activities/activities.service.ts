@@ -1584,7 +1584,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           message,
           data: {
             uri: `/workspaces/${savedActivity.workspaceId}`,
-            open: savedActivity.id,
+            open: savedActivity,
           },
         };
 
@@ -1950,10 +1950,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const { hasStageChange, hasPositionChange } =
         await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
 
-      // if (hasStageChange) {
-      //   oldValues.stageName = activity.stage?.title;
-      // }
-
       if (dto.assignees !== undefined) {
         await this.updateActivityAssignees(
           activity.id,
@@ -1975,6 +1971,39 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         oldValues,
         activityLogRepo,
       );
+
+      if (hasStageChange) {
+        const members = await this.getMembersInWorkspace(activity.workspaceId);
+        const newStage = await manager
+          .getRepository(StagesEntity)
+          .findOne({ where: { id: dto.stageId } });
+
+        for (const member of members) {
+          if (member.id === userId) continue;
+
+          const notificationData: SendPushNotificationDto = {
+            userId: member.id,
+            title: upperCaseFirst(activity.name),
+            message: `${upperCaseFirst(user.name)} đã xét trạng thái thành: ${newStage.title.toLocaleUpperCase()}`,
+            data: {
+              uri: `/workspaces/${activity.workspaceId}`,
+              open: activity,
+            },
+            type: NotificationType.ACTIVITY,
+          };
+
+          await this.notificationQueue.add(
+            JobName.NOTIFICATION,
+            notificationData,
+            {
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 1000 },
+              removeOnComplete: true,
+              removeOnFail: false,
+            },
+          );
+        }
+      }
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {
@@ -2767,7 +2796,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         type: NotificationType.ACTIVITY,
         data: {
           uri: `/workspaces/${activity.workspaceId}`,
-          open: activity.id,
+          open: activity,
         },
       };
 

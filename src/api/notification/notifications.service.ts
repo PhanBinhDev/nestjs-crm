@@ -13,6 +13,7 @@ import * as admin from 'firebase-admin';
 import { Repository } from 'typeorm';
 import { UserEntity } from '../users/entities/user.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { CreateReminderReqDto } from './dto/create-reminder.req.dto';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
@@ -103,6 +104,27 @@ export class NotificationsService {
       message: 'Lấy danh sách thông báo thành công',
       metadata: { unreadCount },
     });
+  }
+
+  async sendReminderToUsers(userIds: Uuid[], dto: CreateReminderReqDto) {
+    // for (const userId of userIds) {
+    //   const notificationDto: SendPushNotificationDto = {
+    //     userId,
+    //     title: 'Nhắc nhở',
+    //     message: dto.content,
+    //     type: NotificationType.REMINDER,
+    //     data: {
+    //       remindAt: dto.remindAt,
+    //       description: dto.description || '',
+    //       remindType: dto.type,
+    //       customMinutes: dto.customMinutes
+    //         ? String(dto.customMinutes)
+    //         : undefined,
+    //     },
+    //   };
+    //   await this.sendPushNotification(notificationDto);
+    // }
+    // return { message: 'Đã tạo nhắc nhở và gửi tới người nhận' };
   }
 
   async sendTestNotification(userId: Uuid) {

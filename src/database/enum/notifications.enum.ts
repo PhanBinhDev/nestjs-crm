@@ -7,3 +7,8 @@ export enum NotificationType {
   FOLLOW = 'follow',
   ACTIVITY = 'activity',
 }
+
+export enum ReminderType {
+  EXACT = 'exact',
+  BEFORE_TIME = 'before_time',
+}

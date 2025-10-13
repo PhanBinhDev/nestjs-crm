@@ -1,10 +1,10 @@
+import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import { UUIDField } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityResDto } from './activity.res.dto';
-import { UserResDto } from '@/api/users/dto/user.res.dto';
 
 export class ActivityFollowResDto extends AuditResDto {
   @UUIDField({ description: 'ID của follow' })

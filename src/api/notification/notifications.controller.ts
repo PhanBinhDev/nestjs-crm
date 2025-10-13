@@ -17,6 +17,8 @@ import { NotificationResDto } from './dto/notification.res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
 import { NotificationsService } from './notifications.service';
 
+import { CreateReminderReqDto } from './dto/create-reminder.req.dto';
+
 @ApiTags('Notifications')
 @Controller('notifications')
 export class NotificationsController {
@@ -70,5 +72,18 @@ export class NotificationsController {
   })
   async markAllRead(@CurrentUser() user: UserEntity) {
     return this.notificationService.markAllRead(user);
+  }
+
+  @Post('reminder')
+  @ApiAuth({
+    summary: 'Tạo nhắc nhở và gửi tới danh sách người nhận',
+    type: null,
+  })
+  async createReminder(
+    @Body() dto: CreateReminderReqDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    // Gửi reminder tới danh sách user
+    return this.notificationService.sendReminderToUsers(dto.receivers, dto);
   }
 }
