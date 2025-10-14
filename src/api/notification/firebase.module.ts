@@ -1,4 +1,5 @@
 import { AllConfigType } from '@/config/config.type';
+import { PROVIDER } from '@/constants/app.constant';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
@@ -7,7 +8,7 @@ import * as admin from 'firebase-admin';
   imports: [ConfigModule],
   providers: [
     {
-      provide: 'FIREBASE_ADMIN',
+      provide: PROVIDER.FIREBASE_ADMIN,
       useFactory: (configService: ConfigService<AllConfigType>) => {
         const serviceAccountJson = configService.getOrThrow(
           'noti.serviceAccountKey',

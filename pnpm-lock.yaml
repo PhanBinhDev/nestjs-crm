@@ -62,6 +62,9 @@ importers:
       axios:
         specifier: ^1.7.7
         version: 1.11.0
+      buffer-to-stream:
+        specifier: ^1.0.0
+        version: 1.0.0
       bull:
         specifier: ^4.16.5
         version: 4.16.5
@@ -131,6 +134,9 @@ importers:
       metascraper-url:
         specifier: ^5.49.2
         version: 5.49.2
+      moment:
+        specifier: ^2.30.1
+        version: 2.30.1
       ms:
         specifier: ^2.1.3
         version: 2.1.3
@@ -207,6 +213,9 @@ importers:
       '@swc/core':
         specifier: ^1.7.42
         version: 1.13.2
+      '@types/buffer-to-stream':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@types/compression':
         specifier: ^1.7.5
         version: 1.8.1
@@ -1983,6 +1992,9 @@ packages:
   '@types/body-parser@1.19.6':
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
 
+  '@types/buffer-to-stream@1.0.3':
+    resolution: {integrity: sha512-1vVci4cNe4XDrTEDB8fWGORDQRE3HwAD+21j39W1NAlYitXWimPUh/gWpt3+tSZvu9FGrBeprYv5DC2qhq4LFg==}
+
   '@types/caseless@0.12.5':
     resolution: {integrity: sha512-hWtVTC2q7hc7xZ/RLbxapMvDMgUnDvKvMOpKal4DrMyfGBUfB1oKaZlIRr6mJL+If3bAP6sV/QneGzF6tJjZDg==}
 
@@ -2852,6 +2864,10 @@ packages:
 
   buffer-from@1.1.2:
     resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
+
+  buffer-to-stream@1.0.0:
+    resolution: {integrity: sha512-EMiRQgNY0mFGbPm7zV3b7vc1mSNs7WSkZvH2Rmvl2tjTe43uCuRlCVw1OAEon7NXBTT7He1Pf2lLoKKgvcAujA==}
+    engines: {node: '>=6'}
 
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
@@ -5338,6 +5354,9 @@ packages:
   mkdirp@0.5.6:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
+
+  moment@2.30.1:
+    resolution: {integrity: sha512-uEmtNhbDOrWPFS+hdjFCBfy9f2YoyzRpwcl+DqpC6taX21FzsTLQVbMV/W7PzNSX6x/bhC1zA3c2UQ5NzH6how==}
 
   ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
@@ -9169,6 +9188,10 @@ snapshots:
       '@types/connect': 3.4.38
       '@types/node': 22.16.5
 
+  '@types/buffer-to-stream@1.0.3':
+    dependencies:
+      '@types/node': 22.16.5
+
   '@types/caseless@0.12.5':
     optional: true
 
@@ -10454,6 +10477,8 @@ snapshots:
   buffer-equal-constant-time@1.0.1: {}
 
   buffer-from@1.1.2: {}
+
+  buffer-to-stream@1.0.0: {}
 
   buffer@5.7.1:
     dependencies:
@@ -13674,6 +13699,8 @@ snapshots:
   mkdirp@0.5.6:
     dependencies:
       minimist: 1.2.8
+
+  moment@2.30.1: {}
 
   ms@2.0.0: {}
 

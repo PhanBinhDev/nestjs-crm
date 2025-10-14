@@ -15,7 +15,7 @@ export class CreateReminderReqDto {
     description: 'Nội dung nhắc nhở',
     example: 'Họp team lúc 10h sáng mai',
   })
-  content: string;
+  title: string;
 
   @StringFieldOptional({
     description: 'Mô tả chi tiết nhắc nhở',
@@ -28,7 +28,7 @@ export class CreateReminderReqDto {
       'Thời gian nhắc nhở (ISO 8601). Nếu chọn "Đúng giờ" thì là thời điểm hạn, nếu chọn trước thì là thời điểm nhắc thực tế.',
     example: '2025-10-14T09:00:00.000Z',
   })
-  remindAt: string;
+  reminderAt: string;
 
   @EnumField(() => ReminderType, {
     description:

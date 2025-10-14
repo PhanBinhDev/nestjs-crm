@@ -10,13 +10,16 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiParam, ApiTags } from '@nestjs/swagger';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
 import { NotificationsService } from './notifications.service';
 
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { CreateReminderReqDto } from './dto/create-reminder.req.dto';
 
 @ApiTags('Notifications')
@@ -79,11 +82,17 @@ export class NotificationsController {
     summary: 'Tạo nhắc nhở và gửi tới danh sách người nhận',
     type: null,
   })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FilesInterceptor('attachments'))
   async createReminder(
     @Body() dto: CreateReminderReqDto,
     @CurrentUser('id') userId: Uuid,
+    @UploadedFiles() attachments: Express.Multer.File[] = [],
   ) {
-    // Gửi reminder tới danh sách user
-    return this.notificationService.sendReminderToUsers(dto.receivers, dto);
+    return this.notificationService.sendReminderToUsers(
+      dto,
+      attachments,
+      userId,
+    );
   }
 }

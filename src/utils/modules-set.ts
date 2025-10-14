@@ -4,6 +4,7 @@ import authConfig from '@/api/auth/config/auth.config';
 import notiConfig from '@/api/notification/config/noti.config';
 import { BackgroundModule } from '@/background/background.module';
 import backgroundConfig from '@/background/config/background.config';
+import cloudinaryConfig from '@/cloudinary/config/cloudinary.config';
 import appConfig from '@/config/app.config';
 import { AllConfigType } from '@/config/config.type';
 import databaseConfig from '@/database/config/database.config';
@@ -31,6 +32,7 @@ function generateModulesSet() {
         mailConfig,
         redisConfig,
         notiConfig,
+        cloudinaryConfig,
       ],
       envFilePath: ['.env'],
     }),

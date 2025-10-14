@@ -1,6 +1,11 @@
 export const IS_PUBLIC = 'isPublic';
 export const IS_AUTH_OPTIONAL = 'isAuthOptional';
 
+export enum PROVIDER {
+  CLOUDINARY = 'CLOUDINARY',
+  FIREBASE_ADMIN = 'FIREBASE_ADMIN',
+}
+
 export enum Environment {
   LOCAL = 'local',
   DEVELOPMENT = 'development',

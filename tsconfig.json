@@ -41,7 +41,8 @@
       "@/shared/*": ["src/shared/*"],
       "@/utils/*": ["src/utils/*"],
       "@/passport/*": ["src/passport/*"],
-      "@/services/*": ["src/services/*"]
+      "@/services/*": ["src/services/*"],
+      "@/cloudinary/*": ["src/cloudinary/*"]
     }
   }
 }

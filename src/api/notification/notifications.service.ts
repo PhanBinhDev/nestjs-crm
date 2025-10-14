@@ -1,16 +1,23 @@
 import { DeviceTokensService } from '@/api/device-token/device-tokens.service';
 import { UserService } from '@/api/users/user.service';
+import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagination.dto';
 import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { Uuid } from '@/common/types/common.type';
+import { JobName, QueueName } from '@/constants/job.constant';
 import { NotificationType } from '@/database/enum/notifications.enum';
 import { buildPaginator } from '@/utils/cursor-pagination';
+import { upperCaseFirst } from '@/utils/index.util';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { plainToInstance } from 'class-transformer';
 import * as admin from 'firebase-admin';
-import { Repository } from 'typeorm';
+import moment from 'moment';
+import { In, Repository } from 'typeorm';
+import { FileEntity } from '../files/entities/files.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { CreateReminderReqDto } from './dto/create-reminder.req.dto';
@@ -31,6 +38,10 @@ export class NotificationsService {
     private readonly notificationRepo: Repository<NotificationEntity>,
     private readonly userServices: UserService,
     private readonly deviceTokenServices: DeviceTokensService,
+    @InjectQueue(QueueName.NOTIFICATION) private notiQueue: Queue,
+    private readonly cloudinaryService: CloudinaryService,
+    @InjectRepository(FileEntity)
+    private readonly fileRepo: Repository<FileEntity>,
   ) {}
 
   async findAll(
@@ -106,25 +117,95 @@ export class NotificationsService {
     });
   }
 
-  async sendReminderToUsers(userIds: Uuid[], dto: CreateReminderReqDto) {
-    // for (const userId of userIds) {
-    //   const notificationDto: SendPushNotificationDto = {
-    //     userId,
-    //     title: 'Nhắc nhở',
-    //     message: dto.content,
-    //     type: NotificationType.REMINDER,
-    //     data: {
-    //       remindAt: dto.remindAt,
-    //       description: dto.description || '',
-    //       remindType: dto.type,
-    //       customMinutes: dto.customMinutes
-    //         ? String(dto.customMinutes)
-    //         : undefined,
-    //     },
-    //   };
-    //   await this.sendPushNotification(notificationDto);
-    // }
-    // return { message: 'Đã tạo nhắc nhở và gửi tới người nhận' };
+  private calculateDelay(remindAt: string, customMinutes?: number): number {
+    const remindTime = moment(remindAt);
+    let notificationTime = remindTime;
+    if (customMinutes) {
+      notificationTime = remindTime.subtract(customMinutes, 'minutes');
+    }
+    return notificationTime.diff(moment(), 'milliseconds');
+  }
+
+  async sendReminderToUsers(
+    dto: CreateReminderReqDto,
+    attachments: Express.Multer.File[],
+    userId: Uuid,
+  ) {
+    const user = await this.userServices.findOne(userId);
+    const uploadedPublicIds: string[] = [];
+    const files: FileEntity[] = [];
+
+    try {
+      await this.fileRepo.manager.transaction(async (manager) => {
+        if (attachments && attachments.length) {
+          for (const file of attachments) {
+            const folder = 'reminders';
+            const resUpload = await this.cloudinaryService.uploadToFolder(
+              file,
+              folder,
+              file.originalname,
+            );
+            uploadedPublicIds.push(resUpload.public_id);
+
+            const fileEntity = manager.create(FileEntity, {
+              url: resUpload.secure_url,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+              size: resUpload.bytes,
+              fileName: file.originalname,
+              uploadedBy: userId,
+              metadata: {
+                public_id: resUpload.public_id,
+                format: resUpload.format,
+                resource_type: resUpload.resource_type,
+                width: resUpload.width,
+                height: resUpload.height,
+                bytes: resUpload.bytes,
+              },
+            });
+            const savedFile = await manager.save(FileEntity, fileEntity);
+            files.push(savedFile);
+          }
+        }
+
+        for (const receiverId of dto.receivers) {
+          const notificationDto: SendPushNotificationDto = {
+            userId: receiverId,
+            title: `${upperCaseFirst(dto.title) || 'Bạn có 1 nhắc nhở'} từ ${upperCaseFirst(user.data.name) || 'Hệ thống'}`,
+            message: `${dto.description || ''}`.trim(),
+            type: NotificationType.REMINDER,
+            data: {
+              reminderAt: dto.reminderAt,
+              files,
+            },
+          };
+          const delay = this.calculateDelay(dto.reminderAt, dto.customMinutes);
+
+          await this.notiQueue.add(JobName.REMINDER, notificationDto, {
+            removeOnComplete: true,
+            delay: Math.max(delay, 0),
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 1000,
+            },
+          });
+        }
+      });
+    } catch (error) {
+      for (const publicId of uploadedPublicIds) {
+        try {
+          await this.cloudinaryService.deleteFile(publicId);
+        } catch {
+          this.logger.warn(`Cannot rollback file on Cloudinary: ${publicId}`);
+        }
+      }
+      throw error;
+    }
+
+    return new ResponseNoDataDto({
+      message: 'Tạo nhắc nhở thành công',
+    });
   }
 
   async sendTestNotification(userId: Uuid) {
@@ -144,7 +225,43 @@ export class NotificationsService {
   }
 
   async clearAll(userId: Uuid): Promise<ResponseNoDataDto> {
-    await this.notificationRepo.delete({ userId });
+    let filePublicIds: string[] = [];
+
+    await this.notificationRepo.manager.transaction(async (manager) => {
+      const notifications = await manager.find(NotificationEntity, {
+        where: { userId },
+      });
+
+      const fileIds: string[] = [];
+      for (const noti of notifications) {
+        if (Array.isArray(noti.data?.files)) {
+          for (const file of noti.data.files) {
+            if (file.id) fileIds.push(file.id);
+          }
+        }
+      }
+
+      if (fileIds.length) {
+        const files = await manager.findBy(FileEntity, {
+          id: In(fileIds),
+        });
+        filePublicIds = files
+          .map((file) => file.metadata?.public_id)
+          .filter(Boolean);
+
+        await manager.delete(FileEntity, fileIds);
+      }
+
+      await manager.delete(NotificationEntity, { userId });
+    });
+
+    for (const publicId of filePublicIds) {
+      try {
+        await this.cloudinaryService.deleteFile(publicId);
+      } catch {
+        this.logger.warn(`Cannot delete file on Cloudinary: ${publicId}`);
+      }
+    }
 
     return new ResponseNoDataDto({
       message: 'Xoá tất cả thông báo thành công',
