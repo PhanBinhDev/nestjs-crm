@@ -39,7 +39,7 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Post()
-  @Roles(UserRole.CNBM, UserRole.TM)
+  @Roles(UserRole.SUPERADMIN, UserRole.CNBM, UserRole.TM)
   @ApiPublic({
     summary: 'Tạo người dùng',
     type: CreateUserDto,
@@ -56,7 +56,7 @@ export class UserController {
     type: UserResDto,
   })
   @UseGuards(RolesGuard)
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
+  @Roles(UserRole.SUPERADMIN, UserRole.CNBM, UserRole.TM, UserRole.GV)
   findAll(@Query() query: QueryUserDto) {
     return this.userService.findAll(query);
   }
@@ -135,6 +135,7 @@ export class UserController {
   }
 
   @Post('import-url')
+  @Roles(UserRole.SUPERADMIN, UserRole.CNBM, UserRole.TM)
   @ApiAuth({
     summary: 'Import users from Google Sheets URL',
     description:
@@ -162,7 +163,7 @@ export class UserController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.CNBM, UserRole.TM)
+  @Roles(UserRole.SUPERADMIN, UserRole.CNBM, UserRole.TM)
   @ApiAuth({
     summary: 'Xóa người dùng',
   })
@@ -172,7 +173,7 @@ export class UserController {
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.CNBM, UserRole.TM)
+  @Roles(UserRole.SUPERADMIN, UserRole.CNBM, UserRole.TM)
   @ApiAuth({
     summary: 'Toggle active status of user',
     type: UserResDto,
