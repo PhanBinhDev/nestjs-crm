@@ -2265,6 +2265,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Xóa liên kết với kỳ học thành công',
     });
   }
+
   async findFilteredActivities(
     userId: Uuid,
     query: QueryActivityDto,
@@ -2284,57 +2285,68 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('files.file', 'file');
 
+    // Exclude sub-tasks by default - LUÔN áp dụng
+    if (!query.includeSubTasks) {
+      qb.where('activity.parentId IS NULL');
+    } else {
+      qb.where('1=1'); // dummy WHERE
+    }
+
+    // Apply queryType filters - TRƯỚC khi xử lý filters khác
     switch (type) {
       case QueryType.CREATED_BY_ME:
-        qb.where('activity.createdBy = :userId', { userId });
+        qb.andWhere('activity.createdBy = :userId', { userId });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
 
       case QueryType.ASSIGNED_TO_ME:
-        qb.where(
-          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId)',
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId" = :userId)',
           { userId },
         );
-        break;
-
-      case QueryType.ASSIGNED_BY_STAGE_GROUP:
-        qb.where(
-          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId)',
-          { userId },
-        );
-        break;
-
-      case QueryType.OVERDUE: {
-        // Activities quá hạn - KHÔNG bao gồm task ở cột done và closed
-        const now = new Date();
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        )
-          .andWhere('activity.endTime IS NOT NULL')
-          .andWhere('activity.endTime < :now', { now })
-          .andWhere('stage.stageGroup NOT IN (:...excludedGroups)', {
-            excludedGroups: ['done', 'closed'],
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
           });
+        }
         break;
-      }
+
+      case QueryType.OVERDUE:
+        qb.andWhere('UPPER(stage.title) = :overdueTitle', {
+          overdueTitle: 'OVERDUE',
+        });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+        break;
 
       case QueryType.IN_PROGRESS:
-        // Activities đang in progress - dựa vào stageGroup
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        ).andWhere('stage.stageGroup = :activeGroup', {
-          activeGroup: 'active',
+        qb.andWhere('UPPER(stage.title) = :inProgressTitle', {
+          inProgressTitle: 'IN PROGRESS',
         });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
 
       case QueryType.TODAY: {
-        // Activities diễn ra hôm nay
         const today = new Date();
         const startOfDay = new Date(
           today.getFullYear(),
           today.getMonth(),
           today.getDate(),
+          0,
+          0,
+          0,
+          0,
         );
         const endOfDay = new Date(
           today.getFullYear(),
@@ -2346,14 +2358,19 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           999,
         );
 
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        ).andWhere(
+        // Filter workspace trước
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+
+        // Filter thời gian (không filter user)
+        qb.andWhere(
           '(' +
-            '(activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay) OR ' +
-            '(activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay) OR ' +
-            '(activity.startTime <= :startOfDay AND activity.endTime >= :endOfDay)' +
+            '(activity.startTime IS NOT NULL AND activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay) OR ' +
+            '(activity.endTime IS NOT NULL AND activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay) OR ' +
+            '(activity.startTime IS NOT NULL AND activity.endTime IS NOT NULL AND activity.startTime <= :startOfDay AND activity.endTime >= :endOfDay)' +
             ')',
           { startOfDay, endOfDay },
         );
@@ -2361,77 +2378,45 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
 
       case QueryType.COMPLETED:
-        // Activities đã hoàn thành - CHỈ lấy done, KHÔNG lấy closed
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        )
-          .andWhere('stage.stageGroup = :doneGroup', {
-            doneGroup: 'done',
-          })
-          .andWhere('stage.stageGroup != :closedGroup', {
-            closedGroup: 'closed',
+        qb.andWhere('UPPER(stage.title) = :doneTitle', { doneTitle: 'DONE' });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
           });
+        }
         break;
 
       case QueryType.TODO:
-        // Activities cần làm - chưa bắt đầu hoặc đang chờ
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        ).andWhere('stage.stageGroup = :notStartedGroup', {
-          notStartedGroup: 'not_started',
-        });
+        qb.andWhere('UPPER(stage.title) = :todoTitle', { todoTitle: 'TO DO' });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
 
       case QueryType.ALL:
-        // Lấy tất cả activities - không filter theo user
-        qb.where('1 = 1');
+        // Lấy tất cả (nhưng vẫn filter workspace nếu có)
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
 
       default:
-        // Fallback
-        qb.where(
-          '(EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :userId) OR activity."createdBy" = :userId)',
-          { userId },
-        );
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
     }
 
-    // Apply additional filters
-    if (
-      query.stageGroupStatus &&
-      type !== QueryType.COMPLETED &&
-      type !== QueryType.IN_PROGRESS &&
-      type !== QueryType.OVERDUE &&
-      type !== QueryType.TODO
-    ) {
-      // Chỉ áp dụng stageGroupStatus filter khi KHÔNG phải COMPLETED, IN_PROGRESS, OVERDUE, hoặc TODO
-      // vì các loại này đã có logic riêng cho stageGroup
-      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
-        stageGroupStatus: query.stageGroupStatus,
-      });
-    }
-
-    if (query.workspaceId) {
-      qb.andWhere('activity.workspaceId = :workspaceId', {
-        workspaceId: query.workspaceId,
-      });
-    }
-
-    if (query.assigneeId) {
-      // Chỉ áp dụng filter assigneeId cho ALL và CREATED_BY_ME
-      if (type === QueryType.ALL || type === QueryType.CREATED_BY_ME) {
-        qb.andWhere(
-          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId"::varchar = :assigneeId)',
-          { assigneeId: query.assigneeId },
-        );
-      }
-    }
-
+    // Apply additional filters (sau khi áp dụng queryType)
     if (query.q) {
       qb.andWhere(
-        'activity.name ILIKE :search OR activity.description ILIKE :search',
+        '(activity.name ILIKE :search OR activity.description ILIKE :search)',
         { search: `%${query.q}%` },
       );
     }
@@ -2448,6 +2433,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     if (query.stageId) {
       qb.andWhere('activity.stageId = :stageId', { stageId: query.stageId });
+    }
+
+    if (query.stageGroupStatus) {
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
+        stageGroupStatus: query.stageGroupStatus,
+      });
     }
 
     if (query.categoryId) {
@@ -2474,23 +2465,28 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     }
 
-    if (!query.includeSubTasks) {
-      qb.andWhere('activity.parentId IS NULL');
+    if (query.createdBy) {
+      qb.andWhere('activity.createdBy = :createdBy', {
+        createdBy: query.createdBy,
+      });
     }
 
+    // Order by creation date
     qb.orderBy('activity.createdAt', 'DESC');
 
+    this.logger.log('SQL:', qb.getSql());
+    this.logger.log('Params:', qb.getParameters());
+
+    // Paginate results
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
       takeAll: false,
     });
 
+    // Calculate progress for each activity
     const activitiesWithProgress = activities.map((activity) => {
       const progress = this.calculateProgress(activity);
-      return {
-        ...activity,
-        progress,
-      };
+      return { ...activity, progress };
     });
 
     return new OffsetPaginatedDto({
@@ -2501,6 +2497,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy danh sách công việc thành công',
     });
   }
+
   async createEventFeedback(
     activityId: Uuid,
     dto: CreateEventFeedbackDto,
