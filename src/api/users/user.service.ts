@@ -32,6 +32,7 @@ import { UserEntity } from './entities/user.entity';
 @Injectable()
 export class UserService {
   private roleHierarchy = {
+    [UserRole.SUPERADMIN]: 4,
     [UserRole.TM]: 3,
     [UserRole.CNBM]: 2,
     [UserRole.GV]: 1,
@@ -404,9 +405,13 @@ export class UserService {
     }
 
     const roleMap: { [key: string]: UserRole } = {
+      SUPERADMIN: UserRole.SUPERADMIN,
       TM: UserRole.TM,
       CNBM: UserRole.CNBM,
       GV: UserRole.GV,
+      'Super Admin': UserRole.SUPERADMIN,
+      'super admin': UserRole.SUPERADMIN,
+      'SUPER ADMIN': UserRole.SUPERADMIN,
       'Trưởng môn': UserRole.TM,
       'Chủ nhiệm bộ môn': UserRole.CNBM,
       'Giảng viên': UserRole.GV,
@@ -444,16 +449,31 @@ export class UserService {
     }
 
     if (dto.role && dto.role !== userToUpdate.role) {
-      if (currentUserRole !== UserRole.TM) {
+      if (
+        currentUserRole !== UserRole.SUPERADMIN &&
+        currentUserRole !== UserRole.TM
+      ) {
         throw new ForbiddenException(
-          'Only the Head of Department can change roles',
+          'Only SUPERADMIN or Head of Department can change roles',
         );
       }
 
       // Cannot assign a role higher than your own
-      if (!this.canAssignRole(currentUserRole, dto.role)) {
+      if (
+        currentUserRole !== UserRole.SUPERADMIN &&
+        !this.canAssignRole(currentUserRole, dto.role)
+      ) {
         throw new ForbiddenException(
           'You cannot assign a role higher than your own',
+        );
+      }
+
+      if (
+        dto.role === UserRole.SUPERADMIN &&
+        currentUserRole !== UserRole.SUPERADMIN
+      ) {
+        throw new ForbiddenException(
+          'Only SUPERADMIN can assign SUPERADMIN role',
         );
       }
     }
@@ -480,11 +500,24 @@ export class UserService {
       );
     }
     const user = await this.userRepository.findOneByOrFail({ id });
-    if (!this.canUpdateUser(currentUserRole, user.role)) {
+    if (
+      currentUserRole !== UserRole.SUPERADMIN &&
+      !this.canUpdateUser(currentUserRole, user.role)
+    ) {
       throw new ForbiddenException(
         'Bạn không có quyền thay đổi trạng thái người dùng này',
       );
     }
+
+    if (
+      user.role === UserRole.SUPERADMIN &&
+      currentUserRole !== UserRole.SUPERADMIN
+    ) {
+      throw new ForbiddenException(
+        'Chỉ SUPERADMIN mới có thể thay đổi trạng thái SUPERADMIN khác',
+      );
+    }
+
     user.isActive = !user.isActive;
     await this.userRepository.save(user);
     return new ResponseDto({
