@@ -39,11 +39,14 @@ export class WorkspacesController {
     summary: 'Tạo không gian làm việc',
     type: BaseWorkspaceResDto,
   })
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiConsumes('multipart/form-data')
   create(
     @Body() createWorkspaceDto: CreateWorkspaceDto,
     @CurrentUser('id') ownerId: Uuid,
+    @UploadedFile() avatar?: Express.Multer.File,
   ) {
-    return this.workspacesService.create(createWorkspaceDto, ownerId);
+    return this.workspacesService.create(createWorkspaceDto, ownerId, avatar);
   }
 
   @Get()
@@ -117,11 +120,13 @@ export class WorkspacesController {
   update(
     @Param('workspaceId') workspaceId: Uuid,
     @Body() updateWorkspaceDto: UpdateWorkspaceDto,
+    @CurrentUser('id') currentUserId: Uuid,
     @UploadedFile() avatar?: Express.Multer.File,
   ) {
     return this.workspacesService.update(
       workspaceId,
       updateWorkspaceDto,
+      currentUserId,
       avatar,
     );
   }

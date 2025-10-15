@@ -43,7 +43,6 @@ export class ActivityOverdueQueueService {
 
       const now = new Date();
 
-      // Tìm tất cả activities đã hết hạn nhưng chưa ở stage OVERDUE
       const overdueActivities = await this.activityRepo
         .createQueryBuilder('activity')
         .leftJoinAndSelect('activity.stage', 'stage')

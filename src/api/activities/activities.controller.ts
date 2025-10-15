@@ -589,7 +589,6 @@ export class ActivitiesController {
     return this.activitiesService.unlinkActivityFromSemester(id, semesterId);
   }
 
-  // Event Feedback Endpoints
   @Post(':id/event-feedback')
   @ApiAuth({
     summary: 'Tạo đánh giá sự kiện',
