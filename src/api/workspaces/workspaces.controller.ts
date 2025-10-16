@@ -59,6 +59,12 @@ export class WorkspacesController {
     return this.workspacesService.findAll(currentUserId);
   }
 
+  @Get('invitations')
+  @ApiAuth({ summary: 'Danh sách lời mời join workspace' })
+  async getInvitations(@CurrentUser('id') userId: Uuid) {
+    return this.workspacesService.findInvitations(userId);
+  }
+
   @UseGuards(WorkspaceAccessGuard)
   @Get(':workspaceId')
   @ApiAuth({
@@ -131,6 +137,22 @@ export class WorkspacesController {
     );
   }
 
+  @Patch(':workspaceId/transfer-ownership')
+  @ApiAuth({ summary: 'Chuyển quyền owner cho thành viên khác' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER)
+  async transferOwnership(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Body('newOwnerId') newOwnerId: Uuid,
+    @CurrentUser('id') currentOwnerId: Uuid,
+  ) {
+    return this.workspacesService.transferOwnership(
+      workspaceId,
+      currentOwnerId,
+      newOwnerId,
+    );
+  }
+
   @Delete(':workspaceId')
   @UseGuards(WorkspaceAccessGuard)
   @ApiAuth({
@@ -161,6 +183,16 @@ export class WorkspacesController {
     @CurrentUser('id') userId: Uuid,
   ) {
     return this.workspacesService.invite(workspaceId, inviteMemberDto, userId);
+  }
+
+  @Post(':workspaceId/leave')
+  @ApiAuth({ summary: 'Rời khỏi không gian làm việc' })
+  @UseGuards(WorkspaceAccessGuard)
+  async leaveWorkspace(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.workspacesService.leaveWorkspace(workspaceId, userId);
   }
 
   @Post('verify-invite/:token')

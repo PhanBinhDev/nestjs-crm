@@ -73,6 +73,98 @@ export class WorkspacesService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  async leaveWorkspace(
+    workspaceId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+    });
+    if (!workspace)
+      throw new NotFoundException('Không gian làm việc không tồn tại');
+
+    if (workspace.owner.id === userId) {
+      throw new BadRequestException(
+        'Owner phải chuyển quyền trước khi rời khỏi workspace',
+      );
+    }
+
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.ACTIVE },
+    });
+    if (!member)
+      throw new BadRequestException('Bạn không phải thành viên đang hoạt động');
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .delete()
+        .from('activity_assignees')
+        .where('userId = :userId', { userId })
+        .andWhere(
+          `activityId IN (SELECT id FROM activities WHERE workspaceId = :workspaceId)`,
+          { workspaceId },
+        )
+        .execute();
+
+      await manager.remove(member);
+    });
+
+    return new ResponseNoDataDto({
+      message: 'Rời khỏi không gian làm việc thành công',
+    });
+  }
+
+  async transferOwnership(
+    workspaceId: Uuid,
+    currentOwnerId: Uuid,
+    newOwnerId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    return await this.dataSource.transaction(async (manager) => {
+      const workspace = await manager.findOne(Workspaces, {
+        where: { id: workspaceId },
+        relations: ['owner', 'members'],
+      });
+      if (!workspace) throw new NotFoundException('Workspace không tồn tại');
+      if (workspace.owner.id !== currentOwnerId) {
+        throw new ForbiddenException('Bạn không phải owner');
+      }
+      if (currentOwnerId === newOwnerId) {
+        throw new BadRequestException('Không thể chuyển quyền cho chính mình');
+      }
+
+      const newOwnerMember = workspace.members.find(
+        (m) =>
+          m.userId === newOwnerId && m.status === WorkspaceMemberStatus.ACTIVE,
+      );
+      if (!newOwnerMember) {
+        throw new BadRequestException(
+          'Người nhận quyền phải là thành viên đang hoạt động',
+        );
+      }
+
+      workspace.owner = await manager.findOne(UserEntity, {
+        where: { id: newOwnerId },
+      });
+      await manager.save(workspace);
+
+      await manager.update(
+        WorkspaceMembers,
+        { workspaceId, userId: currentOwnerId },
+        { role: WorkspaceRole.ADMIN },
+      );
+      await manager.update(
+        WorkspaceMembers,
+        { workspaceId, userId: newOwnerId },
+        { role: WorkspaceRole.OWNER },
+      );
+
+      return new ResponseNoDataDto({
+        message: 'Chuyển quyền owner thành công',
+      });
+    });
+  }
+
   async verifyInviteToken(
     token: string,
     userId: Uuid,
@@ -439,13 +531,19 @@ export class WorkspacesService {
       .createQueryBuilder('workspace')
       .leftJoinAndSelect('workspace.members', 'members')
       .where('workspace.ownerId = :userId', { userId })
-      .orWhere('members.userId = :userId', { userId })
+      .orWhere(`members.userId = :userId AND members.status = :status`, {
+        userId,
+        status: WorkspaceMemberStatus.ACTIVE,
+      })
       .distinct(true)
       .getMany();
 
     const workspacesWithCount = workspaces.map((ws) => ({
       ...ws,
-      membersCount: ws.members ? ws.members.length : 0,
+      membersCount: ws.members
+        ? ws.members.filter((m) => m.status === WorkspaceMemberStatus.ACTIVE)
+            .length
+        : 0,
     }));
 
     return new ResponseDto<BaseWorkspaceResDto[]>({
@@ -610,7 +708,10 @@ export class WorkspacesService {
     const queryBuilder = this.membersRepository
       .createQueryBuilder('member')
       .leftJoinAndSelect('member.user', 'user')
-      .where('member.workspaceId = :workspaceId', { workspaceId: id });
+      .where('member.workspaceId = :workspaceId', { workspaceId: id })
+      .andWhere('member.status = :status', {
+        status: WorkspaceMemberStatus.ACTIVE,
+      });
 
     if (q) {
       queryBuilder.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
@@ -625,6 +726,26 @@ export class WorkspacesService {
         excludeExtraneousValues: true,
       }),
       message: 'Lấy danh sách thành viên không gian làm việc thành công',
+    });
+  }
+
+  async findInvitations(
+    userId: Uuid,
+  ): Promise<ResponseDto<BaseWorkspaceResDto[]>> {
+    const invitations = await this.workspaceRepository
+      .createQueryBuilder('workspace')
+      .leftJoin('workspace.members', 'member')
+      .where('member.userId = :userId', { userId })
+      .andWhere('member.status = :status', {
+        status: WorkspaceMemberStatus.PENDING,
+      })
+      .getMany();
+
+    return new ResponseDto<BaseWorkspaceResDto[]>({
+      data: plainToInstance(BaseWorkspaceResDto, invitations, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách lời mời tham gia không gian làm việc thành công',
     });
   }
 
