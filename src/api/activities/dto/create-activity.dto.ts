@@ -39,6 +39,7 @@ export class CreateActivityDto {
 
   @StringFieldOptional({
     example: 'Mô tả chi tiết về hoạt động',
+    minLength: 0,
   })
   description?: string;
 
@@ -90,14 +91,14 @@ export class CreateActivityDto {
     description: 'ID danh mục hoạt động (Dành cho event)',
     nullable: true,
   })
-  categoryId: Uuid;
+  categoryId?: Uuid;
 
   @UUIDFieldOptional({
     example: 'parent-activity-uuid',
     description: 'ID hoạt động cha (nếu có)',
     nullable: true,
   })
-  parentId?: string;
+  parentId?: Uuid;
 
   @NumberFieldOptional({
     example: 120,
@@ -110,7 +111,7 @@ export class CreateActivityDto {
     description: 'ID kỳ học (nếu có)',
     nullable: true,
   })
-  semesterId?: string;
+  semesterId?: Uuid;
 
   @ApiProperty({
     type: [ActivityChecklistDto],
@@ -164,4 +165,26 @@ export class CreateActivityDto {
   @ValidateNested({ each: true })
   @Type(() => ActivityAssigneeDto)
   assignees?: ActivityAssigneeDto[];
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description:
+      'Danh sách file URL đính kèm cho hoạt động (array string URLs)',
+    example: ['/uploads/file1.docx', '/uploads/file2.png'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
+
+  @UUIDFieldOptional({
+    description: 'Danh sách ID người dùng sẽ theo dõi hoạt động này',
+    example: [
+      'b1d94e3e-8fb3-5be3-bd11-8c19f6dbe4b9',
+      'c2e05f4f-9gc4-6cf4-ce22-9d20g7ecf5ca',
+    ],
+    each: true,
+  })
+  follows?: Uuid[];
 }

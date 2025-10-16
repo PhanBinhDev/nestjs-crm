@@ -1,4 +1,5 @@
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
@@ -21,13 +22,13 @@ export class WorkspaceMembers extends AbstractEntity {
     type: 'uuid',
     nullable: false,
   })
-  workspaceId: string;
+  workspaceId: Uuid;
 
   @Column({
     type: 'uuid',
     nullable: false,
   })
-  userId: string;
+  userId: Uuid;
 
   @ManyToOne(() => UserEntity, { nullable: false })
   @JoinColumn({ name: 'userId' })

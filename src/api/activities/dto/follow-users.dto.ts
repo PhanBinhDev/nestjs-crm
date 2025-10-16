@@ -1,0 +1,16 @@
+import { Uuid } from '@/common/types/common.type';
+import { UUIDField } from '@/decorators/field.decorators';
+import { Expose } from 'class-transformer';
+
+export class FollowUsersDto {
+  @UUIDField({
+    each: true,
+    description: 'Danh sách ID người dùng',
+    example: [
+      'b1d94e3e-8fb3-5be3-bd11-8c19f6dbe4b9',
+      'c2e05f4f-9gc4-6cf4-ce22-9d20g7ecf5ca',
+    ],
+  })
+  @Expose()
+  userIds: Uuid[];
+}

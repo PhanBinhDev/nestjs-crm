@@ -12,7 +12,6 @@
     "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
@@ -22,6 +21,7 @@
     "noFallthroughCasesInSwitch": false,
     "esModuleInterop": true,
     "importHelpers": true,
+    "baseUrl": "./",
     "paths": {
       "@/api/*": ["src/api/*"],
       "@/background/*": ["src/background/*"],
@@ -41,7 +41,8 @@
       "@/shared/*": ["src/shared/*"],
       "@/utils/*": ["src/utils/*"],
       "@/passport/*": ["src/passport/*"],
-      "@/services/*": ["src/services/*"]
+      "@/services/*": ["src/services/*"],
+      "@/cloudinary/*": ["src/cloudinary/*"]
     }
   }
 }

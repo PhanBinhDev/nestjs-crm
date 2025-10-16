@@ -1,27 +1,45 @@
+import { AllConfigType } from '@/config/config.type';
+import { PROVIDER } from '@/constants/app.constant';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import * as fs from 'node:fs';
-import path from 'node:path';
 
 @Module({
   imports: [ConfigModule],
   providers: [
     {
-      provide: 'FIREBASE_ADMIN',
-      useFactory: () => {
-        const serviceAccountPath = path.join(
-          process.cwd(),
-          'serviceAccountKey.json',
+      provide: PROVIDER.FIREBASE_ADMIN,
+      useFactory: (configService: ConfigService<AllConfigType>) => {
+        const serviceAccountJson = configService.getOrThrow(
+          'noti.serviceAccountKey',
+          {
+            infer: true,
+          },
         );
 
-        const rawData = fs.readFileSync(serviceAccountPath, 'utf8');
-        const serviceAccount = JSON.parse(rawData);
+        if (!serviceAccountJson) {
+          throw new Error(
+            'Firebase service account key is not provided in configuration.',
+          );
+        }
+
+        const serviceAccount = JSON.parse(serviceAccountJson);
+
+        if (
+          serviceAccount.private_key &&
+          typeof serviceAccount.private_key === 'string'
+        ) {
+          serviceAccount.private_key = serviceAccount.private_key.replace(
+            /\\n/g,
+            '\n',
+          );
+        }
 
         return admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
       },
+      inject: [ConfigService],
     },
   ],
   exports: ['FIREBASE_ADMIN'],

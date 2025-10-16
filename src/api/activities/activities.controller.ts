@@ -21,22 +21,34 @@ import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityFollowResDto } from './dto/activity-follow.res.dto';
+import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
+import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
+import { AddActivityLinkDto } from './dto/add-activity-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import {
+  CreateChecklistDto,
+  CreateChecklistItemDto,
+} from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
+import { FollowUsersDto } from './dto/follow-users.dto';
 import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
+import { ToggleReactionReqDto } from './dto/toggle-reaction.req.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 
@@ -44,6 +56,16 @@ import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 @Controller('activities')
 export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
+
+  @Get(':id/progress')
+  @ApiAuth({
+    summary: 'Lấy tiến độ hoàn thành công việc của activity',
+    type: ActivityProgressResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityProgress(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityProgress(activityId);
+  }
 
   @Get('category')
   @ApiAuth({
@@ -71,7 +93,6 @@ export class ActivitiesController {
     type: ActivityCommentResDto,
   })
   createComment(
-    @Param('id') activityId: Uuid,
     @Body() dto: CreateActivityCommentDto,
     @CurrentUser('id') userId: Uuid,
   ) {
@@ -90,8 +111,12 @@ export class ActivitiesController {
     isArray: true,
   })
   @ApiParam({ name: 'id', description: 'ID của activity' })
-  getComments(@Param('id') activityId: Uuid) {
-    return this.activitiesService.getComments(activityId);
+  getComments(
+    @Param('id') activityId: Uuid,
+    @Query() query: PageOptionsDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.getComments(activityId, query, userId);
   }
 
   @Get(':id/comments/:commentId/replies')
@@ -107,8 +132,14 @@ export class ActivitiesController {
     @Param('id') activityId: Uuid,
     @Param('commentId') commentId: Uuid,
     @Query() query: PageOptionsDto,
+    @CurrentUser('id') userId: Uuid,
   ) {
-    return this.activitiesService.getReplies(activityId, commentId, query);
+    return this.activitiesService.getReplies(
+      activityId,
+      commentId,
+      query,
+      userId,
+    );
   }
 
   @Patch(':id/comments/:commentId')
@@ -132,6 +163,27 @@ export class ActivitiesController {
     );
   }
 
+  @Post(':id/comments/:commentId/reactions')
+  @ApiAuth({
+    summary: 'Thêm/cập nhật phản ứng cho bình luận',
+    type: ActivityCommentResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'commentId', description: 'ID của comment' })
+  toggleReactionOnComment(
+    @Param('id') activityId: Uuid,
+    @Param('commentId') commentId: Uuid,
+    @Body() body: ToggleReactionReqDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.toggleReactionOnComment(
+      activityId,
+      commentId,
+      userId,
+      body.type,
+    );
+  }
+
   @Delete(':id/comments/:commentId')
   @ApiAuth({
     summary: 'Xóa bình luận',
@@ -147,34 +199,95 @@ export class ActivitiesController {
     return this.activitiesService.deleteComment(activityId, commentId, userId);
   }
 
-  @Post(':id/comments/:commentId/reaction')
+  @Post(':id/checklists')
   @ApiAuth({
-    summary: 'Thêm reaction (tym) cho bình luận',
-    type: ActivityCommentResDto,
+    summary: 'Tạo mới checklist cho hoạt động',
+    type: ActivityChecklistResDto,
   })
   @ApiParam({ name: 'id', description: 'ID của activity' })
-  @ApiParam({ name: 'commentId', description: 'ID của comment' })
-  addReaction(
+  createChecklist(
     @Param('id') activityId: Uuid,
-    @Param('commentId') commentId: Uuid,
-    @CurrentUser('id') userId: Uuid,
+    @Body() dto: CreateChecklistDto,
   ) {
-    return this.activitiesService.addReaction(activityId, commentId, userId);
+    return this.activitiesService.createChecklist(activityId, dto);
   }
 
-  @Delete(':id/comments/:commentId/reaction')
+  @Post(':id/checklists/:checklistId/items')
   @ApiAuth({
-    summary: 'Bỏ reaction (tym) khỏi bình luận',
-    type: ActivityCommentResDto,
+    summary: 'Thêm item vào checklist',
+    type: ActivityChecklistResDto,
   })
   @ApiParam({ name: 'id', description: 'ID của activity' })
-  @ApiParam({ name: 'commentId', description: 'ID của comment' })
-  removeReaction(
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  addChecklistItem(
     @Param('id') activityId: Uuid,
-    @Param('commentId') commentId: Uuid,
-    @CurrentUser('id') userId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Body() dto: CreateChecklistItemDto,
   ) {
-    return this.activitiesService.removeReaction(activityId, commentId, userId);
+    return this.activitiesService.addChecklistItem(
+      activityId,
+      checklistId,
+      dto,
+    );
+  }
+
+  @Delete(':id/checklists/:checklistId/items/:itemId')
+  @ApiAuth({
+    summary: 'Xóa item trong checklist',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  @ApiParam({ name: 'itemId', description: 'ID của item' })
+  deleteChecklistItem(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Param('itemId') itemId: Uuid,
+  ) {
+    return this.activitiesService.deleteChecklistItem(
+      activityId,
+      checklistId,
+      itemId,
+    );
+  }
+
+  @Get(':id/checklists')
+  @ApiAuth({
+    summary: 'Lấy danh sách checklist của hoạt động',
+    type: ActivityChecklistResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getChecklists(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getChecklists(activityId);
+  }
+
+  @Patch(':id/checklists/:checklistId')
+  @ApiAuth({
+    summary: 'Cập nhật checklist của hoạt động',
+    type: ActivityChecklistResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  updateChecklist(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+    @Body() dto: UpdateChecklistDto,
+  ) {
+    return this.activitiesService.updateChecklist(activityId, checklistId, dto);
+  }
+
+  @Delete(':id/checklists/:checklistId')
+  @ApiAuth({
+    summary: 'Xóa checklist của hoạt động',
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'checklistId', description: 'ID của checklist' })
+  deleteChecklist(
+    @Param('id') activityId: Uuid,
+    @Param('checklistId') checklistId: Uuid,
+  ) {
+    return this.activitiesService.deleteChecklist(activityId, checklistId);
   }
 
   @Get(':id/logs')
@@ -204,7 +317,7 @@ export class ActivitiesController {
   @Get('filter')
   @ApiAuth({
     summary:
-      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành)',
+      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành, cần làm)',
     type: ActivityResDto,
     isArray: true,
   })
@@ -213,15 +326,18 @@ export class ActivitiesController {
     enum: QueryType,
     required: false,
     description:
-      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed',
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, todo, all',
   })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
-    @Query('queryType') type: QueryType,
   ) {
-    if (type)
-      return this.activitiesService.findFilteredActivities(userId, query, type);
+    if (query.queryType)
+      return this.activitiesService.findFilteredActivities(
+        userId,
+        query,
+        query.queryType,
+      );
 
     return this.activitiesService.findAll(query);
   }
@@ -306,7 +422,6 @@ export class ActivitiesController {
     name: 'id',
     description: 'ID của activity cần cập nhật',
   })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV)
   updateActivity(
     @Param('id') id: Uuid,
     @Body() dto: UpdateActivityDto,
@@ -474,7 +589,6 @@ export class ActivitiesController {
     return this.activitiesService.unlinkActivityFromSemester(id, semesterId);
   }
 
-  // Event Feedback Endpoints
   @Post(':id/event-feedback')
   @ApiAuth({
     summary: 'Tạo đánh giá sự kiện',
@@ -528,5 +642,112 @@ export class ActivitiesController {
   })
   async getEventFeedbackStats(@Param('id') id: Uuid) {
     return this.activitiesService.getEventFeedbackStats(id);
+  }
+
+  @Post(':id/links')
+  @ApiAuth({
+    summary: 'Gắn link vào activity',
+    type: ActivityLinkResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  addLinkToActivity(
+    @Param('id') activityId: Uuid,
+    @Body() dto: AddActivityLinkDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.activitiesService.addLinkToActivity(activityId, dto, userId);
+  }
+
+  @Get(':id/links')
+  @ApiAuth({
+    summary: 'Lấy danh sách links của activity',
+    type: ActivityLinkResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityLinks(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityLinks(activityId);
+  }
+
+  @Patch(':id/links/:linkId')
+  @ApiAuth({
+    summary: 'Cập nhật link của activity',
+    type: ActivityLinkResDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'linkId', description: 'ID của link cần cập nhật' })
+  updateActivityLink(
+    @Param('id') activityId: Uuid,
+    @Param('linkId') linkId: Uuid,
+    @Body() dto: AddActivityLinkDto,
+  ) {
+    return this.activitiesService.updateActivityLink(activityId, linkId, dto);
+  }
+
+  @Delete(':id/links/:linkId')
+  @ApiAuth({
+    summary: 'Xóa link khỏi activity',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  @ApiParam({ name: 'linkId', description: 'ID của link cần xóa' })
+  removeLinkFromActivity(
+    @Param('id') activityId: Uuid,
+    @Param('linkId') linkId: Uuid,
+  ) {
+    return this.activitiesService.removeLinkFromActivity(activityId, linkId);
+  }
+
+  @Get('me/follows')
+  @ApiAuth({
+    summary: 'Lấy danh sách activity bản thân đang theo dõi',
+    type: ActivityResDto,
+    isArray: true,
+  })
+  getMyFollowedActivities(@CurrentUser('id') userId: Uuid) {
+    return this.activitiesService.getMyFollowedActivities(userId);
+  }
+
+  @Get(':id/follows')
+  @ApiAuth({
+    summary: 'Lấy danh sách người theo dõi activity',
+    type: ActivityFollowResDto,
+    isArray: true,
+  })
+  @ApiParam({ name: 'id', description: 'ID của activity' })
+  getActivityFollowers(@Param('id') activityId: Uuid) {
+    return this.activitiesService.getActivityFollowers(activityId);
+  }
+
+  @Post(':id/follow/batch')
+  @ApiAuth({
+    summary: 'Theo dõi activity cho danh sách user',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity cần theo dõi',
+    format: 'uuid',
+  })
+  batchFollow(
+    @Param('id') activityId: Uuid,
+    @Body() dto: FollowUsersDto,
+    @CurrentUser('id') actorId: Uuid,
+  ) {
+    return this.activitiesService.batchFollow(activityId, dto.userIds, actorId);
+  }
+
+  @Post(':id/unfollow/batch')
+  @ApiAuth({
+    summary: 'Bỏ theo dõi activity cho danh sách user',
+    type: ResponseNoDataDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity cần theo dõi',
+    format: 'uuid',
+  })
+  batchUnfollow(@Param('id') activityId: Uuid, @Body() dto: FollowUsersDto) {
+    return this.activitiesService.batchUnfollow(activityId, dto.userIds);
   }
 }

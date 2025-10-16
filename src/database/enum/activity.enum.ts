@@ -48,12 +48,23 @@ export enum AssignmentStatus {
   DECLINED = 'declined',
 }
 
+export enum StageGroupStatus {
+  ACTIVE = 'active',
+  DONE = 'done',
+  NOT_STARTED = 'not_started',
+  CLOSED = 'closed',
+}
+
 export enum QueryType {
   CREATED_BY_ME = 'created_by_me',
   ASSIGNED_TO_ME = 'assigned_to_me',
+  ASSIGNED_BY_STAGE_GROUP = 'assigned_by_stage_group',
   OVERDUE = 'overdue',
+  IN_PROGRESS = 'in_progress',
   TODAY = 'today',
   COMPLETED = 'completed',
+  TODO = 'todo',
+  ALL = 'all',
 }
 
 export enum ActivityLogActionEnum {
@@ -64,6 +75,8 @@ export enum ActivityLogActionEnum {
   COMMENT_CREATED = 'comment_created',
   COMMENT_UPDATED = 'comment_updated',
   COMMENT_DELETED = 'comment_deleted',
+  DELETE_SUB_TASK = 'delete_sub_task',
+  FOLLOW = 'follow',
 }
 
 export enum ActivityLogQueryType {

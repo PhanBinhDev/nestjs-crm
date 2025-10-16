@@ -1,8 +1,12 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
+import { NotificationQueueModule } from '@/background/queues/notification-queue/notification-queue.module';
+import { ActivityOverdueQueueModule } from '@/background/queues/activity-overdue-queue/activity-overdue-queue.module';
+import { LinkPreviewService } from '@/services/link-preview.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { StagesEntity } from '../stages/entities/stage.entity';
+import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
@@ -11,8 +15,12 @@ import {
   ActivityChecklistEntity,
   ActivityChecklistItemEntity,
 } from './entities/activity-checklist.entity';
+import { ActivityCommentReactionEntity } from './entities/activity-comments-reaction.entity';
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
+import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
+import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
@@ -34,9 +42,16 @@ import { EventFeedbackEntity } from './entities/event-feedback.entity';
       ActivityCategoryEntity,
       StagesEntity,
       ActivityCommentEntity,
+      ActivityFileEntity,
+      ActivityLinkEntity,
+      ActivityFollowEntity,
+      ActivityCommentReactionEntity,
+      WorkspaceMembers,
     ]),
+    NotificationQueueModule,
+    ActivityOverdueQueueModule,
   ],
   controllers: [ActivitiesController],
-  providers: [ActivitiesService],
+  providers: [ActivitiesService, LinkPreviewService],
 })
 export class ActivitiesModule {}

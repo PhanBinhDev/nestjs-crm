@@ -15,8 +15,10 @@ import {
   ParticipantStatus,
   QueryType,
 } from '@/database/enum/activity.enum';
+import { ReactionType } from '@/database/enum/comments.enum';
 import { ValidationException } from '@/exceptions/validation.exception';
 import { BaseService } from '@/services/base.service';
+import { LinkPreviewService } from '@/services/link-preview.service';
 import { buildPaginator } from '@/utils/cursor-pagination';
 import { paginate } from '@/utils/offset-pagination';
 import {
@@ -26,22 +28,30 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { DataSource, Repository } from 'typeorm';
-import { NotificationEntity } from '../notification/entities/notification.entity';
+import { merge } from 'lodash';
+import { DataSource, In, Not, Repository } from 'typeorm';
+import { FileEntity } from '../files/entities/files.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivityAssigneeDto } from './dto/activity-assignee.dto';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
+import { ActivityChecklistResDto } from './dto/activity-checklist.res.dto';
 import { ActivityCommentResDto } from './dto/activity-comment.res.dto';
 import { ActivityFeedbackResDto } from './dto/activity-feedback.res.dto';
+import { ActivityLinkResDto } from './dto/activity-link.res.dto';
 import { ActivityLogResDto } from './dto/activity-log.res.dto';
 import { ActivityResDto } from './dto/activity.res.dto';
+import { AddActivityLinkDto } from './dto/add-activity-link.dto';
 import { AssignUserToActivityDto } from './dto/assign-user-to-activity.dto';
 import { CategoryResDto } from './dto/category.res.dto';
 import { CategoryDto } from './dto/category.res.dto copy';
 import { CreateActivityFeedbackDto } from './dto/create-activity-feedback.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import {
+  CreateChecklistDto,
+  CreateChecklistItemDto,
+} from './dto/create-checklist.req.dto';
 import { CreateActivityCommentDto } from './dto/create-comment.dto';
 import { CreateEventFeedbackDto } from './dto/create-event-feedback.dto';
 import { EventFeedbackResDto } from './dto/event-feedback.res.dto';
@@ -49,6 +59,7 @@ import { QueryActivityLogDto } from './dto/query-activity-log.dto';
 import { QueryActivityDto } from './dto/query-activity.dto';
 import { UpdateActivityStatusDto } from './dto/update-activity-status.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
@@ -57,15 +68,32 @@ import {
   ActivityChecklistEntity,
   ActivityChecklistItemEntity,
 } from './entities/activity-checklist.entity';
+import { ActivityCommentReactionEntity } from './entities/activity-comments-reaction.entity';
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
+import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
+import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
+import { JobName, QueueName } from '@/constants/job.constant';
+import { NotificationType } from '@/database/enum/notifications.enum';
+import { WorkspaceMemberStatus } from '@/database/enum/workspace.enum';
+import { upperCaseFirst } from '@/utils/index.util';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
+import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
+import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
+
 @Injectable()
 export class ActivitiesService extends BaseService<ActivityEntity> {
+  private readonly logger = new Logger(ActivitiesService.name);
+
   constructor(
     @InjectRepository(ActivityEntity)
     private readonly activityRepo: Repository<ActivityEntity>,
@@ -89,18 +117,476 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityCategoryRepo: Repository<ActivityCategoryEntity>,
     @InjectRepository(StagesEntity)
     private readonly stageRepo: Repository<StagesEntity>,
-
     @InjectRepository(ActivityCommentEntity)
     private readonly activityCommentRepo: Repository<ActivityCommentEntity>,
+    @InjectRepository(ActivityCommentReactionEntity)
+    private readonly activityCommentReactionRepo: Repository<ActivityCommentReactionEntity>,
+    @InjectRepository(ActivityLinkEntity)
+    private readonly activityLinkRepo: Repository<ActivityLinkEntity>,
+    @InjectRepository(ActivityChecklistEntity)
+    private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
+    @InjectRepository(ActivityFollowEntity)
+    private readonly activityFollowRepo: Repository<ActivityFollowEntity>,
+    private readonly linkPreviewService: LinkPreviewService,
+    @InjectQueue(QueueName.NOTIFICATION)
+    private readonly notificationQueue: Queue,
+    @InjectRepository(WorkspaceMembers)
+    private readonly workspaceMemberRepo: Repository<WorkspaceMembers>,
   ) {
     super(activityRepo);
   }
 
-  async createComment(
+  async getActivityFollowers(activityId: Uuid) {
+    const follows = await this.activityFollowRepo.find({
+      where: { activityId },
+      relations: ['user'],
+    });
+    return new ResponseDto({
+      data: follows,
+      message: 'Lấy danh sách người theo dõi thành công',
+    });
+  }
+
+  async getMyFollowedActivities(userId: Uuid) {
+    const follows = await this.activityFollowRepo.find({
+      where: { userId },
+      relations: ['activity'],
+    });
+    const activities = follows.map((f) => f.activity);
+    return new ResponseDto({
+      data: activities,
+      message: 'Lấy danh sách activity đã theo dõi thành công',
+    });
+  }
+
+  async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
+    try {
+      const activity = await this.activityRepo.findOne({
+        where: { id: activityId },
+      });
+      if (!activity) {
+        throw new NotFoundException('Activity không tồn tại');
+      }
+
+      const values = userIds.map((uid) => ({
+        activityId,
+        userId: uid,
+        createdBy: actorId,
+      }));
+
+      if (values.length === 0) {
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
+        });
+      }
+
+      await this.activityFollowRepo
+        .createQueryBuilder()
+        .insert()
+        .into(ActivityFollowEntity)
+        .values(values)
+        .onConflict('("activityId", "userId") DO NOTHING')
+        .execute();
+
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Theo dõi thành công',
+      });
+    } catch (error) {
+      this.logger.error('Error in batchFollow:', error);
+      throw error;
+    }
+  }
+
+  async batchUnfollow(activityId: Uuid, userIds: Uuid[]) {
+    try {
+      if (!userIds?.length) {
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
+        });
+      }
+
+      await this.activityFollowRepo
+        .createQueryBuilder()
+        .delete()
+        .from(ActivityFollowEntity)
+        .where('"activityId" = :activityId', { activityId })
+        .andWhere('"userId" IN (:...userIds)', { userIds })
+        .execute();
+
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Bỏ theo dõi thành công',
+      });
+    } catch (error) {
+      this.logger.error('Error in batchUnfollow:', error);
+      throw error;
+    }
+  }
+
+  async getActivityProgress(
     activityId: Uuid,
-    createCommentDto: CreateActivityCommentDto,
-    userId: Uuid,
-  ): Promise<ResponseDto<ActivityCommentResDto>> {
+  ): Promise<ResponseDto<ActivityProgressResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+      relations: [
+        'stage',
+        'subActivities',
+        'subActivities.stage',
+        'checklists',
+        'checklists.items',
+      ],
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const progressDetails = this.calculateDetailedProgress(activity);
+
+    return new ResponseDto<ActivityProgressResDto>({
+      data: plainToInstance(ActivityProgressResDto, progressDetails, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tính toán progress thành công',
+    });
+  }
+
+  async deleteChecklistItem(
+    activityId: Uuid,
+    checklistId: Uuid,
+    itemId: Uuid,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      const item = await checklistItemRepo.findOne({
+        where: { id: itemId, checklistId },
+      });
+
+      if (!item) {
+        throw new NotFoundException('Item không tồn tại trong checklist');
+      }
+
+      await checklistItemRepo.remove(item);
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Xóa item thành công',
+      });
+    });
+  }
+
+  async addChecklistItem(
+    activityId: Uuid,
+    checklistId: Uuid,
+    dto: CreateChecklistItemDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      const newItem = checklistItemRepo.create({
+        checklistId,
+        content: dto.content,
+        isDone: dto.isDone || false,
+      });
+
+      await checklistItemRepo.save(newItem);
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Thêm mục mới vào checklist thành công',
+      });
+    });
+  }
+
+  async deleteChecklist(
+    activityId: Uuid,
+    checklistId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+        relations: ['items'],
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      if (checklist.items?.length > 0) {
+        await checklistItemRepo.delete({
+          checklistId,
+        });
+      }
+
+      await checklistRepo.remove(checklist);
+
+      return new ResponseNoDataDto({
+        message: 'Xóa checklist thành công',
+      });
+    });
+  }
+
+  async createChecklist(
+    activityId: Uuid,
+    dto: CreateChecklistDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = checklistRepo.create({
+        activityId,
+        name: dto.name,
+      });
+
+      const savedChecklist = await checklistRepo.save(checklist);
+
+      if (dto.items?.length > 0) {
+        const items = dto.items.map((itemDto) =>
+          checklistItemRepo.create({
+            checklistId: savedChecklist.id,
+            content: itemDto.content,
+            isDone: itemDto.isDone || false,
+          }),
+        );
+
+        await checklistItemRepo.save(items);
+      }
+
+      const checklistWithItems = await checklistRepo.findOne({
+        where: { id: savedChecklist.id },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = checklistWithItems.items?.length || 0;
+      const completedItems =
+        checklistWithItems.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...checklistWithItems,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo checklist thành công',
+      });
+    });
+  }
+
+  async updateChecklist(
+    activityId: Uuid,
+    checklistId: Uuid,
+    dto: UpdateChecklistDto,
+  ): Promise<ResponseDto<ActivityChecklistResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const checklistRepo = manager.getRepository(ActivityChecklistEntity);
+      const checklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const checklist = await checklistRepo.findOne({
+        where: { id: checklistId, activityId },
+        relations: ['items'],
+      });
+
+      if (!checklist) {
+        throw new NotFoundException('Checklist không tồn tại');
+      }
+
+      if (dto.name) {
+        checklist.name = dto.name;
+        await checklistRepo.save(checklist);
+      }
+
+      if (dto.items?.length > 0) {
+        const existingItemsMap = new Map(
+          checklist.items?.map((item) => [item.id, item]) || [],
+        );
+
+        for (const itemDto of dto.items) {
+          const existingItem = existingItemsMap.get(itemDto.id);
+
+          if (existingItem) {
+            merge(existingItem, {
+              content: itemDto.content,
+              isDone: itemDto.isDone,
+            });
+            await checklistItemRepo.save(existingItem);
+          }
+        }
+      }
+
+      const updatedChecklist = await checklistRepo.findOne({
+        where: { id: checklistId },
+        relations: ['items'],
+        order: {
+          items: {
+            createdAt: 'ASC',
+          },
+        },
+      });
+
+      const totalItems = updatedChecklist.items?.length || 0;
+      const completedItems =
+        updatedChecklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+      const processedChecklist = {
+        ...updatedChecklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
+
+      return new ResponseDto<ActivityChecklistResDto>({
+        data: plainToInstance(ActivityChecklistResDto, processedChecklist, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật checklist thành công',
+      });
+    });
+  }
+
+  async getChecklists(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityChecklistResDto[]>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
     });
@@ -109,63 +595,234 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Hoạt động không tồn tại');
     }
 
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const qb = this.activityChecklistRepo
+      .createQueryBuilder('checklist')
+      .leftJoinAndSelect('checklist.items', 'items')
+      .where('checklist.activityId = :activityId', { activityId })
+      .orderBy('checklist.createdAt', 'DESC')
+      .addOrderBy('items.createdAt', 'DESC');
 
-    if (!user) {
-      throw new NotFoundException('Người dùng không tồn tại');
-    }
+    const checklists = await qb.getMany();
 
-    // Kiểm tra parentComment nếu có
-    if (
-      createCommentDto.parentCommentId &&
-      createCommentDto.parentCommentId.trim() !== ''
-    ) {
-      const parentComment = await this.activityCommentRepo.findOne({
-        where: { id: createCommentDto.parentCommentId as Uuid, activityId },
-      });
+    const processedChecklists = checklists.map((checklist) => {
+      const totalItems = checklist.items?.length || 0;
+      const completedItems =
+        checklist.items?.filter((item) => item.isDone).length || 0;
+      const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
 
-      if (!parentComment) {
-        throw new NotFoundException('Bình luận cha không tồn tại');
-      }
-    }
-
-    const comment = this.activityCommentRepo.create({
-      activityId,
-      userId,
-      content: createCommentDto.content,
-      parentCommentId:
-        createCommentDto.parentCommentId &&
-        createCommentDto.parentCommentId.trim() !== ''
-          ? (createCommentDto.parentCommentId as Uuid)
-          : null,
+      return {
+        ...checklist,
+        totalItems,
+        completedItems,
+        progress: Math.round(progress * 100) / 100,
+      };
     });
 
-    const savedComment = await this.activityCommentRepo.save(comment);
-
-    // Tải lại comment với quan hệ user
-    const commentWithUser = await this.activityCommentRepo.findOne({
-      where: { id: savedComment.id },
-      relations: ['user'],
-    });
-
-    // Tạo log cho việc tạo comment
-    await this.createCommentLog(
-      activity,
-      user,
-      ActivityLogActionEnum.COMMENT_CREATED,
-      'Đã thêm bình luận mới',
-    );
-
-    return new ResponseDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, commentWithUser, {
+    return new ResponseDto<ActivityChecklistResDto[]>({
+      data: plainToInstance(ActivityChecklistResDto, processedChecklists, {
         excludeExtraneousValues: true,
       }),
-      message: 'Tạo bình luận thành công',
+      message: 'Lấy danh sách checklist thành công',
+    });
+  }
+
+  async toggleReactionOnComment(
+    activityId: Uuid,
+    commentId: Uuid,
+    userId: Uuid,
+    type: ReactionType,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const commentRepo = manager.getRepository(ActivityCommentEntity);
+      const reactionRepo = manager.getRepository(ActivityCommentReactionEntity);
+      const userRepo = manager.getRepository(UserEntity);
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const comment = await commentRepo.findOne({
+        where: { id: commentId, activityId },
+      });
+
+      if (!comment) {
+        throw new NotFoundException('Bình luận không tồn tại');
+      }
+
+      const user = await userRepo.findOne({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Người dùng không tồn tại');
+      }
+
+      const reaction = await reactionRepo.findOne({
+        where: { commentId, userId },
+      });
+
+      if (reaction) {
+        if (reaction.type === type) {
+          await reactionRepo.remove(reaction);
+        } else {
+          reaction.type = type;
+          await reactionRepo.save(reaction);
+        }
+      } else {
+        const newReaction = reactionRepo.create({
+          commentId,
+          userId,
+          type,
+        });
+        await reactionRepo.save(newReaction);
+      }
+
+      const commentWithRelations = await commentRepo.findOne({
+        where: { id: commentId },
+        relations: ['user', 'reactions', 'reactions.user'],
+      });
+
+      if (!commentWithRelations) {
+        throw new Error('Failed to retrieve comment with reactions');
+      }
+
+      const processedComment = {
+        ...commentWithRelations,
+        reactionCounts: this.aggregateCommentReactions(
+          commentWithRelations.reactions || [],
+        ).counts,
+        reactionSummary: this.aggregateCommentReactions(
+          commentWithRelations.reactions || [],
+        ).summary,
+      };
+
+      return new ResponseDto<ActivityCommentResDto>({
+        data: plainToInstance(ActivityCommentResDto, processedComment, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật phản ứng thành công',
+      });
+    });
+  }
+
+  async getUserReactionOnComment(
+    activityId: Uuid,
+    commentId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseDto<{ hasReacted: boolean; type?: ReactionType }>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Hoạt động không tồn tại');
+    }
+
+    const comment = await this.activityCommentRepo.findOne({
+      where: { id: commentId, activityId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Bình luận không tồn tại');
+    }
+
+    // Query directly for better performance than loading all reactions
+    const userReaction = await this.activityCommentReactionRepo.findOne({
+      where: { commentId, userId },
+      select: ['type'],
+    });
+
+    return new ResponseDto<{ hasReacted: boolean; type?: ReactionType }>({
+      data: {
+        hasReacted: !!userReaction,
+        type: userReaction?.type,
+      },
+      message: 'Lấy thông tin phản ứng thành công',
+    });
+  }
+
+  async createComment(
+    activityId: Uuid,
+    createCommentDto: CreateActivityCommentDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityCommentResDto>> {
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const userRepo = manager.getRepository(UserEntity);
+      const commentRepo = manager.getRepository(ActivityCommentEntity);
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
+
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
+
+      const user = await userRepo.findOne({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Người dùng không tồn tại');
+      }
+
+      if (createCommentDto.parentCommentId) {
+        const parentComment = await commentRepo.findOne({
+          where: { id: createCommentDto.parentCommentId, activityId },
+        });
+
+        if (!parentComment) {
+          throw new NotFoundException('Bình luận cha không tồn tại');
+        }
+      }
+
+      const comment = commentRepo.create({
+        activityId,
+        userId,
+        content: createCommentDto.content,
+        parentCommentId: createCommentDto.parentCommentId,
+      });
+
+      const savedComment = await commentRepo.save(comment);
+
+      const activityLog = activityLogRepo.create({
+        activity,
+        user,
+        action: ActivityLogActionEnum.COMMENT_CREATED,
+        message: `${user.name} Đã thêm bình luận mới`,
+      });
+
+      await activityLogRepo.save(activityLog);
+
+      const commentWithRelations = await commentRepo.findOne({
+        where: { id: savedComment.id },
+        relations: ['user', 'reactions', 'reactions.user'],
+      });
+
+      if (!commentWithRelations) {
+        throw new Error('Failed to retrieve saved comment');
+      }
+
+      return new ResponseDto<ActivityCommentResDto>({
+        data: plainToInstance(ActivityCommentResDto, commentWithRelations, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Tạo bình luận thành công',
+      });
     });
   }
 
   async getComments(
     activityId: Uuid,
+    query: PageOptionsDto,
+    currentUserId: Uuid,
   ): Promise<ResponseDto<ActivityCommentResDto[]>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -175,14 +832,82 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Hoạt động không tồn tại');
     }
 
-    const comments = await this.activityCommentRepo.find({
-      where: { activityId, parentCommentId: null },
-      relations: ['user', 'replies', 'replies.user'],
-      order: { createdAt: 'DESC' },
+    const qb = this.activityCommentRepo
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .leftJoinAndSelect('comment.reactions', 'reactions')
+      .leftJoinAndSelect('reactions.user', 'reactionUser')
+      .leftJoinAndSelect('comment.replies', 'replies')
+      .leftJoinAndSelect('replies.user', 'replyUser')
+      .leftJoinAndSelect('replies.reactions', 'replyReactions')
+      .leftJoinAndSelect('replyReactions.user', 'replyReactionUser')
+      .where('comment.activityId = :activityId', { activityId })
+      .andWhere('comment.parentCommentId IS NULL');
+
+    const allowedSortFields = ['createdAt', 'content'];
+    const sortField = allowedSortFields.includes(query.sortBy || '')
+      ? query.sortBy
+      : 'createdAt';
+    const sortOrder = query.order || 'DESC';
+
+    qb.orderBy(`comment.${sortField}`, sortOrder as 'ASC' | 'DESC');
+    qb.addOrderBy('replies.createdAt', 'ASC');
+
+    const comments = await qb.getMany();
+
+    const processedComments = comments.map((comment) => {
+      const reactionsByType = this.aggregateCommentReactions(
+        comment.reactions || [],
+      );
+
+      const processedReplies =
+        comment.replies?.map((reply) => {
+          const replyReactionsByType = this.aggregateCommentReactions(
+            reply.reactions || [],
+          );
+
+          const userReplyReaction = reply.reactions?.find(
+            (r) => r.userId === currentUserId,
+          );
+
+          const totalReplyReactions = Object.values(
+            replyReactionsByType.counts || {},
+          ).reduce((s, v) => s + v, 0);
+
+          return {
+            ...reply,
+            reactionCounts: replyReactionsByType.counts,
+            reactionSummary: replyReactionsByType.summary,
+            totalReactions: totalReplyReactions,
+            currentUserReaction: userReplyReaction
+              ? userReplyReaction.type
+              : null,
+            hasUserReacted: !!userReplyReaction,
+          };
+        }) || [];
+
+      const userReaction = comment.reactions?.find(
+        (r) => r.userId === currentUserId,
+      );
+
+      const totalReactions = Object.values(reactionsByType.counts || {}).reduce(
+        (s, v) => s + v,
+        0,
+      );
+
+      return {
+        ...comment,
+        reactionCounts: reactionsByType.counts,
+        reactionSummary: reactionsByType.summary,
+        currentUserReaction: userReaction ? userReaction.type : null,
+        hasUserReacted: !!userReaction,
+        replies: processedReplies,
+        totalReactions,
+      };
     });
 
     return new ResponseDto<ActivityCommentResDto[]>({
-      data: plainToInstance(ActivityCommentResDto, comments, {
+      data: plainToInstance(ActivityCommentResDto, processedComments, {
         excludeExtraneousValues: true,
       }),
       message: 'Lấy danh sách bình luận thành công',
@@ -193,6 +918,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     commentId: Uuid,
     query: PageOptionsDto,
+    currentUserId: Uuid,
   ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -213,6 +939,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const qb = this.activityCommentRepo
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
+      .leftJoinAndSelect('comment.reactions', 'reactions')
+      .leftJoinAndSelect('reactions.user', 'reactionUser')
       .where('comment.parentCommentId = :parentCommentId', {
         parentCommentId: commentId,
       })
@@ -240,6 +968,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const { data, cursor } = await paginator.paginate(qb);
 
+    // Xử lý data để thêm reaction information
+    const processedData = data.map((reply) => {
+      const reactionsByType = this.aggregateCommentReactions(
+        reply.reactions || [],
+      );
+
+      const userReaction = reply.reactions?.find(
+        (r) => r.userId === currentUserId,
+      );
+
+      return {
+        ...reply,
+        reactionCounts: reactionsByType.counts,
+        reactionSummary: reactionsByType.summary,
+        currentUserReaction: userReaction ? userReaction.type : null,
+        hasUserReacted: !!userReaction,
+      };
+    });
+
     const metaDto = new CursorPaginationDto(
       totalRecords,
       cursor.afterCursor,
@@ -248,7 +995,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     );
 
     return new CursorPaginatedDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, data, {
+      data: plainToInstance(ActivityCommentResDto, processedData, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
@@ -262,48 +1009,93 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     updateCommentDto: UpdateActivityCommentDto,
     userId: Uuid,
   ): Promise<ResponseDto<ActivityCommentResDto>> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const commentRepo = manager.getRepository(ActivityCommentEntity);
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const userRepo = manager.getRepository(UserEntity);
 
-    if (!activity) {
-      throw new NotFoundException('Hoạt động không tồn tại');
-    }
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+      });
 
-    const comment = await this.activityCommentRepo.findOne({
-      where: { id: commentId, activityId },
-      relations: ['user'],
-    });
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
 
-    if (!comment) {
-      throw new NotFoundException('Bình luận không tồn tại');
-    }
+      const comment = await commentRepo.findOne({
+        where: { id: commentId, activityId },
+        relations: ['user'],
+      });
 
-    // Chỉ cho phép người tạo comment sửa
-    if (comment.userId !== userId) {
-      throw new BadRequestException('Bạn chỉ có thể sửa bình luận của mình');
-    }
+      if (!comment) {
+        throw new NotFoundException('Bình luận không tồn tại');
+      }
 
-    const oldContent = comment.content;
-    comment.content = updateCommentDto.content;
-    comment.isEdited = true;
-    comment.editedAt = new Date();
+      if (comment.userId !== userId) {
+        throw new BadRequestException('Bạn chỉ có thể sửa bình luận của mình');
+      }
 
-    const updatedComment = await this.activityCommentRepo.save(comment);
+      const user = await userRepo.findOne({
+        where: { id: userId },
+      });
 
-    // Tạo log cho việc cập nhật comment
-    await this.createCommentLog(
-      activity,
-      comment.user,
-      ActivityLogActionEnum.COMMENT_UPDATED,
-      `Đã cập nhật bình luận từ "${oldContent}" thành "${updateCommentDto.content}"`,
-    );
+      if (!user) {
+        throw new NotFoundException('Người dùng không tồn tại');
+      }
 
-    return new ResponseDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, updatedComment, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật bình luận thành công',
+      if (!updateCommentDto.content || updateCommentDto.content.trim() === '') {
+        throw new BadRequestException('Nội dung bình luận không được để trống');
+      }
+
+      const oldContent = comment.content;
+
+      comment.content = updateCommentDto.content.trim();
+      comment.isEdited = true;
+      comment.editedAt = new Date();
+
+      await commentRepo.save(comment);
+
+      const activityLog = activityLogRepo.create({
+        activity,
+        user,
+        action: ActivityLogActionEnum.COMMENT_UPDATED,
+        message: `${user.name} đã cập nhật bình luận`,
+        metadata: {
+          type: ActivityLogActionEnum.COMMENT_UPDATED,
+          comment,
+          oldContent,
+          newContent: updateCommentDto.content,
+        },
+      });
+
+      await activityLogRepo.save(activityLog);
+
+      const commentWithRelations = await commentRepo.findOne({
+        where: { id: commentId },
+        relations: ['user', 'reactions', 'reactions.user'],
+      });
+
+      if (!commentWithRelations) {
+        throw new Error('Failed to retrieve updated comment');
+      }
+
+      const processedComment = {
+        ...commentWithRelations,
+        reactionCounts: this.aggregateCommentReactions(
+          commentWithRelations.reactions || [],
+        ).counts,
+        reactionSummary: this.aggregateCommentReactions(
+          commentWithRelations.reactions || [],
+        ).summary,
+      };
+
+      return new ResponseDto<ActivityCommentResDto>({
+        data: plainToInstance(ActivityCommentResDto, processedComment, {
+          excludeExtraneousValues: true,
+        }),
+        message: 'Cập nhật bình luận thành công',
+      });
     });
   }
 
@@ -312,156 +1104,71 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     commentId: Uuid,
     userId: Uuid,
   ): Promise<ResponseNoDataDto> {
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityEntity);
+      const commentRepo = manager.getRepository(ActivityCommentEntity);
+      const userRepo = manager.getRepository(UserEntity);
+      const activityLogRepo = manager.getRepository(ActivityLogEntity);
 
-    if (!activity) {
-      throw new NotFoundException('Hoạt động không tồn tại');
-    }
+      const activity = await activityRepo.findOne({
+        where: { id: activityId },
+        relations: ['workspace', 'workspace.owner'],
+      });
 
-    const comment = await this.activityCommentRepo.findOne({
-      where: { id: commentId, activityId },
-      relations: ['user', 'replies'],
-    });
+      if (!activity) {
+        throw new NotFoundException('Hoạt động không tồn tại');
+      }
 
-    if (!comment) {
-      throw new NotFoundException('Bình luận không tồn tại');
-    }
+      const comment = await commentRepo.findOne({
+        where: { id: commentId, activityId },
+        relations: ['user', 'replies'],
+      });
 
-    // Chỉ cho phép người tạo comment xóa
-    if (comment.userId !== userId) {
-      throw new BadRequestException('Bạn chỉ có thể xóa bình luận của mình');
-    }
+      if (!comment) {
+        throw new NotFoundException('Bình luận không tồn tại');
+      }
 
-    const contentBackup = comment.content;
+      const user = await userRepo.findOne({
+        where: { id: userId },
+      });
 
-    // Xóa comment (cascade sẽ xóa các replies)
-    await this.activityCommentRepo.remove(comment);
+      if (!user) {
+        throw new NotFoundException('Người dùng không tồn tại');
+      }
 
-    // Tạo log cho việc xóa comment
-    await this.createCommentLog(
-      activity,
-      comment.user,
-      ActivityLogActionEnum.COMMENT_DELETED,
-      `Đã xóa bình luận: "${contentBackup}"`,
-    );
+      const isCommentCreator = comment.userId === userId;
+      const isWorkspaceOwner = activity.workspace?.owner.id === userId;
 
-    return new ResponseNoDataDto({ message: 'Xóa bình luận thành công' });
-  }
+      if (!isCommentCreator && !isWorkspaceOwner) {
+        throw new BadRequestException(
+          'Bạn không có quyền xóa bình luận này. Chỉ người tạo bình luận hoặc quản lý workspace mới có quyền xóa.',
+        );
+      }
 
-  private async createCommentLog(
-    activity: ActivityEntity,
-    user: UserEntity,
-    action: ActivityLogActionEnum,
-    description: string,
-  ): Promise<void> {
-    const log = this.activityLogRepository.create({
-      activity,
-      user,
-      action,
-      message: description,
-    });
+      const contentBackup = comment.content;
+      const commentCreator = comment.user;
 
-    await this.activityLogRepository.save(log);
-  }
+      await commentRepo.remove(comment);
 
-  async addReaction(
-    activityId: Uuid,
-    commentId: Uuid,
-    _userId: Uuid,
-  ): Promise<ResponseDto<ActivityCommentResDto>> {
-    // Kiểm tra activity có tồn tại không
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
+      const activityLog = activityLogRepo.create({
+        activity,
+        user,
+        action: ActivityLogActionEnum.COMMENT_DELETED,
+        message: isCommentCreator
+          ? `${user.name} đã xóa bình luận của chính mình: "${contentBackup}"`
+          : `${user.name} đã xóa bình luận của ${commentCreator.name}: "${contentBackup}"`,
+        metadata: {
+          type: ActivityLogActionEnum.COMMENT_DELETED,
+          comment,
+          deletedByAuthor: isCommentCreator,
+        },
+      });
 
-    if (!activity) {
-      throw new NotFoundException('Hoạt động không tồn tại');
-    }
+      await activityLogRepo.save(activityLog);
 
-    // Kiểm tra comment có tồn tại không
-    const comment = await this.activityCommentRepo.findOne({
-      where: { id: commentId, activityId },
-      relations: ['user'],
-    });
-
-    if (!comment) {
-      throw new NotFoundException('Không tìm thấy bình luận');
-    }
-
-    // Khởi tạo reactions nếu chưa có
-    if (!comment.reactions) {
-      comment.reactions = {};
-    }
-
-    // Khởi tạo tym count nếu chưa có
-    if (!comment.reactions.tym) {
-      comment.reactions.tym = 0;
-    }
-
-    // Tăng số lượng tym
-    comment.reactions.tym += 1;
-
-    // Đánh dấu flag cho TypeORM nhận biết thay đổi jsonb
-    comment.reactions = { ...comment.reactions };
-
-    const updatedComment = await this.activityCommentRepo.save(comment);
-
-    return new ResponseDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, updatedComment, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Thêm reaction thành công',
-    });
-  }
-
-  async removeReaction(
-    activityId: Uuid,
-    commentId: Uuid,
-    _userId: Uuid,
-  ): Promise<ResponseDto<ActivityCommentResDto>> {
-    // Kiểm tra activity có tồn tại không
-    const activity = await this.activityRepo.findOne({
-      where: { id: activityId },
-    });
-
-    if (!activity) {
-      throw new NotFoundException('Hoạt động không tồn tại');
-    }
-
-    // Kiểm tra comment có tồn tại không
-    const comment = await this.activityCommentRepo.findOne({
-      where: { id: commentId, activityId },
-      relations: ['user'],
-    });
-
-    if (!comment) {
-      throw new NotFoundException('Không tìm thấy bình luận');
-    }
-
-    // Kiểm tra có reactions không
-    if (
-      !comment.reactions ||
-      !comment.reactions.tym ||
-      comment.reactions.tym <= 0
-    ) {
-      throw new BadRequestException('Bình luận này chưa có reaction nào');
-    }
-
-    // Giảm số lượng tym
-    comment.reactions.tym = Math.max(0, comment.reactions.tym - 1);
-
-    // Đánh dấu flag cho TypeORM nhận biết thay đổi jsonb
-    comment.reactions = { ...comment.reactions };
-
-    const updatedComment = await this.activityCommentRepo.save(comment);
-
-    return new ResponseDto<ActivityCommentResDto>({
-      data: plainToInstance(ActivityCommentResDto, updatedComment, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Bỏ reaction thành công',
+      return new ResponseNoDataDto({
+        message: 'Xóa bình luận thành công',
+      });
     });
   }
 
@@ -586,6 +1293,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     userId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
     return this.dataSource.transaction(async (manager) => {
+      const userNotifications = new Map<Uuid, 'assignee' | 'follow'>();
+
       const userCreator = await manager.getRepository(UserEntity).findOne({
         where: { id: userId },
       });
@@ -594,17 +1303,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         throw new ValidationException(ErrorCode.E003);
       }
 
-      if (dto.type === 'event' && !dto.location) {
-        throw new BadRequestException('Event phải có location');
-      }
-
       const activityRepo = manager.getRepository(ActivityEntity);
       const checklistRepo = manager.getRepository(ActivityChecklistEntity);
       const checklistItemRepo = manager.getRepository(
         ActivityChecklistItemEntity,
       );
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
-      const notificationRepo = manager.getRepository(NotificationEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
@@ -613,42 +1317,26 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       let assignees: ActivityAssigneeEntity[] = [];
       if (dto.assignees?.length > 0) {
         const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
-        assignees = dto.assignees.map((assigneeDto) =>
-          assigneeRepo.create({
+        assignees = dto.assignees.map((assigneeDto) => {
+          if (assigneeDto.userId !== userId) {
+            userNotifications.set(assigneeDto.userId, 'assignee');
+          }
+          return assigneeRepo.create({
             userId: assigneeDto.userId,
             role: assigneeDto.role || AssigneeRole.COLLABORATOR,
             note: assigneeDto.note,
             assignedAt: new Date(),
             assignedBy: userId,
             status: AssignmentStatus.PENDING,
-          }),
-        );
-
-        const notifications = await Promise.all(
-          dto.assignees.map(async (assigneeDto) => {
-            const userAssignee = await this.userRepo.findOne({
-              where: { id: assigneeDto.userId },
-            });
-
-            return notificationRepo.create({
-              userId: assigneeDto.userId,
-              title: `Có ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} mới`,
-              message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
-              sender: userCreator,
-              user: userAssignee,
-              workspaceId: dto.workspaceId,
-            });
-          }),
-        );
-
-        await notificationRepo.save(notifications);
+          });
+        });
       }
 
-      const { assignees: _, ...activityData } = dto;
+      const { assignees: _, follows: __, ...activityData } = dto;
       const activity = activityRepo.create({
         ...activityData,
         position: count + 1,
-        assignees: assignees,
+        assignees,
       });
       const savedActivity = await activityRepo.save(activity);
 
@@ -657,14 +1345,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         user: userCreator,
         action: ActivityLogActionEnum.CREATED,
         message: 'Tạo hoạt động mới',
-        metadata: {
-          type: 'MAIN_ACTIVITY',
-          activityType: dto.type,
-        },
       });
       await activityLogRepo.save(mainActivityLog);
 
-      // Handle subtasks and logging
       if (dto.subtask?.length > 0) {
         const subActivities: ActivityEntity[] = [];
         const logs: ActivityLogEntity[] = [];
@@ -761,10 +1444,161 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+      if (dto.attachments && dto.attachments.length > 0) {
+        const activityFileRepo = manager.getRepository(ActivityFileEntity);
+        const fileLogs: ActivityLogEntity[] = [];
+
+        for (const fileId of dto.attachments) {
+          try {
+            if (!fileId || typeof fileId !== 'string') {
+              continue;
+            }
+
+            const file = await manager.getRepository(FileEntity).findOne({
+              where: { url: fileId },
+            });
+
+            if (!file) {
+              console.error('File not found:', fileId);
+              continue;
+            }
+
+            const activityFile = activityFileRepo.create({
+              activityId: savedActivity.id,
+              fileId: file.id,
+              createdBy: userId,
+            });
+
+            await activityFileRepo.save(activityFile);
+
+            // Log file attachment
+            const fileLog = activityLogRepo.create({
+              activity: savedActivity,
+              user: userCreator,
+              action: ActivityLogActionEnum.CREATED,
+              message: `Đính kèm file: ${file.originalName}`,
+              metadata: {
+                type: 'FILE_ATTACHMENT',
+                fileId: file.id,
+                fileName: file.originalName,
+              },
+            });
+            fileLogs.push(fileLog);
+          } catch (error) {
+            console.error('Error saving activity file:', error);
+            // Don't throw error, just log it and continue
+            console.error('Skipping file attachment due to error');
+          }
+        }
+
+        if (fileLogs.length > 0) {
+          await activityLogRepo.save(fileLogs);
+        }
+      }
+
+      if (dto.follows?.length) {
+        const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
+        const follows = dto.follows.map((followUserId) => {
+          if (followUserId !== userId && !userNotifications.has(followUserId)) {
+            userNotifications.set(followUserId, 'follow');
+          }
+          return {
+            activityId: savedActivity.id,
+            userId: followUserId,
+            createdBy: userId,
+          };
+        });
+
+        await activityFollowRepo
+          .createQueryBuilder()
+          .insert()
+          .into(ActivityFollowEntity)
+          .values(follows)
+          .onConflict('("activityId", "userId") DO NOTHING')
+          .execute();
+
+        const followLog = activityLogRepo.create({
+          activity: savedActivity,
+          user: userCreator,
+          action: ActivityLogActionEnum.FOLLOW,
+          message: `Thêm ${follows.length} người theo dõi`,
+          metadata: {
+            type: 'FOLLOW',
+            userIds: dto.follows,
+          },
+        });
+        await activityLogRepo.save(followLog);
+      }
+
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
-        relations: ['subActivities', 'assignees', 'assignees.user'],
+        relations: [
+          'subActivities',
+          'assignees',
+          'assignees.user',
+          'files',
+          'files.file',
+          'follows',
+          'follows.user',
+        ],
       });
+
+      for (const [notifUserId, notifType] of userNotifications) {
+        const activityLabel =
+          dto?.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
+        const activityName = savedActivity?.name || 'hoạt động';
+        const creatorName = upperCaseFirst(userCreator?.name || 'Người tạo');
+        const workspaceName =
+          (savedActivity as any)?.workspaceName ||
+          savedActivity?.workspace?.name;
+        const start = savedActivity?.startTime
+          ? new Date(savedActivity.startTime)
+          : null;
+        const end = savedActivity?.endTime
+          ? new Date(savedActivity.endTime)
+          : null;
+
+        const timePart = end
+          ? `, hạn ${end.toLocaleString()}`
+          : start
+            ? `, bắt đầu ${start.toLocaleString()}`
+            : '';
+
+        const workspacePart = workspaceName ? ` trong ${workspaceName}` : '';
+
+        const message =
+          notifType === 'assignee'
+            ? `Bạn được giao ${activityLabel} "${activityName}" bởi ${creatorName}${workspacePart}${timePart}`
+            : `${creatorName} đã thêm bạn theo dõi ${activityLabel} "${activityName}"${workspacePart}`;
+
+        const notificationData: SendPushNotificationDto = {
+          userId: notifUserId,
+          type:
+            notifType === 'assignee'
+              ? NotificationType.MENTION
+              : NotificationType.FOLLOW,
+          title:
+            notifType === 'assignee'
+              ? 'Bạn được giao một công việc mới'
+              : `${upperCaseFirst(userCreator.name)} đã thêm bạn theo dõi một công việc`,
+          message,
+          data: {
+            uri: `/workspaces/${savedActivity.workspaceId}`,
+            open: savedActivity,
+          },
+        };
+
+        await this.notificationQueue.add(
+          JobName.NOTIFICATION,
+          notificationData,
+          {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 1000 },
+            removeOnComplete: true,
+            removeOnFail: false,
+          },
+        );
+      }
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, result, {
@@ -777,12 +1611,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
   async findAll(
     query: QueryActivityDto,
-  ): Promise<OffsetPaginatedDto<ActivityResDto>> {
+  ): Promise<ResponseDto<ActivityResDto[]>> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
-      .andWhere('activity.workspaceId = :workspaceId', {
+      .where('activity.workspaceId = :workspaceId', {
         workspaceId: query.workspaceId,
       })
+      .leftJoinAndSelect('activity.workspace', 'workspace')
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
       .leftJoinAndSelect('activity.feedbacks', 'feedbacks')
@@ -794,6 +1629,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('subActivities.stage', 'subStage')
       .leftJoinAndSelect('activity.checklists', 'checklists')
       .leftJoinAndSelect('checklists.items', 'items')
+      .leftJoinAndSelect('activity.files', 'files')
+      .leftJoinAndSelect('files.file', 'file')
+      .leftJoinAndSelect('activity.category', 'category')
       .leftJoinAndSelect('activity.stage', 'stage');
 
     if (!query.includeSubTasks) {
@@ -813,9 +1651,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     if (query.stageId)
       qb.andWhere('activity.stageId = :stageId', { stageId: query.stageId });
-    if (query.category)
-      qb.andWhere('activity.category = :category', {
-        category: query.category,
+    if (query.categoryId)
+      qb.andWhere('activity.categoryId = :categoryId', {
+        categoryId: query.categoryId,
       });
     if (query.mandatory !== undefined)
       qb.andWhere('activity.mandatory = :mandatory', {
@@ -833,23 +1671,20 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       qb.andWhere('activity.createdBy = :createdBy', {
         createdBy: query.createdBy,
       });
+
     qb.orderBy('activity.createdAt', 'DESC');
 
-    const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
-      skipCount: false,
-      takeAll: true,
-    });
+    const activities = await qb.getMany();
 
     const activitiesWithProgress = activities.map((activity) => {
       const progress = this.calculateProgress(activity);
       return { ...activity, progress };
     });
 
-    return new OffsetPaginatedDto({
+    return new ResponseDto<ActivityResDto[]>({
       data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
-      meta: metaDto,
       message: 'Lấy danh sách hoạt động thành công',
     });
   }
@@ -859,6 +1694,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   ): Promise<ResponseDto<ActivityResDto[]>> {
     const activities = await this.activityRepo.find({
       where: { parentId },
+      relations: [
+        'stage',
+        'assignees',
+        'assignees.user',
+        'files',
+        'files.file',
+      ],
     });
 
     const activitiesWithProgress = activities.map((activity) => {
@@ -923,6 +1765,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         'stage',
         'subActivities',
         'subActivities.stage',
+        'files',
+        'files.file',
+        'category',
       ],
     });
 
@@ -944,11 +1789,32 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return this.dataSource.transaction(async (manager) => {
       const activityRepo = manager.getRepository(ActivityEntity);
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const activityCommentRepo = manager.getRepository(ActivityCommentEntity);
+      const activityReactionRepo = manager.getRepository(
+        ActivityCommentReactionEntity,
+      );
+      const activityAssigneeRepo = manager.getRepository(
+        ActivityAssigneeEntity,
+      );
+      const activityParticipantRepo = manager.getRepository(
+        ActivityParticipantEntity,
+      );
+      const activityFeedbackRepo = manager.getRepository(
+        ActivityFeedbackEntity,
+      );
+      const eventFeedbackRepo = manager.getRepository(EventFeedbackEntity);
+      const activityFileRepo = manager.getRepository(ActivityFileEntity);
+      const activityChecklistRepo = manager.getRepository(
+        ActivityChecklistEntity,
+      );
+      const activityChecklistItemRepo = manager.getRepository(
+        ActivityChecklistItemEntity,
+      );
       const userRepo = manager.getRepository(UserEntity);
 
       const activity = await activityRepo.findOne({
         where: { id },
-        relations: ['parent'],
+        relations: ['parent', 'subActivities'],
       });
 
       if (!activity) {
@@ -956,33 +1822,83 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
 
       const user = await userRepo.findOneOrFail({ where: { id: userId } });
+      const activityName = activity.name;
+      const isSubActivity = !!activity.parentId;
 
-      if (activity.parentId) {
+      const comments = await activityCommentRepo.find({
+        where: { activityId: id },
+        select: ['id'],
+      });
+
+      const commentIds = comments.map((c) => c.id);
+
+      if (commentIds.length > 0) {
+        await activityReactionRepo.delete({
+          commentId: In(commentIds),
+        });
+
+        await activityCommentRepo.delete({ activityId: id });
+      }
+
+      const checklists = await activityChecklistRepo.find({
+        where: { activityId: id },
+        select: ['id'],
+      });
+
+      const checklistIds = checklists.map((c) => c.id);
+
+      if (checklistIds.length > 0) {
+        await activityChecklistItemRepo.delete({
+          checklistId: In(checklistIds),
+        });
+        await activityChecklistRepo.delete({ activityId: id });
+      }
+
+      await Promise.all([
+        activityAssigneeRepo.delete({ activityId: id }),
+        activityParticipantRepo.delete({ activityId: id }),
+        activityFeedbackRepo.delete({ activityId: id }),
+        eventFeedbackRepo.delete({ activityId: id }),
+        activityFileRepo.delete({ activityId: id }),
+      ]);
+
+      if (activity.subActivities && activity.subActivities.length > 0) {
+        for (const subActivity of activity.subActivities) {
+          await this.deleteActivity(subActivity.id, userId);
+        }
+      }
+
+      if (isSubActivity) {
         const parentActivity = await activityRepo.findOne({
           where: { id: activity.parentId },
         });
 
-        const deleteSubTaskLog = activityLogRepo.create({
-          activity: parentActivity,
-          user,
-          action: ActivityLogActionEnum.DELETED,
-          message: `Xóa công việc phụ: ${activity.name}`,
-        });
-        await activityLogRepo.save(deleteSubTaskLog);
-      } else {
-        const deleteActivityLog = activityLogRepo.create({
-          activity,
-          user,
-          action: ActivityLogActionEnum.DELETED,
-          message: `Xóa hoạt động: ${activity.name}`,
-        });
-        await activityLogRepo.save(deleteActivityLog);
+        if (parentActivity) {
+          const deleteSubTaskLog = activityLogRepo.create({
+            activity: parentActivity,
+            user,
+            action: ActivityLogActionEnum.DELETE_SUB_TASK,
+            message: `Xóa công việc phụ: ${activityName}`,
+            metadata: {
+              type: ActivityLogActionEnum.DELETE_SUB_TASK,
+              subtask: activity,
+            },
+          });
+          await activityLogRepo.save(deleteSubTaskLog);
+        }
       }
+
+      await activityLogRepo.delete({
+        activity: {
+          id,
+        },
+        action: Not(ActivityLogActionEnum.DELETED),
+      });
 
       await activityRepo.delete(id);
 
       return new ResponseNoDataDto({
-        message: activity.parentId
+        message: isSubActivity
           ? 'Xóa hoạt động phụ thành công'
           : 'Xóa hoạt động thành công',
       });
@@ -1031,7 +1947,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         assignees: activity.assignees || [],
       };
 
-      await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
+      const { hasStageChange, hasPositionChange } =
+        await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
 
       if (dto.assignees !== undefined) {
         await this.updateActivityAssignees(
@@ -1055,6 +1972,39 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         activityLogRepo,
       );
 
+      if (hasStageChange) {
+        const members = await this.getMembersInWorkspace(activity.workspaceId);
+        const newStage = await manager
+          .getRepository(StagesEntity)
+          .findOne({ where: { id: dto.stageId } });
+
+        for (const member of members) {
+          if (member.id === userId) continue;
+
+          const notificationData: SendPushNotificationDto = {
+            userId: member.id,
+            title: upperCaseFirst(activity.name),
+            message: `${upperCaseFirst(user.name)} đã xét trạng thái thành: ${newStage.title.toLocaleUpperCase()}`,
+            data: {
+              uri: `/workspaces/${activity.workspaceId}`,
+              open: activity,
+            },
+            type: NotificationType.ACTIVITY,
+          };
+
+          await this.notificationQueue.add(
+            JobName.NOTIFICATION,
+            notificationData,
+            {
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 1000 },
+              removeOnComplete: true,
+              removeOnFail: false,
+            },
+          );
+        }
+      }
+
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {
           excludeExtraneousValues: true,
@@ -1062,422 +2012,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         message: 'Cập nhật hoạt động thành công',
       });
     });
-  }
-
-  private async handlePositionAndStageChanges(
-    dto: UpdateActivityDto,
-    oldValues: any,
-    activityRepo: Repository<ActivityEntity>,
-  ): Promise<void> {
-    const hasStageChange =
-      dto.stageId !== undefined && dto.stageId !== oldValues.stageId;
-    const hasPositionChange =
-      dto.position !== undefined && dto.position !== oldValues.position;
-
-    if (hasStageChange) {
-      await Promise.all([
-        activityRepo
-          .createQueryBuilder()
-          .update(ActivityEntity)
-          .set({ position: () => 'position - 1' })
-          .where('stageId = :oldStageId', { oldStageId: oldValues.stageId })
-          .andWhere('position > :oldPosition', {
-            oldPosition: oldValues.position,
-          })
-          .execute(),
-
-        activityRepo
-          .createQueryBuilder()
-          .update(ActivityEntity)
-          .set({ position: () => 'position + 1' })
-          .where('stageId = :newStageId', { newStageId: dto.stageId })
-          .andWhere('position >= :newPosition', {
-            newPosition: dto.position ?? oldValues.position,
-          })
-          .execute(),
-      ]);
-    } else if (hasPositionChange && !hasStageChange) {
-      const stageId = dto.stageId ?? oldValues.stageId;
-      const oldPosition = oldValues.position;
-      const newPosition = dto.position!;
-
-      if (oldPosition < newPosition) {
-        await activityRepo
-          .createQueryBuilder()
-          .update(ActivityEntity)
-          .set({ position: () => 'position - 1' })
-          .where('stageId = :stageId', { stageId })
-          .andWhere('position > :oldPosition', { oldPosition })
-          .andWhere('position <= :newPosition', { newPosition })
-          .execute();
-      } else if (oldPosition > newPosition) {
-        await activityRepo
-          .createQueryBuilder()
-          .update(ActivityEntity)
-          .set({ position: () => 'position + 1' })
-          .where('stageId = :stageId', { stageId })
-          .andWhere('position >= :newPosition', { newPosition })
-          .andWhere('position < :oldPosition', { oldPosition })
-          .execute();
-      }
-    }
-  }
-
-  private async updateActivityAssignees(
-    activityId: Uuid,
-    newAssignees: ActivityAssigneeDto[],
-    activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
-  ): Promise<void> {
-    await activityAssigneeRepo.delete({ activityId });
-
-    if (newAssignees && newAssignees.length > 0) {
-      const assigneeEntities = newAssignees.map((assigneeDto) =>
-        activityAssigneeRepo.create({
-          activityId,
-          userId: assigneeDto.userId,
-          role: assigneeDto.role || AssigneeRole.COLLABORATOR,
-        }),
-      );
-      await activityAssigneeRepo.save(assigneeEntities);
-    }
-  }
-
-  private async createActivityUpdateLogs(
-    activity: ActivityEntity,
-    user: UserEntity,
-    dto: UpdateActivityDto,
-    oldValues: any,
-    activityLogRepo: Repository<ActivityLogEntity>,
-  ): Promise<void> {
-    const newStage = dto.stageId
-      ? await this.stageRepo.findOne({ where: { id: dto.stageId } })
-      : null;
-
-    const logPromises: Promise<ActivityLogEntity>[] = [];
-
-    if (dto.stageId !== undefined && dto.stageId !== oldValues.stageId) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Chuyển hoạt động từ stage ${oldValues.stageName} sang ${newStage?.title}`,
-            oldValue: oldValues.stageId,
-            newValue: dto.stageId,
-            metadata: {
-              type: 'STAGE_CHANGE',
-              field: 'stageId',
-              oldStageId: oldValues.stageId,
-              newStageId: dto.stageId,
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log name change
-    if (dto.name !== undefined && dto.name !== oldValues.name) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Đổi tên hoạt động từ "${oldValues.name}" thành "${dto.name}"`,
-            oldValue: oldValues.name,
-            newValue: dto.name,
-            metadata: {
-              type: 'NAME_CHANGE',
-              field: 'name',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log priority change
-    if (dto.priority !== undefined && dto.priority !== oldValues.priority) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`,
-            oldValue: oldValues.priority,
-            newValue: dto.priority,
-            metadata: {
-              type: 'PRIORITY_CHANGE',
-              field: 'priority',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log type change
-    if (dto.type !== undefined && dto.type !== oldValues.type) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi loại hoạt động từ ${oldValues.type} sang ${dto.type}`,
-            oldValue: oldValues.type,
-            newValue: dto.type,
-            metadata: {
-              type: 'TYPE_CHANGE',
-              field: 'type',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log description change
-    if (
-      dto.description !== undefined &&
-      dto.description !== oldValues.description
-    ) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Cập nhật mô tả hoạt động`,
-            oldValue: oldValues.description,
-            newValue: dto.description,
-            metadata: {
-              type: 'DESCRIPTION_CHANGE',
-              field: 'description',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log location change
-    if (dto.location !== undefined && dto.location !== oldValues.location) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi địa điểm từ "${oldValues.location || 'không có'}" sang "${dto.location || 'không có'}"`,
-            oldValue: oldValues.location,
-            newValue: dto.location,
-            metadata: {
-              type: 'LOCATION_CHANGE',
-              field: 'location',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log online link change
-    if (
-      dto.onlineLink !== undefined &&
-      dto.onlineLink !== oldValues.onlineLink
-    ) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Cập nhật link online`,
-            oldValue: oldValues.onlineLink,
-            newValue: dto.onlineLink,
-            metadata: {
-              type: 'ONLINE_LINK_CHANGE',
-              field: 'onlineLink',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log mandatory change
-    if (dto.mandatory !== undefined && dto.mandatory !== oldValues.mandatory) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi tính bắt buộc từ ${oldValues.mandatory ? 'có' : 'không'} sang ${dto.mandatory ? 'có' : 'không'}`,
-            oldValue: oldValues.mandatory,
-            newValue: dto.mandatory,
-            metadata: {
-              type: 'MANDATORY_CHANGE',
-              field: 'mandatory',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log estimate time change
-    if (
-      dto.estimateTime !== undefined &&
-      dto.estimateTime !== oldValues.estimateTime
-    ) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi thời gian ước tính từ ${oldValues.estimateTime || 0} phút sang ${dto.estimateTime} phút`,
-            oldValue: oldValues.estimateTime,
-            newValue: dto.estimateTime,
-            metadata: {
-              type: 'ESTIMATE_TIME_CHANGE',
-              field: 'estimateTime',
-            },
-          }),
-        ),
-      );
-    }
-
-    if (
-      dto.instructorCount !== undefined &&
-      dto.instructorCount !== oldValues.instructorCount
-    ) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi số lượng giảng viên từ ${oldValues.instructorCount || 0} sang ${dto.instructorCount}`,
-            oldValue: oldValues.instructorCount,
-            newValue: dto.instructorCount,
-            metadata: {
-              type: 'INSTRUCTOR_COUNT_CHANGE',
-              field: 'instructorCount',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log student count change
-    if (
-      dto.studentCount !== undefined &&
-      dto.studentCount !== oldValues.studentCount
-    ) {
-      logPromises.push(
-        activityLogRepo.save(
-          activityLogRepo.create({
-            activity,
-            user,
-            action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi số lượng sinh viên từ ${oldValues.studentCount || 0} sang ${dto.studentCount}`,
-            oldValue: oldValues.studentCount,
-            newValue: dto.studentCount,
-            metadata: {
-              type: 'STUDENT_COUNT_CHANGE',
-              field: 'studentCount',
-            },
-          }),
-        ),
-      );
-    }
-
-    // Log time changes
-    if (dto.startTime !== undefined) {
-      const oldStartTime =
-        oldValues.startTime instanceof Date
-          ? oldValues.startTime.getTime()
-          : new Date(oldValues.startTime).getTime();
-      const newStartTime = new Date(dto.startTime).getTime();
-
-      if (newStartTime !== oldStartTime) {
-        logPromises.push(
-          activityLogRepo.save(
-            activityLogRepo.create({
-              activity,
-              user,
-              action: ActivityLogActionEnum.UPDATED,
-              message: `Cập nhật thời gian bắt đầu`,
-              oldValue: oldValues.startTime,
-              newValue: dto.startTime,
-              metadata: {
-                type: 'TIME_CHANGE',
-                field: 'startTime',
-              },
-            }),
-          ),
-        );
-      }
-    }
-
-    if (dto.endTime !== undefined) {
-      const oldEndTime =
-        oldValues.endTime instanceof Date
-          ? oldValues.endTime.getTime()
-          : new Date(oldValues.endTime).getTime();
-      const newEndTime = new Date(dto.endTime).getTime();
-
-      if (newEndTime !== oldEndTime) {
-        logPromises.push(
-          activityLogRepo.save(
-            activityLogRepo.create({
-              activity,
-              user,
-              action: ActivityLogActionEnum.UPDATED,
-              message: `Cập nhật thời gian kết thúc`,
-              oldValue: oldValues.endTime,
-              newValue: dto.endTime,
-              metadata: {
-                type: 'TIME_CHANGE',
-                field: 'endTime',
-              },
-            }),
-          ),
-        );
-      }
-    }
-
-    // Log assignee changes
-    if (dto.assignees !== undefined) {
-      const oldAssigneeIds = oldValues.assignees
-        .map((a: any) => a.userId)
-        .sort();
-      const newAssigneeIds = dto.assignees.map((a) => a.userId).sort();
-
-      if (JSON.stringify(oldAssigneeIds) !== JSON.stringify(newAssigneeIds)) {
-        logPromises.push(
-          activityLogRepo.save(
-            activityLogRepo.create({
-              activity,
-              user,
-              action: ActivityLogActionEnum.UPDATED,
-              message: `Cập nhật danh sách người được gán`,
-              oldValue: JSON.stringify(oldAssigneeIds),
-              newValue: JSON.stringify(newAssigneeIds),
-              metadata: {
-                type: 'ASSIGNEE_CHANGE',
-                field: 'assignees',
-                oldAssignees: oldAssigneeIds,
-                newAssignees: newAssigneeIds,
-              },
-            }),
-          ),
-        );
-      }
-    }
-
-    // Execute all log saves
-    if (logPromises.length > 0) {
-      await Promise.all(logPromises);
-    }
   }
 
   async updateParticipants(id: Uuid, dto: UpdateParticipantReqDto) {
@@ -1540,7 +2074,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Tạo phản hồi thành công',
     });
   }
-
   async assignUserToActivity(
     id: Uuid,
     dto: AssignUserToActivityDto,
@@ -1638,7 +2171,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     });
   }
-
   async getAssigneesByActivityId(
     activityId: Uuid,
   ): Promise<ResponseDto<ActivityAssigneeResDto[]>> {
@@ -1653,11 +2185,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy danh sách người được giao thành công',
     });
   }
-
   async deleteAssignee(
     activityId: Uuid,
     userId: Uuid,
-    currentUserId: Uuid, // Thêm parameter
+    currentUserId: Uuid,
   ): Promise<ResponseNoDataDto> {
     return this.dataSource.transaction(async (manager) => {
       const activityAssigneeRepo = manager.getRepository(
@@ -1682,7 +2213,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
       const assignedUser = await userRepo.findOne({ where: { id: userId } });
 
-      // Log before delete
       const deleteLog = activityLogRepo.create({
         activity,
         user: currentUser,
@@ -1711,12 +2241,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     });
   }
-
   async updateAssignee(
     activityId: Uuid,
     userId: Uuid,
     dto: AssignUserToActivityDto,
-    currentUserId: Uuid, // Thêm parameter
+    currentUserId: Uuid,
   ): Promise<ResponseDto<ActivityAssigneeResDto>> {
     return this.dataSource.transaction(async (manager) => {
       const activityAssigneeRepo = manager.getRepository(
@@ -1778,7 +2307,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     });
   }
-
   async linkActivityToSemester(
     activityId: Uuid,
     semesterId: Uuid,
@@ -1801,12 +2329,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Gán hoạt động vào kỳ học thành công',
     });
   }
-
   async unlinkActivityFromSemester(
     activityId: Uuid,
     semesterId: Uuid,
   ): Promise<ResponseNoDataDto> {
-    // Kiểm tra activity tồn tại
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
       relations: ['semester'],
@@ -1830,53 +2356,226 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     query: QueryActivityDto,
     type: QueryType,
   ): Promise<OffsetPaginatedDto<ActivityResDto>> {
-    const qb = this.activityRepo.createQueryBuilder('activity');
+    const qb = this.activityRepo
+      .createQueryBuilder('activity')
+      .leftJoinAndSelect('activity.workspace', 'workspace')
+      .leftJoinAndSelect('activity.assignees', 'assignees')
+      .leftJoinAndSelect('assignees.user', 'assigneeUser')
+      .leftJoinAndSelect('activity.stage', 'stage')
+      .leftJoinAndSelect('activity.category', 'category')
+      .leftJoinAndSelect('activity.subActivities', 'subActivities')
+      .leftJoinAndSelect('subActivities.stage', 'subStage')
+      .leftJoinAndSelect('activity.checklists', 'checklists')
+      .leftJoinAndSelect('checklists.items', 'items')
+      .leftJoinAndSelect('activity.files', 'files')
+      .leftJoinAndSelect('files.file', 'file');
 
+    // Exclude sub-tasks by default - LUÔN áp dụng
+    if (!query.includeSubTasks) {
+      qb.where('activity.parentId IS NULL');
+    } else {
+      qb.where('1=1'); // dummy WHERE
+    }
+
+    // Apply queryType filters - TRƯỚC khi xử lý filters khác
     switch (type) {
       case QueryType.CREATED_BY_ME:
-        qb.where('activity.createdBy = :userId', { userId });
+        qb.andWhere('activity.createdBy = :userId', { userId });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
+
       case QueryType.ASSIGNED_TO_ME:
-        qb.leftJoin('activity.assignees', 'assignee').where(
-          'assignee.userId = :userId',
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId" = :userId)',
           { userId },
         );
-        break;
-      case QueryType.OVERDUE:
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.endTime < :now', { now: new Date() })
-          .andWhere('activity.status != :completed', {
-            completed: 'completed',
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
           });
+        }
         break;
+
+      case QueryType.OVERDUE:
+        qb.andWhere('UPPER(stage.title) = :overdueTitle', {
+          overdueTitle: 'OVERDUE',
+        });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+        break;
+
+      case QueryType.IN_PROGRESS:
+        qb.andWhere('UPPER(stage.title) = :inProgressTitle', {
+          inProgressTitle: 'IN PROGRESS',
+        });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+        break;
+
       case QueryType.TODAY: {
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.startTime >= :today', { today })
-          .andWhere('activity.startTime < :tomorrow', { tomorrow });
+        const startOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          0,
+          0,
+          0,
+          0,
+        );
+        const endOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          23,
+          59,
+          59,
+          999,
+        );
+
+        // Filter workspace trước
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+
+        // Filter thời gian (không filter user)
+        qb.andWhere(
+          '(' +
+            '(activity.startTime IS NOT NULL AND activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay) OR ' +
+            '(activity.endTime IS NOT NULL AND activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay) OR ' +
+            '(activity.startTime IS NOT NULL AND activity.endTime IS NOT NULL AND activity.startTime <= :startOfDay AND activity.endTime >= :endOfDay)' +
+            ')',
+          { startOfDay, endOfDay },
+        );
         break;
       }
+
       case QueryType.COMPLETED:
-        qb.leftJoin('activity.assignees', 'assignee')
-          .where('assignee.userId = :userId', { userId })
-          .andWhere('activity.status = :completed', { completed: 'completed' });
+        qb.andWhere('UPPER(stage.title) = :doneTitle', { doneTitle: 'DONE' });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
+
+      case QueryType.TODO:
+        qb.andWhere('UPPER(stage.title) = :todoTitle', { todoTitle: 'TO DO' });
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+        break;
+
+      case QueryType.ALL:
+        // Lấy tất cả (nhưng vẫn filter workspace nếu có)
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
+        break;
+
       default:
+        if (query.workspaceId) {
+          qb.andWhere('activity.workspaceId = :workspaceId', {
+            workspaceId: query.workspaceId,
+          });
+        }
         break;
     }
 
+    // Apply additional filters (sau khi áp dụng queryType)
+    if (query.q) {
+      qb.andWhere(
+        '(activity.name ILIKE :search OR activity.description ILIKE :search)',
+        { search: `%${query.q}%` },
+      );
+    }
+
+    if (query.type) {
+      qb.andWhere('activity.type = :type', { type: query.type });
+    }
+
+    if (query.priority) {
+      qb.andWhere('activity.priority = :priority', {
+        priority: query.priority,
+      });
+    }
+
+    if (query.stageId) {
+      qb.andWhere('activity.stageId = :stageId', { stageId: query.stageId });
+    }
+
+    if (query.stageGroupStatus) {
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
+        stageGroupStatus: query.stageGroupStatus,
+      });
+    }
+
+    if (query.categoryId) {
+      qb.andWhere('activity.categoryId = :categoryId', {
+        categoryId: query.categoryId,
+      });
+    }
+
+    if (query.mandatory !== undefined) {
+      qb.andWhere('activity.mandatory = :mandatory', {
+        mandatory: query.mandatory,
+      });
+    }
+
+    if (query.startTimeFrom) {
+      qb.andWhere('activity.startTime >= :startTimeFrom', {
+        startTimeFrom: query.startTimeFrom,
+      });
+    }
+
+    if (query.endTimeTo) {
+      qb.andWhere('activity.endTime <= :endTimeTo', {
+        endTimeTo: query.endTimeTo,
+      });
+    }
+
+    if (query.createdBy) {
+      qb.andWhere('activity.createdBy = :createdBy', {
+        createdBy: query.createdBy,
+      });
+    }
+
+    // Order by creation date
     qb.orderBy('activity.createdAt', 'DESC');
+
+    this.logger.log('SQL:', qb.getSql());
+    this.logger.log('Params:', qb.getParameters());
+
+    // Paginate results
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
       takeAll: false,
     });
+
+    // Calculate progress for each activity
+    const activitiesWithProgress = activities.map((activity) => {
+      const progress = this.calculateProgress(activity);
+      return { ...activity, progress };
+    });
+
     return new OffsetPaginatedDto({
-      data: plainToInstance(ActivityResDto, activities, {
+      data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
@@ -1884,12 +2583,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
-  // Event Feedback Methods
   async createEventFeedback(
     activityId: Uuid,
     dto: CreateEventFeedbackDto,
   ): Promise<ResponseDto<EventFeedbackResDto>> {
-    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -1900,7 +2597,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Kiểm tra đã có feedback với email này chưa
     const existingFeedback = await this.eventFeedbackRepo.findOne({
       where: { activityId, email: dto.email },
     });
@@ -1931,7 +2627,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     });
   }
-
   async getEventFeedbacksByActivityId(
     activityId: Uuid,
   ): Promise<ResponseDto<EventFeedbackResDto[]>> {
@@ -1957,7 +2652,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy danh sách đánh giá sự kiện thành công',
     });
   }
-
   async getEventFeedbackById(
     feedbackId: Uuid,
   ): Promise<ResponseDto<EventFeedbackResDto>> {
@@ -1972,9 +2666,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy đánh giá sự kiện thành công',
     });
   }
-
   async getEventFeedbackStats(activityId: Uuid): Promise<ResponseDto<any>> {
-    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -1985,7 +2677,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
-    // Lấy tất cả feedbacks để tính toán thống kê
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
       select: ['rating'],
@@ -2004,12 +2695,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     }
 
-    // Tính điểm trung bình
     const ratingValues = feedbacks.map((f) => f.rating);
     const averageRating =
       ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 
-    // Tính phân bố điểm
     const ratingDistribution = feedbacks.reduce(
       (acc, feedback) => {
         const rating = feedback.rating;
@@ -2022,18 +2711,255 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return new ResponseDto({
       data: {
         totalFeedbacks,
-        averageRating: Math.round(averageRating * 100) / 100, // Làm tròn 2 chữ số thập phân
+        averageRating: Math.round(averageRating * 100) / 100,
         ratingDistribution,
       },
       message: 'Lấy thống kê đánh giá sự kiện thành công',
     });
   }
 
-  /**
-   * Tính progress của activity
-   * @param activity Activity entity với relations đã load
-   * @returns Progress percentage (0-100)
-   */
+  async addLinkToActivity(
+    activityId: Uuid,
+    dto: AddActivityLinkDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    let linkPreviewData = null;
+    if (this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
+    const link = this.activityLinkRepo.create({
+      activityId,
+      title: dto.title,
+      url: dto.url,
+      description: dto.description,
+      createdBy: userId,
+      thumbnail: linkPreviewData
+        ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
+        : undefined,
+      siteName: linkPreviewData?.siteName,
+      siteDescription: linkPreviewData?.description,
+      favicon: linkPreviewData?.favicon,
+      metadata: linkPreviewData
+        ? {
+            originalTitle: linkPreviewData.title,
+            allImages: linkPreviewData.images,
+            fetchedAt: new Date().toISOString(),
+          }
+        : undefined,
+    });
+
+    const savedLink = await this.activityLinkRepo.save(link);
+
+    const linkWithCreator = await this.activityLinkRepo.findOne({
+      where: { id: savedLink.id },
+      relations: ['creator'],
+    });
+
+    const responseData = {
+      ...linkWithCreator,
+      linkPreview: linkPreviewData
+        ? {
+            thumbnail: linkWithCreator.thumbnail,
+            siteName: linkWithCreator.siteName,
+            siteDescription: linkWithCreator.siteDescription,
+            favicon: linkWithCreator.favicon,
+          }
+        : undefined,
+    };
+
+    const members = await this.getMembersInWorkspace(activity.workspaceId);
+
+    for (const member of members) {
+      const notificationData: SendPushNotificationDto = {
+        userId: member.id,
+        title: 'Thêm link mới',
+        message: `${activity.name} có link mới được thêm vào bởi ${linkWithCreator.creator.name}.`,
+        type: NotificationType.ACTIVITY,
+        data: {
+          uri: `/workspaces/${activity.workspaceId}`,
+          open: activity,
+        },
+      };
+
+      await this.notificationQueue.add(JobName.NOTIFICATION, notificationData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    }
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Thêm link thành công',
+    });
+  }
+
+  async getActivityLinks(
+    activityId: Uuid,
+  ): Promise<ResponseDto<ActivityLinkResDto[]>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const links = await this.activityLinkRepo.find({
+      where: { activityId },
+      relations: ['creator'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const linksWithPreview = links.map((link) => ({
+      ...link,
+      linkPreview:
+        link.thumbnail || link.siteName || link.siteDescription
+          ? {
+              thumbnail: link.thumbnail,
+              siteName: link.siteName,
+              siteDescription: link.siteDescription,
+              favicon: link.favicon,
+            }
+          : undefined,
+    }));
+
+    return new ResponseDto<ActivityLinkResDto[]>({
+      data: plainToInstance(ActivityLinkResDto, linksWithPreview, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách link thành công',
+    });
+  }
+
+  async updateActivityLink(
+    activityId: Uuid,
+    linkId: Uuid,
+    dto: AddActivityLinkDto,
+  ): Promise<ResponseDto<ActivityLinkResDto>> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: { id: linkId, activityId },
+      relations: ['creator'],
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    const shouldUpdatePreview = link.url !== dto.url;
+    let linkPreviewData = null;
+
+    if (shouldUpdatePreview && this.linkPreviewService.isValidUrl(dto.url)) {
+      try {
+        linkPreviewData = await this.linkPreviewService.getPreview(dto.url);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch preview for ${dto.url}:`,
+          error.message,
+        );
+      }
+    }
+
+    link.title = dto.title;
+    link.url = dto.url;
+    link.description = dto.description;
+
+    if (shouldUpdatePreview && linkPreviewData) {
+      link.thumbnail = this.linkPreviewService.getBestThumbnail(
+        linkPreviewData.images || [],
+      );
+      link.siteName = linkPreviewData.siteName;
+      link.siteDescription = linkPreviewData.description;
+      link.favicon = linkPreviewData.favicon;
+      link.metadata = {
+        originalTitle: linkPreviewData.title,
+        allImages: linkPreviewData.images,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    const updatedLink = await this.activityLinkRepo.save(link);
+
+    const responseData = {
+      ...updatedLink,
+      linkPreview:
+        updatedLink.thumbnail ||
+        updatedLink.siteName ||
+        updatedLink.siteDescription
+          ? {
+              thumbnail: updatedLink.thumbnail,
+              siteName: updatedLink.siteName,
+              siteDescription: updatedLink.siteDescription,
+              favicon: updatedLink.favicon,
+            }
+          : undefined,
+    };
+
+    return new ResponseDto<ActivityLinkResDto>({
+      data: plainToInstance(ActivityLinkResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật link thành công',
+    });
+  }
+
+  async removeLinkFromActivity(
+    activityId: Uuid,
+    linkId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const activity = await this.activityRepo.findOne({
+      where: { id: activityId },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity không tồn tại');
+    }
+
+    const link = await this.activityLinkRepo.findOne({
+      where: {
+        id: linkId,
+        activityId,
+      },
+    });
+
+    if (!link) {
+      throw new NotFoundException('Link không tồn tại');
+    }
+
+    await this.activityLinkRepo.remove(link);
+
+    return new ResponseNoDataDto({
+      message: 'Xóa link thành công',
+    });
+  }
+
   private calculateProgress(activity: ActivityEntity): number {
     const hasSubActivities = activity.subActivities?.length > 0;
     const hasChecklists = activity.checklists?.length > 0;
@@ -2049,7 +2975,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const subTaskCount = activity.subActivities.length;
       const subTaskWeight = 100 / (subTaskCount + 1);
 
-      // Tính progress của các subtask
       activity.subActivities.forEach((subActivity) => {
         totalWeight += subTaskWeight;
         if (subActivity.stage?.isCompleted) {
@@ -2057,14 +2982,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       });
 
-      // Thêm weight cho task chính
       totalWeight += subTaskWeight;
       if (activity.stage?.isCompleted) {
         completedWeight += subTaskWeight;
       }
     }
 
-    // Case 3: Task có checklists
     if (hasChecklists) {
       let totalChecklistItems = 0;
       let completedChecklistItems = 0;
@@ -2081,30 +3004,25 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
 
       if (totalChecklistItems > 0) {
-        // Nếu có cả subtask và checklist, chia weight
         if (hasSubActivities) {
           const checklistWeight = 50;
           const subTaskActualWeight = 50;
 
-          // Rescale subtask progress
           const subTaskProgress =
             totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
           completedWeight = (subTaskProgress * subTaskActualWeight) / 100;
           totalWeight = subTaskActualWeight;
 
-          // Add checklist progress
           const checklistProgress =
             (completedChecklistItems / totalChecklistItems) * checklistWeight;
           completedWeight += checklistProgress;
           totalWeight += checklistWeight;
         } else {
-          // Chỉ có checklist
           const itemWeight = 100 / (totalChecklistItems + 1); // +1 cho task chính
 
           completedWeight = completedChecklistItems * itemWeight;
           totalWeight = totalChecklistItems * itemWeight;
 
-          // Thêm weight cho task chính
           totalWeight += itemWeight;
           if (activity.stage?.isCompleted) {
             completedWeight += itemWeight;
@@ -2113,11 +3031,527 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
     }
 
-    // Tính phần trăm cuối cùng
     const progress =
       totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
 
-    // Làm tròn đến 2 chữ số thập phân
     return Math.round(progress * 100) / 100;
+  }
+
+  private async handlePositionAndStageChanges(
+    dto: UpdateActivityDto,
+    oldValues: any,
+    activityRepo: Repository<ActivityEntity>,
+  ): Promise<{ hasStageChange: boolean; hasPositionChange: boolean }> {
+    const hasStageChange =
+      dto.stageId !== undefined && dto.stageId !== oldValues.stageId;
+    const hasPositionChange =
+      dto.position !== undefined && dto.position !== oldValues.position;
+
+    if (hasStageChange) {
+      await Promise.all([
+        activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position - 1' })
+          .where('stageId = :oldStageId', { oldStageId: oldValues.stageId })
+          .andWhere('position > :oldPosition', {
+            oldPosition: oldValues.position,
+          })
+          .execute(),
+
+        activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position + 1' })
+          .where('stageId = :newStageId', { newStageId: dto.stageId })
+          .andWhere('position >= :newPosition', {
+            newPosition: dto.position ?? oldValues.position,
+          })
+          .execute(),
+      ]);
+    } else if (hasPositionChange && !hasStageChange) {
+      const stageId = dto.stageId ?? oldValues.stageId;
+      const oldPosition = oldValues.position;
+      const newPosition = dto.position!;
+
+      if (oldPosition < newPosition) {
+        await activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position - 1' })
+          .where('stageId = :stageId', { stageId })
+          .andWhere('position > :oldPosition', { oldPosition })
+          .andWhere('position <= :newPosition', { newPosition })
+          .execute();
+      } else if (oldPosition > newPosition) {
+        await activityRepo
+          .createQueryBuilder()
+          .update(ActivityEntity)
+          .set({ position: () => 'position + 1' })
+          .where('stageId = :stageId', { stageId })
+          .andWhere('position >= :newPosition', { newPosition })
+          .andWhere('position < :oldPosition', { oldPosition })
+          .execute();
+      }
+    }
+
+    return {
+      hasStageChange,
+      hasPositionChange,
+    };
+  }
+
+  private async updateActivityAssignees(
+    activityId: Uuid,
+    newAssignees: ActivityAssigneeDto[],
+    activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
+  ): Promise<void> {
+    await activityAssigneeRepo.delete({ activityId });
+
+    if (newAssignees && newAssignees.length > 0) {
+      const assigneeEntities = newAssignees.map((assigneeDto) =>
+        activityAssigneeRepo.create({
+          activityId,
+          userId: assigneeDto.userId,
+          role: assigneeDto.role || AssigneeRole.COLLABORATOR,
+        }),
+      );
+      await activityAssigneeRepo.save(assigneeEntities);
+    }
+  }
+
+  private async createActivityUpdateLogs(
+    activity: ActivityEntity,
+    user: UserEntity,
+    dto: UpdateActivityDto,
+    oldValues: any,
+    activityLogRepo: Repository<ActivityLogEntity>,
+  ): Promise<void> {
+    const newStage = dto.stageId
+      ? await this.stageRepo.findOne({ where: { id: dto.stageId } })
+      : null;
+
+    const logPromises: Promise<ActivityLogEntity>[] = [];
+
+    if (dto.stageId !== undefined && dto.stageId !== oldValues.stageId) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Chuyển hoạt động từ stage ${oldValues.stageName} sang ${newStage?.title}`,
+            oldValue: oldValues.stageId,
+            newValue: dto.stageId,
+            metadata: {
+              type: 'STAGE_CHANGE',
+              field: 'stageId',
+              oldStageId: oldValues.stageId,
+              newStageId: dto.stageId,
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log name change
+    if (dto.name !== undefined && dto.name !== oldValues.name) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Đổi tên hoạt động từ "${oldValues.name}" thành "${dto.name}"`,
+            oldValue: oldValues.name,
+            newValue: dto.name,
+            metadata: {
+              type: 'NAME_CHANGE',
+              field: 'name',
+            },
+          }),
+        ),
+      );
+    }
+
+    // Log priority change
+    if (dto.priority !== undefined && dto.priority !== oldValues.priority) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: oldValues.priority
+              ? `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`
+              : `Thiết lập độ ưu tiên: ${dto.priority}`,
+            metadata: {
+              type: 'PRIORITY_CHANGE',
+              field: 'priority',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (dto.type !== undefined && dto.type !== oldValues.type) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi loại hoạt động thành ${dto.type}`,
+            metadata: {
+              type: 'TYPE_CHANGE',
+              field: 'type',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.description !== undefined &&
+      dto.description !== oldValues.description
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: dto.description
+              ? `Cập nhật mô tả hoạt động thành "${dto.description}"`
+              : 'Xóa mô tả hoạt động',
+            metadata: {
+              type: 'DESCRIPTION_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (dto.location !== undefined && dto.location !== oldValues.location) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: oldValues.location
+              ? `Cập nhập địa điểm từ "${oldValues.location || 'chưa có'}" thành "${dto.location || 'chưa có'}"`
+              : `Thêm địa điểm: "${dto.location || 'chưa có'}"`,
+            metadata: {
+              type: 'LOCATION_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.onlineLink !== undefined &&
+      dto.onlineLink !== oldValues.onlineLink
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Cập nhật link online`,
+            metadata: {
+              type: 'ONLINE_LINK_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (dto.mandatory !== undefined && dto.mandatory !== oldValues.mandatory) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi tính bắt buộc từ ${oldValues.mandatory ? 'có' : 'không'} sang ${dto.mandatory ? 'có' : 'không'}`,
+            oldValue: oldValues.mandatory,
+            newValue: dto.mandatory,
+            metadata: {
+              type: 'MANDATORY_CHANGE',
+              field: 'mandatory',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.estimateTime !== undefined &&
+      dto.estimateTime !== oldValues.estimateTime
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi thời gian ước tính từ ${oldValues.estimateTime || 0} phút sang ${dto.estimateTime} phút`,
+            metadata: {
+              type: 'ESTIMATE_TIME_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.instructorCount !== undefined &&
+      dto.instructorCount !== oldValues.instructorCount
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `Thay đổi số lượng giảng viên từ ${oldValues.instructorCount || 0} sang ${dto.instructorCount}`,
+            metadata: {
+              type: 'INSTRUCTOR_COUNT_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (
+      dto.studentCount !== undefined &&
+      dto.studentCount !== oldValues.studentCount
+    ) {
+      logPromises.push(
+        activityLogRepo.save(
+          activityLogRepo.create({
+            activity,
+            user,
+            action: ActivityLogActionEnum.UPDATED,
+            message: `${user.name} thay đổi số lượng sinh viên từ ${oldValues.studentCount || 0} sang ${dto.studentCount}`,
+            metadata: {
+              type: 'STUDENT_COUNT_CHANGE',
+            },
+          }),
+        ),
+      );
+    }
+
+    if (dto.startTime !== undefined) {
+      const oldStartTime =
+        oldValues.startTime instanceof Date
+          ? oldValues.startTime.getTime()
+          : new Date(oldValues.startTime).getTime();
+      const newStartTime = new Date(dto.startTime).getTime();
+
+      if (newStartTime !== oldStartTime) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật thời gian bắt đầu`,
+              metadata: {
+                type: 'TIME_CHANGE',
+                field: 'startTime',
+                value: newStartTime,
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    if (dto.endTime !== undefined) {
+      const oldEndTime =
+        oldValues.endTime instanceof Date
+          ? oldValues.endTime.getTime()
+          : new Date(oldValues.endTime).getTime();
+      const newEndTime = new Date(dto.endTime).getTime();
+
+      if (newEndTime !== oldEndTime) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật thời gian kết thúc`,
+              metadata: {
+                type: 'TIME_CHANGE',
+                field: 'endTime',
+                value: newEndTime,
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    if (dto.assignees !== undefined) {
+      const oldAssigneeIds = oldValues.assignees
+        .map((a: any) => a.userId)
+        .sort();
+      const newAssigneeIds = dto.assignees.map((a) => a.userId).sort();
+
+      if (JSON.stringify(oldAssigneeIds) !== JSON.stringify(newAssigneeIds)) {
+        logPromises.push(
+          activityLogRepo.save(
+            activityLogRepo.create({
+              activity,
+              user,
+              action: ActivityLogActionEnum.UPDATED,
+              message: `Cập nhật danh sách người được gán`,
+              oldValue: JSON.stringify(oldAssigneeIds),
+              newValue: JSON.stringify(newAssigneeIds),
+              metadata: {
+                type: 'ASSIGNEE_CHANGE',
+                field: 'assignees',
+                oldAssignees: oldAssigneeIds,
+                newAssignees: newAssigneeIds,
+              },
+            }),
+          ),
+        );
+      }
+    }
+
+    if (logPromises.length > 0) {
+      await Promise.all(logPromises);
+    }
+  }
+
+  private aggregateCommentReactions(
+    reactions: ActivityCommentReactionEntity[],
+  ) {
+    const counts: Record<string, number> = {};
+
+    const summary: Record<
+      string,
+      {
+        count: number;
+        users: Array<{ id: string; name: string; avatar?: string }>;
+      }
+    > = {};
+
+    reactions.forEach((reaction) => {
+      const type = reaction.type;
+
+      counts[type] = (counts[type] || 0) + 1;
+
+      if (!summary[type]) {
+        summary[type] = { count: 0, users: [] };
+      }
+
+      summary[type].count++;
+
+      if (reaction.user) {
+        summary[type].users.push({
+          id: reaction.userId,
+          name: reaction.user.name || '',
+          avatar: reaction.user.avatar,
+        });
+      }
+    });
+
+    return { counts, summary };
+  }
+
+  private calculateDetailedProgress(activity: ActivityEntity): {
+    progress: number;
+    details: {
+      subTasksProgress: number;
+      checklistsProgress: number;
+      stageCompleted: boolean;
+      totalSubTasks: number;
+      completedSubTasks: number;
+      totalChecklistItems: number;
+      completedChecklistItems: number;
+    };
+  } {
+    const stageCompleted = activity.stage?.isCompleted || false;
+
+    const subTasks = activity.subActivities || [];
+    const totalSubTasks = subTasks.length;
+    const completedSubTasks = subTasks.filter(
+      (sub) => sub.stage?.isCompleted,
+    ).length;
+    const subTasksProgress =
+      totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : 0;
+
+    let totalChecklistItems = 0;
+    let completedChecklistItems = 0;
+
+    const checklists = activity.checklists || [];
+    checklists.forEach((checklist) => {
+      const items = checklist.items || [];
+      items.forEach((item) => {
+        totalChecklistItems++;
+        if (item.isDone) {
+          completedChecklistItems++;
+        }
+      });
+    });
+
+    const checklistsProgress =
+      totalChecklistItems > 0
+        ? (completedChecklistItems / totalChecklistItems) * 100
+        : 0;
+
+    let totalProgress = 0;
+    let weightCount = 0;
+
+    if (totalSubTasks > 0) {
+      totalProgress += subTasksProgress;
+      weightCount++;
+    }
+
+    if (totalChecklistItems > 0) {
+      totalProgress += checklistsProgress;
+      weightCount++;
+    }
+
+    if (weightCount === 0) {
+      totalProgress = stageCompleted ? 100 : 0;
+    } else {
+      totalProgress = totalProgress / weightCount;
+    }
+
+    if (stageCompleted) {
+      totalProgress = Math.max(totalProgress, 100);
+    }
+
+    return {
+      progress: Math.round(totalProgress * 100) / 100,
+      details: {
+        subTasksProgress: Math.round(subTasksProgress * 100) / 100,
+        checklistsProgress: Math.round(checklistsProgress * 100) / 100,
+        stageCompleted,
+        totalSubTasks,
+        completedSubTasks,
+        totalChecklistItems,
+        completedChecklistItems,
+      },
+    };
+  }
+
+  private async getMembersInWorkspace(workspaceId: Uuid) {
+    const members = await this.workspaceMemberRepo.find({
+      where: {
+        workspaceId,
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+      relations: ['user'],
+    });
+    return members.map((member) => member.user);
   }
 }

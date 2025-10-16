@@ -1,10 +1,13 @@
+import { FileEntity } from '@/api/files/entities/files.entity';
+import { StagesModule } from '@/api/stages/stages.module';
+import { UploadModule } from '@/api/upload/upload.module';
+import { UserEntity } from '@/api/users/entities/user.entity';
 import { EmailQueueModule } from '@/background/queues/email-queue/email-queue.module';
+import { NotificationQueueModule } from '@/background/queues/notification-queue/notification-queue.module';
+import { CloudinaryModule } from '@/cloudinary/cloudinary.module';
 import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { StagesModule } from '../stages/stages.module';
-import { UploadModule } from '../upload/upload.module';
-import { UserEntity } from '../users/entities/user.entity';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { WorkspaceViewSettings } from './entities/workspace-view-settings.entity';
 import { Workspaces } from './entities/workspace.entity';
@@ -20,10 +23,13 @@ import { WorkspacesService } from './workspaces.service';
       WorkspaceViewSettings,
       UserEntity,
       DataSource,
+      FileEntity,
     ]),
+    CloudinaryModule,
     EmailQueueModule,
     StagesModule,
     UploadModule,
+    NotificationQueueModule,
   ],
   controllers: [WorkspacesController],
   providers: [WorkspacesService],

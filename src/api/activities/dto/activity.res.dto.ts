@@ -3,7 +3,6 @@ import { StageResDto } from '@/api/stages/dto/stage.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import {
-  ActivityCategory,
   ActivityPiority,
   ActivityStatus,
   ActivityType,
@@ -11,12 +10,25 @@ import {
 import {
   ClassField,
   NumberField,
+  StringField,
   UUIDField,
 } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { ActivityAssigneeResDto } from './activity-assignee.res.dto';
+import { ActivityCategoryResDto } from './activity-category.res.dto';
 import { ActivityChecklistResDto } from './activity-checklist.res.dto';
+import { ActivityFileResDto } from './activity-file.res.dto';
+
+export class WorkspaceMinimalResDto {
+  @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ example: 'Workspace Công nghệ' })
+  @Expose()
+  name: string;
+}
 
 export class ActivityResDto {
   @ApiProperty({ example: '72e7e64a-b8d7-436c-a2cd-cff34c450fa0' })
@@ -85,13 +97,19 @@ export class ActivityResDto {
   @Expose()
   mandatory?: boolean;
 
-  @ApiProperty({
-    enum: ActivityCategory,
-    example: ActivityCategory.SEMINAR,
+  @ClassField(() => ActivityCategoryResDto, {
     required: false,
+    description: 'Danh mục hoạt động',
   })
   @Expose()
-  category?: ActivityCategory;
+  category?: ActivityCategoryResDto;
+
+  @StringField({
+    example: 'category-uuid',
+    description: 'ID danh mục hoạt động',
+  })
+  @Expose()
+  categoryId?: Uuid;
 
   @ApiProperty({ example: '2025-07-20T08:43:00.230Z' })
   @Expose()
@@ -119,6 +137,14 @@ export class ActivityResDto {
   })
   @Expose()
   workspaceId: Uuid;
+
+  @ClassField(() => WorkspaceMinimalResDto, {
+    required: false,
+    description: 'Thông tin không gian làm việc',
+  })
+  @Expose()
+  @Type(() => WorkspaceMinimalResDto)
+  workspace?: WorkspaceMinimalResDto;
 
   @ApiProperty({
     example: 5,
@@ -175,8 +201,16 @@ export class ActivityResDto {
   @Expose()
   stage?: WrapperType<StageResDto>;
 
+  @ClassField(() => ActivityFileResDto, {
+    isArray: true,
+    required: false,
+    description: 'Danh sách file đính kèm',
+  })
+  @Expose()
+  files?: ActivityFileResDto[];
+
   @NumberField({
-    example: 0,
+    example: 75.5,
   })
   @Expose()
   progress: number;

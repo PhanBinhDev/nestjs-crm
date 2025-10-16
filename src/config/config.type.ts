@@ -1,5 +1,7 @@
 import { AuthConfig } from '@/api/auth/config/auth-config.type';
+import { NotiConfig } from '@/api/notification/config/noti-config.type';
 import { BackgroundConfig } from '@/background/config/background-config.type';
+import { CloudinaryConfig } from '@/cloudinary/config/cloudinary-config.type';
 import { DatabaseConfig } from '@/database/config/database-config.type';
 import { MailConfig } from '@/mail/config/mail-config.type';
 import { RedisConfig } from '@/redis/config/redis-config.type';
@@ -12,4 +14,6 @@ export type AllConfigType = {
   background: BackgroundConfig;
   mail: MailConfig;
   redis: RedisConfig;
+  noti: NotiConfig;
+  cloudinary: CloudinaryConfig;
 };

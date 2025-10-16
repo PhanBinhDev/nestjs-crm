@@ -1,3 +1,4 @@
+import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { IWorkspaceMemberJob } from '@/common/interfaces/job.interface';
@@ -6,6 +7,7 @@ import { AllConfigType } from '@/config/config.type';
 import { WORKSPACE_INVITE_TTL } from '@/constants/app.constant';
 import { CacheKey } from '@/constants/cache.constant';
 import { JobName, QueueName } from '@/constants/job.constant';
+import { NotificationType } from '@/database/enum/notifications.enum';
 import {
   WorkspaceMemberStatus,
   WorkspaceRole,
@@ -18,6 +20,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -28,6 +31,8 @@ import { plainToInstance } from 'class-transformer';
 import { randomBytes } from 'crypto';
 import ms from 'ms';
 import { DataSource, In, Repository } from 'typeorm';
+import { FileEntity } from '../files/entities/files.entity';
+import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
 import { StagesService } from '../stages/stages.service';
 import { UploadService } from '../upload/upload.service';
 import { UserEntity } from '../users/entities/user.entity';
@@ -36,6 +41,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
 import { WorkspaceMemberResDto } from './dto/workspace-member.res.dto';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
@@ -44,6 +50,8 @@ import { WorkspaceRoleHierarchy } from './utils/workspace-role-hierarchy';
 
 @Injectable()
 export class WorkspacesService {
+  private readonly logger = new Logger(WorkspacesService.name);
+
   constructor(
     @InjectRepository(Workspaces)
     private readonly workspaceRepository: Repository<Workspaces>,
@@ -57,9 +65,12 @@ export class WorkspacesService {
     private readonly uploadService: UploadService,
     @InjectQueue(QueueName.EMAIL)
     private readonly emailQueue: Queue<IWorkspaceMemberJob, any, string>,
+    @InjectQueue(QueueName.NOTIFICATION)
+    private readonly notificationQueue: Queue,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly configService: ConfigService<AllConfigType>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async verifyInviteToken(
@@ -158,7 +169,7 @@ export class WorkspacesService {
     await Promise.all(
       membersToInvite.map(async (user) => {
         const token = randomBytes(32).toString('hex');
-        const inviteLink = `${baseURL}/invite-members?token=${token}`;
+        const inviteLink = `${baseURL}/invite-members/${token}`;
 
         await this.cacheManager.store.set(
           createCacheKey(CacheKey.WORKSPACE_INVITE, token),
@@ -175,6 +186,31 @@ export class WorkspacesService {
           ownerName: workspace.owner.name,
           email: user.email,
         });
+
+        const notificationData: SendPushNotificationDto = {
+          userId: user.id,
+          title: 'Lời mời tham gia không gian làm việc',
+          message: `Bạn đã được mời tham gia không gian làm việc "${workspace.name}"`,
+          senderId: workspace.owner.id,
+          type: NotificationType.WORKSPACE,
+          data: {
+            uri: `/invite-members/${token}`,
+            workspaceId: workspace.id,
+          },
+        };
+
+        await this.notificationQueue.add(
+          JobName.WORKSPACE_INVITATION,
+          notificationData,
+          {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 5000,
+            },
+            removeOnComplete: true,
+          },
+        );
       }),
     );
 
@@ -230,94 +266,172 @@ export class WorkspacesService {
   async create(
     dto: CreateWorkspaceDto,
     ownerId: Uuid,
+    avatar?: Express.Multer.File,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
-    return await this.dataSource.transaction(async (manager) => {
-      const { members, avatar, ...body } = dto;
+    let uploadedPublicId: string | null = null;
 
-      const owner = await manager.findOne(UserEntity, {
-        where: { id: ownerId },
-      });
+    return await this.dataSource
+      .transaction(async (manager) => {
+        const { members, ...body } = dto;
 
-      const workspaceData = {
-        ...body,
-        owner,
-        ...(avatar && avatar.trim() !== '' ? { avatar } : {}),
-      };
-
-      const workspace = this.workspaceRepository.create(workspaceData);
-      const savedWorkspace = await manager.save(workspace);
-
-      await this.stagesService.initDefaultStages(savedWorkspace.id, manager);
-
-      const ownerMember = this.membersRepository.create({
-        workspaceId: savedWorkspace.id,
-        userId: ownerId,
-        role: WorkspaceRole.OWNER,
-        status: WorkspaceMemberStatus.ACTIVE,
-      });
-      await manager.save(ownerMember);
-
-      if (members && members.length > 0) {
-        const users = await manager.find(this.userRepository.target, {
-          where: { id: In(members) },
+        const owner = await manager.findOne(UserEntity, {
+          where: { id: ownerId },
         });
 
-        if (users.length !== members.length) {
-          const foundUserIds = users.map((user) => user.id);
-          const missingUserIds = members.filter(
-            (id) => !foundUserIds.includes(id),
+        const workspace = this.workspaceRepository.create({
+          ...body,
+          owner,
+        });
+        const savedWorkspace = await manager.save(workspace);
+
+        if (avatar) {
+          const folder = `workspaces/${savedWorkspace.id}`;
+          const fileName = avatar.originalname;
+
+          const uploadResult = await this.cloudinaryService.uploadToFolder(
+            avatar,
+            folder,
+            fileName,
           );
-          throw new BadRequestException(
-            `Không tìm thấy người dùng với ID: ${missingUserIds.join(', ')}`,
+
+          if ('secure_url' in uploadResult) {
+            uploadedPublicId = uploadResult.public_id;
+
+            const fileEntity = manager.create(FileEntity, {
+              url: uploadResult.secure_url,
+              originalName: avatar.originalname,
+              mimeType: avatar.mimetype,
+              size: uploadResult.bytes,
+              fileName: fileName,
+              uploadedBy: ownerId,
+              workspaceId: savedWorkspace.id,
+              metadata: {
+                public_id: uploadResult.public_id,
+                format: uploadResult.format,
+                resource_type: uploadResult.resource_type,
+                width: uploadResult.width,
+                height: uploadResult.height,
+                bytes: uploadResult.bytes,
+              },
+            });
+            await manager.save(FileEntity, fileEntity);
+
+            await manager.update(Workspaces, savedWorkspace.id, {
+              avatar: uploadResult.secure_url,
+            });
+            savedWorkspace.avatar = uploadResult.secure_url;
+          }
+        }
+
+        await this.stagesService.initDefaultStages(savedWorkspace.id, manager);
+
+        const ownerMember = this.membersRepository.create({
+          workspaceId: savedWorkspace.id,
+          userId: ownerId,
+          role: WorkspaceRole.OWNER,
+          status: WorkspaceMemberStatus.ACTIVE,
+        });
+        await manager.save(ownerMember);
+
+        if (members && members.length > 0) {
+          const users = await manager.find(this.userRepository.target, {
+            where: { id: In(members) },
+          });
+
+          if (users.length !== members.length) {
+            const foundUserIds = users.map((user) => user.id);
+            const missingUserIds = members.filter(
+              (id) => !foundUserIds.includes(id),
+            );
+            throw new BadRequestException(
+              `Không tìm thấy người dùng với ID: ${missingUserIds.join(', ')}`,
+            );
+          }
+
+          const membersToAdd = members.map((userId) => {
+            return this.membersRepository.create({
+              workspaceId: savedWorkspace.id,
+              userId,
+              role: WorkspaceRole.MEMBER,
+              status: WorkspaceMemberStatus.PENDING,
+            });
+          });
+
+          await manager.save(membersToAdd);
+
+          const baseURL = this.configService.getOrThrow('app.frontendUrl', {
+            infer: true,
+          });
+
+          await Promise.all(
+            users.map(async (user) => {
+              const token = randomBytes(32).toString('hex');
+              const inviteLink = `${baseURL}/invite-members?token=${token}`;
+
+              await this.cacheManager.store.set(
+                createCacheKey(CacheKey.WORKSPACE_INVITE, token),
+                JSON.stringify({
+                  workspaceId: savedWorkspace.id,
+                  userId: user.id,
+                }),
+                ms(WORKSPACE_INVITE_TTL),
+              );
+
+              await this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
+                workspaceName: savedWorkspace.name,
+                inviteLink,
+                ownerName: owner.name,
+                email: user.email,
+              });
+
+              const notificationData: SendPushNotificationDto = {
+                userId: user.id,
+                title: 'Lời mời tham gia không gian làm việc',
+                message: `Bạn đã được mời tham gia không gian làm việc "${workspace.name}"`,
+                senderId: workspace.owner.id,
+                type: NotificationType.WORKSPACE,
+                data: {
+                  uri: `/invite-members/${token}`,
+                  workspace,
+                },
+              };
+
+              await this.notificationQueue.add(
+                JobName.WORKSPACE_INVITATION,
+                notificationData,
+                {
+                  attempts: 3,
+                  backoff: {
+                    type: 'exponential',
+                    delay: 5000,
+                  },
+                  removeOnComplete: true,
+                },
+              );
+            }),
           );
         }
 
-        const membersToAdd = members.map((userId) => {
-          return this.membersRepository.create({
-            workspaceId: savedWorkspace.id,
-            userId,
-            role: WorkspaceRole.MEMBER,
-            status: WorkspaceMemberStatus.PENDING,
-          });
-        });
-
-        await manager.save(membersToAdd);
-
-        const baseURL = this.configService.getOrThrow('app.frontendUrl', {
-          infer: true,
-        });
-
-        await Promise.all(
-          users.map(async (user) => {
-            const token = randomBytes(32).toString('hex');
-            const inviteLink = `${baseURL}/invite-members?token=${token}`;
-
-            await this.cacheManager.store.set(
-              createCacheKey(CacheKey.WORKSPACE_INVITE, token),
-              JSON.stringify({
-                workspaceId: savedWorkspace.id,
-                userId: user.id,
-              }),
-              ms(WORKSPACE_INVITE_TTL),
-            );
-
-            await this.emailQueue.add(JobName.WORKSPACE_INVITATION, {
-              workspaceName: savedWorkspace.name,
-              inviteLink,
-              ownerName: owner.name,
-              email: user.email,
-            });
+        return new ResponseDto<BaseWorkspaceResDto>({
+          data: plainToInstance(BaseWorkspaceResDto, savedWorkspace, {
+            excludeExtraneousValues: true,
           }),
-        );
-      }
-
-      return new ResponseDto<BaseWorkspaceResDto>({
-        data: plainToInstance(BaseWorkspaceResDto, savedWorkspace, {
-          excludeExtraneousValues: true,
-        }),
-        message: 'Tạo không gian làm việc thành công',
+          message: 'Tạo không gian làm việc thành công',
+        });
+      })
+      .catch(async (error) => {
+        // Nếu transaction lỗi, rollback file trên Cloudinary nếu đã upload
+        if (uploadedPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(uploadedPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot rollback file on Cloudinary: ${uploadedPublicId}`,
+            );
+          }
+        }
+        throw error;
       });
-    });
   }
 
   async findAll(userId: Uuid): Promise<ResponseDto<BaseWorkspaceResDto[]>> {
@@ -397,27 +511,92 @@ export class WorkspacesService {
 
   async update(
     id: Uuid,
-    dto: CreateWorkspaceDto,
+    dto: UpdateWorkspaceDto,
+    currentUserId: Uuid,
     avatar?: Express.Multer.File,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
     const { members: _members, ...body } = dto;
+    let uploadedPublicId: string | null = null;
 
-    // Upload avatar nếu có
-    if (avatar) {
-      const avatarPath = await this.uploadService.saveFile(avatar);
-      body.avatar = avatarPath;
-    }
+    return await this.dataSource
+      .transaction(async (manager) => {
+        if (avatar) {
+          const folder = `workspaces/${id}`;
+          const fileName = avatar.originalname;
 
-    await this.workspaceRepository.update(id, body);
-    const updatedWorkspace = await this.workspaceRepository.findOne({
-      where: { id },
-    });
-    return new ResponseDto<BaseWorkspaceResDto>({
-      data: plainToInstance(BaseWorkspaceResDto, updatedWorkspace, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'Cập nhật không gian làm việc thành công',
-    });
+          const workspace = await manager.findOne(Workspaces, {
+            where: { id },
+          });
+
+          if (workspace?.avatar) {
+            const oldFile = await manager.findOne(FileEntity, {
+              where: { url: workspace.avatar },
+            });
+            if (oldFile) {
+              if (oldFile.metadata?.public_id) {
+                await this.cloudinaryService.deleteFile(
+                  oldFile.metadata.public_id,
+                );
+              }
+              await manager.delete(FileEntity, oldFile.id);
+            }
+          }
+
+          const uploadResult = await this.cloudinaryService.uploadToFolder(
+            avatar,
+            folder,
+            fileName,
+          );
+
+          if ('secure_url' in uploadResult) {
+            body.avatar = uploadResult.secure_url;
+            uploadedPublicId = uploadResult.public_id;
+
+            const fileEntity = manager.create(FileEntity, {
+              url: uploadResult.secure_url,
+              originalName: avatar.originalname,
+              mimeType: avatar.mimetype,
+              size: uploadResult.bytes,
+              fileName: fileName,
+              uploadedBy: currentUserId,
+              workspaceId: id,
+              metadata: {
+                public_id: uploadResult.public_id,
+                format: uploadResult.format,
+                resource_type: uploadResult.resource_type,
+                width: uploadResult.width,
+                height: uploadResult.height,
+                bytes: uploadResult.bytes,
+              },
+            });
+            await manager.save(FileEntity, fileEntity);
+          }
+        }
+
+        await manager.update(Workspaces, id, body);
+        const updatedWorkspace = await manager.findOne(Workspaces, {
+          where: { id },
+        });
+
+        return new ResponseDto<BaseWorkspaceResDto>({
+          data: plainToInstance(BaseWorkspaceResDto, updatedWorkspace, {
+            excludeExtraneousValues: true,
+          }),
+          message: 'Cập nhật không gian làm việc thành công',
+        });
+      })
+      .catch(async (error) => {
+        if (uploadedPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(uploadedPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot rollback file on Cloudinary: ${uploadedPublicId}`,
+            );
+          }
+        }
+        throw error;
+      });
   }
 
   async findMembers(id: Uuid, currentUserId: Uuid, q: string) {

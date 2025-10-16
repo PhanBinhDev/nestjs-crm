@@ -2,11 +2,14 @@ import { AllConfigType } from '@/config/config.type';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ActivityOverdueQueueModule } from './queues/activity-overdue-queue/activity-overdue-queue.module';
 import { EmailQueueModule } from './queues/email-queue/email-queue.module';
 import { NotificationQueueModule } from './queues/notification-queue/notification-queue.module';
 @Module({
   imports: [
     EmailQueueModule,
+    NotificationQueueModule,
+    ActivityOverdueQueueModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService<AllConfigType>) => {

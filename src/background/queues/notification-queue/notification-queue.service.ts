@@ -1,4 +1,4 @@
-import { CreateNotificationDto } from '@/api/notification/dto/create-notification.dto';
+import { SendPushNotificationDto } from '@/api/notification/dto/send-push-notification.dto';
 import { NotificationsService } from '@/api/notification/notifications.service';
 import { Injectable, Logger } from '@nestjs/common';
 
@@ -8,7 +8,7 @@ export class NotificationQueueService {
 
   constructor(private readonly notificationService: NotificationsService) {}
 
-  async addNotificationJob(data: CreateNotificationDto): Promise<void> {
+  async addNotificationJob(data: SendPushNotificationDto): Promise<void> {
     this.logger.debug(`Adding notification job for user ${data.userId}...`);
     await this.notificationService.sendPushNotification(data);
   }

@@ -21,6 +21,7 @@ function setupSwagger(app: INestApplication) {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document, {
     customSiteTitle: appName,
+    jsonDocumentUrl: 'api-docs-json',
   });
 }
 

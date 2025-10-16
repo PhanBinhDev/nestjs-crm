@@ -1,6 +1,6 @@
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
-import { ClassField } from '@/decorators/field.decorators';
+import { ClassField, NumberField } from '@/decorators/field.decorators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
@@ -22,6 +22,18 @@ export class ActivityChecklistResDto extends AuditResDto {
   @ApiProperty({ example: 'Chuẩn bị họp' })
   @Expose()
   name: string;
+
+  @NumberField()
+  @Expose()
+  totalItems: number;
+
+  @NumberField()
+  @Expose()
+  completedItems: number;
+
+  @NumberField()
+  @Expose()
+  progress: number;
 
   @ClassField(() => ActivityChecklistItemResDto, {
     isArray: true,

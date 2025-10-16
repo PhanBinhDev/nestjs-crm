@@ -9,6 +9,7 @@ import {
   ManyToOne,
   OneToMany,
 } from 'typeorm';
+import { ActivityCommentReactionEntity } from './activity-comments-reaction.entity';
 import { ActivityEntity } from './activity.entity';
 
 @Entity('activity_comments')
@@ -38,8 +39,11 @@ export class ActivityCommentEntity extends AbstractEntity {
   @OneToMany(() => ActivityCommentEntity, (comment) => comment.parentComment)
   replies: ActivityCommentEntity[];
 
-  @Column({ type: 'jsonb', nullable: true })
-  reactions?: Record<string, number>;
+  @OneToMany(
+    () => ActivityCommentReactionEntity,
+    (reaction) => reaction.comment,
+  )
+  reactions: ActivityCommentReactionEntity[];
 
   @Column({ type: 'uuid', nullable: false })
   userId: string;
