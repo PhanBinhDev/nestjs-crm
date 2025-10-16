@@ -153,6 +153,73 @@ export class WorkspacesController {
     );
   }
 
+  @Post(':workspaceId/accept-invitation')
+  @ApiAuth({ summary: 'Chấp nhận lời mời tham gia workspace' })
+  async acceptInvitation(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.workspacesService.acceptInvitation(workspaceId, userId);
+  }
+
+  @Post(':workspaceId/request-join')
+  @ApiAuth({ summary: 'Yêu cầu tham gia workspace' })
+  async requestJoin(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.workspacesService.requestJoin(workspaceId, userId);
+  }
+
+  @Get(':workspaceId/join-requests')
+  @ApiAuth({ summary: 'Danh sách yêu cầu join workspace' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  async listJoinRequests(@Param('workspaceId') workspaceId: Uuid) {
+    return this.workspacesService.listJoinRequests(workspaceId);
+  }
+
+  @Post(':workspaceId/join-requests/:userId/accept')
+  @ApiAuth({ summary: 'Duyệt yêu cầu join workspace' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  async acceptJoinRequest(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Param('userId') userId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.acceptJoinRequest(
+      workspaceId,
+      userId,
+      currentUserId,
+    );
+  }
+
+  @Post(':workspaceId/join-requests/:userId/reject')
+  @ApiAuth({ summary: 'Từ chối yêu cầu join workspace' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  async rejectJoinRequest(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Param('userId') userId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.rejectJoinRequest(
+      workspaceId,
+      userId,
+      currentUserId,
+    );
+  }
+
+  @Post(':workspaceId/reject-invitation')
+  @ApiAuth({ summary: 'Từ chối lời mời tham gia workspace' })
+  async rejectInvitation(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.workspacesService.rejectInvitation(workspaceId, userId);
+  }
+
   @Delete(':workspaceId')
   @UseGuards(WorkspaceAccessGuard)
   @ApiAuth({

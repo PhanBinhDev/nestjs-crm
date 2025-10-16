@@ -13,6 +13,7 @@ import {
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
 import { createCacheKey } from '@/utils/cache.util';
+import { upperCaseFirst } from '@/utils/index.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
@@ -34,7 +35,6 @@ import { DataSource, In, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
 import { StagesService } from '../stages/stages.service';
-import { UploadService } from '../upload/upload.service';
 import { UserEntity } from '../users/entities/user.entity';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
@@ -62,7 +62,6 @@ export class WorkspacesService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly stagesService: StagesService,
-    private readonly uploadService: UploadService,
     @InjectQueue(QueueName.EMAIL)
     private readonly emailQueue: Queue<IWorkspaceMemberJob, any, string>,
     @InjectQueue(QueueName.NOTIFICATION)
@@ -72,6 +71,249 @@ export class WorkspacesService {
     private readonly configService: ConfigService<AllConfigType>,
     private readonly cloudinaryService: CloudinaryService,
   ) {}
+
+  async requestJoin(
+    workspaceId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const existed = await this.membersRepository.findOne({
+      where: [
+        { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+        { workspaceId, userId, status: WorkspaceMemberStatus.ACTIVE },
+      ],
+    });
+    if (existed)
+      throw new BadRequestException('Bạn đã là thành viên hoặc đã gửi yêu cầu');
+
+    const member = this.membersRepository.create({
+      workspaceId,
+      userId,
+      role: WorkspaceRole.MEMBER,
+      status: WorkspaceMemberStatus.PENDING,
+    });
+    await this.membersRepository.save(member);
+
+    const admins = await this.membersRepository.find({
+      where: {
+        workspaceId,
+        role: In([WorkspaceRole.OWNER, WorkspaceRole.ADMIN]),
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+      relations: ['user'],
+    });
+
+    for (const admin of admins) {
+      const notificationData: SendPushNotificationDto = {
+        userId: admin.user.id,
+        title: 'Có yêu cầu tham gia mới',
+        message: `Người dùng ${member.user.name} đã gửi yêu cầu tham gia không gian làm việc "${member.workspace.name}"`,
+        type: NotificationType.WORKSPACE,
+        data: {
+          uri: `/workspaces/${workspaceId}`,
+        },
+      };
+      await this.notificationQueue.add(
+        JobName.WORKSPACE_REQUEST_JOIN,
+        notificationData,
+        {
+          attempts: 3,
+          removeOnComplete: true,
+          backoff: { type: 'exponential', delay: 5000 },
+        },
+      );
+    }
+
+    return new ResponseNoDataDto({
+      message: 'Đã gửi yêu cầu tham gia workspace',
+    });
+  }
+
+  async listJoinRequests(
+    workspaceId: Uuid,
+  ): Promise<ResponseDto<WorkspaceMemberResDto[]>> {
+    const requests = await this.membersRepository.find({
+      where: { workspaceId, status: WorkspaceMemberStatus.PENDING },
+      relations: ['user'],
+    });
+    return new ResponseDto<WorkspaceMemberResDto[]>({
+      data: plainToInstance(WorkspaceMemberResDto, requests, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Danh sách yêu cầu join workspace',
+    });
+  }
+
+  async acceptJoinRequest(
+    workspaceId: Uuid,
+    userId: Uuid,
+    currentUserId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      relations: ['user', 'workspace'],
+    });
+    if (!member) throw new BadRequestException('Không có yêu cầu join hợp lệ');
+    member.status = WorkspaceMemberStatus.ACTIVE;
+    await this.membersRepository.save(member);
+
+    await this.notificationQueue.add(JobName.WORKSPACE_ACCEPTED, {
+      userId,
+      title: 'Yêu cầu tham gia đã được chấp nhận',
+      message: `Bạn đã được duyệt tham gia không gian làm việc "${member.workspace.name}"`,
+      type: NotificationType.WORKSPACE,
+      senderId: currentUserId,
+      data: {
+        uri: `/workspaces/${workspaceId}`,
+      },
+    });
+
+    return new ResponseNoDataDto({
+      message: 'Đã duyệt yêu cầu tham gia workspace',
+    });
+  }
+
+  async rejectJoinRequest(
+    workspaceId: Uuid,
+    userId: Uuid,
+    currentUserId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      relations: ['user', 'workspace'],
+    });
+    if (!member) throw new BadRequestException('Không có yêu cầu join hợp lệ');
+    await this.membersRepository.remove(member);
+
+    await this.notificationQueue.add(JobName.WORKSPACE_DECLINED, {
+      userId,
+      title: 'Yêu cầu tham gia đã bị từ chối',
+      message: `Bạn đã bị từ chối tham gia không gian làm việc "${member.workspace.name}"`,
+      type: NotificationType.WORKSPACE,
+      senderId: currentUserId,
+      data: {
+        uri: `/workspaces/${workspaceId}`,
+      },
+    });
+
+    return new ResponseNoDataDto({
+      message: 'Đã từ chối yêu cầu tham gia workspace',
+    });
+  }
+
+  async rejectInvitation(
+    workspaceId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) throw new NotFoundException('Người dùng không tồn tại');
+
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+    });
+    if (!member) throw new BadRequestException('Không có lời mời hợp lệ');
+
+    await this.membersRepository.remove(member);
+
+    const admins = await this.membersRepository.find({
+      where: {
+        workspaceId,
+        role: In([WorkspaceRole.OWNER, WorkspaceRole.ADMIN]),
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+      relations: ['user'],
+    });
+
+    for (const admin of admins) {
+      const notificationData: SendPushNotificationDto = {
+        userId: admin.userId,
+        title: `${upperCaseFirst(user.name)} đã từ chối lời mời`,
+        message: `Thành viên ${user.name} đã từ chối tham gia không gian làm việc "${upperCaseFirst(member.workspace.name)}"`,
+        type: NotificationType.WORKSPACE,
+        senderId: user.id,
+        data: {
+          uri: `/workspaces/${workspaceId}`,
+        },
+      };
+
+      await this.notificationQueue.add(
+        JobName.WORKSPACE_DECLINED,
+        notificationData,
+        {
+          attempts: 3,
+          removeOnComplete: true,
+          backoff: {
+            type: 'exponential',
+            delay: 5000,
+          },
+        },
+      );
+    }
+
+    return new ResponseNoDataDto({
+      message: 'Bạn đã từ chối lời mời tham gia workspace',
+    });
+  }
+
+  async acceptInvitation(
+    workspaceId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) throw new NotFoundException('Người dùng không tồn tại');
+
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      relations: ['workspace', 'workspace.owner'],
+    });
+
+    if (!member) throw new BadRequestException('Không có lời mời hợp lệ');
+
+    member.status = WorkspaceMemberStatus.ACTIVE;
+    await this.membersRepository.save(member);
+
+    const admins = await this.membersRepository.find({
+      where: {
+        workspaceId,
+        role: In([WorkspaceRole.OWNER, WorkspaceRole.ADMIN]),
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+      relations: ['user'],
+    });
+
+    for (const admin of admins) {
+      const notificationData: SendPushNotificationDto = {
+        userId: admin.userId,
+        title: `${upperCaseFirst(user.name)} đã chấp nhận lời mời`,
+        message: `Thành viên ${user.name} đã tham gia không gian làm việc "${upperCaseFirst(member.workspace.name)}"`,
+        type: NotificationType.WORKSPACE,
+        senderId: user.id,
+        data: {
+          uri: `/workspaces/${workspaceId}`,
+        },
+      };
+
+      await this.notificationQueue.add(
+        JobName.WORKSPACE_ACCEPTED,
+        notificationData,
+        {
+          attempts: 3,
+          removeOnComplete: true,
+          backoff: {
+            type: 'exponential',
+            delay: 5000,
+          },
+        },
+      );
+    }
+
+    return new ResponseNoDataDto({
+      message: 'Bạn đã tham gia workspace thành công',
+    });
+  }
 
   async leaveWorkspace(
     workspaceId: Uuid,
@@ -137,6 +379,7 @@ export class WorkspacesService {
         (m) =>
           m.userId === newOwnerId && m.status === WorkspaceMemberStatus.ACTIVE,
       );
+
       if (!newOwnerMember) {
         throw new BadRequestException(
           'Người nhận quyền phải là thành viên đang hoạt động',
@@ -763,16 +1006,11 @@ export class WorkspacesService {
     return workspace.members.some((member) => member.userId === userId);
   }
 
-  /**
-   * Remove a member from workspace
-   * Only users with higher role can remove members with lower roles
-   */
   async removeMember(
     workspaceId: Uuid,
     userIdToRemove: Uuid,
     currentUserId: Uuid,
   ): Promise<ResponseNoDataDto> {
-    // Find workspace with all members and owner
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
       relations: ['owner', 'members', 'members.user'],
@@ -782,7 +1020,6 @@ export class WorkspacesService {
       throw new NotFoundException('Workspace không tồn tại');
     }
 
-    // Check if current user is in the workspace
     const currentUserMember = workspace.members.find(
       (member) => member.userId === currentUserId,
     );
@@ -791,7 +1028,6 @@ export class WorkspacesService {
       throw new ForbiddenException('Bạn không có quyền truy cập workspace này');
     }
 
-    // Check if user to remove exists in workspace
     const memberToRemove = workspace.members.find(
       (member) => member.userId === userIdToRemove,
     );
@@ -802,7 +1038,6 @@ export class WorkspacesService {
       );
     }
 
-    // Prevent self-removal
     if (currentUserId === userIdToRemove) {
       throw new BadRequestException('Bạn không thể tự xóa chính mình');
     }
@@ -813,7 +1048,6 @@ export class WorkspacesService {
         ? WorkspaceRole.OWNER
         : currentUserMember.role;
 
-    // Check role hierarchy permissions
     if (
       !WorkspaceRoleHierarchy.canManageRole(
         currentUserRole,
@@ -825,7 +1059,6 @@ export class WorkspacesService {
       );
     }
 
-    // Remove the member
     await this.membersRepository.remove(memberToRemove);
 
     return new ResponseNoDataDto({
@@ -833,17 +1066,12 @@ export class WorkspacesService {
     });
   }
 
-  /**
-   * Update member role in workspace
-   * Only users with higher role can update members with lower roles
-   */
   async updateMemberRole(
     workspaceId: Uuid,
     userIdToUpdate: Uuid,
     updateDto: UpdateMemberRoleDto,
     currentUserId: Uuid,
   ): Promise<ResponseDto<WorkspaceMemberResDto>> {
-    // Find workspace with all members and owner
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
       relations: ['owner', 'members', 'members.user'],
@@ -853,7 +1081,6 @@ export class WorkspacesService {
       throw new NotFoundException('Workspace không tồn tại');
     }
 
-    // Check if current user is in the workspace
     const currentUserMember = workspace.members.find(
       (member) => member.userId === currentUserId,
     );
@@ -862,7 +1089,6 @@ export class WorkspacesService {
       throw new ForbiddenException('Bạn không có quyền truy cập workspace này');
     }
 
-    // Check if user to update exists in workspace
     const memberToUpdate = workspace.members.find(
       (member) => member.userId === userIdToUpdate,
     );
@@ -873,27 +1099,23 @@ export class WorkspacesService {
       );
     }
 
-    // Prevent changing owner role
     if (workspace.owner.id === userIdToUpdate) {
       throw new BadRequestException(
         'Không thể thay đổi vai trò của chủ sở hữu workspace',
       );
     }
 
-    // Prevent self role change
     if (currentUserId === userIdToUpdate) {
       throw new BadRequestException(
         'Bạn không thể thay đổi vai trò của chính mình',
       );
     }
 
-    // Determine current user's role
     const currentUserRole =
       workspace.owner.id === currentUserId
         ? WorkspaceRole.OWNER
         : currentUserMember.role;
 
-    // Check if current user can manage the target member's current role
     if (
       !WorkspaceRoleHierarchy.canManageRole(
         currentUserRole,
@@ -905,18 +1127,15 @@ export class WorkspacesService {
       );
     }
 
-    // Check if current user can assign the new role
     if (
       !WorkspaceRoleHierarchy.canAssignRole(currentUserRole, updateDto.role)
     ) {
       throw new ForbiddenException('Bạn không có quyền gán vai trò này');
     }
 
-    // Update the member's role
     memberToUpdate.role = updateDto.role;
     const updatedMember = await this.membersRepository.save(memberToUpdate);
 
-    // Reload with user data for response
     const memberWithUser = await this.membersRepository.findOne({
       where: { id: updatedMember.id },
       relations: ['user'],

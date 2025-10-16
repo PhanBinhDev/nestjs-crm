@@ -10,6 +10,9 @@ export enum QueuePrefix {
 export enum JobName {
   EMAIL_VERIFICATION = 'email-verification',
   WORKSPACE_INVITATION = 'workspace-invitation',
+  WORKSPACE_ACCEPTED = 'workspace-accepted',
+  WORKSPACE_DECLINED = 'workspace-declined',
+  WORKSPACE_REQUEST_JOIN = 'workspace-request-join',
   NOTIFICATION = 'notification',
   TASK_CREATED_ASSIGNEE = 'task-created-assignee',
   TASK_CREATED_FOLLOWED = 'task-created-followed',
