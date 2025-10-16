@@ -29,7 +29,7 @@ import {
   ImportUsersResponseDto,
 } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto, UpdateUserDto } from './dto/update-user.dto';
 import { UserResDto } from './dto/user.res.dto';
 import { UserService } from './user.service';
 
@@ -82,6 +82,19 @@ export class UserController {
     );
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }
+
+  @Patch('profile')
+  @ApiAuth({
+    summary: 'Cập nhật thông tin cá nhân',
+    description: 'User có thể cập nhật thông tin cá nhân của chính mình',
+    type: UserResDto,
+  })
+  updateProfile(
+    @Body() dto: UpdateProfileDto,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.userService.updateProfile(currentUserId, dto);
   }
 
   @Get(':id')

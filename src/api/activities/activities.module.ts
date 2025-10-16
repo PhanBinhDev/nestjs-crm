@@ -1,7 +1,7 @@
 import { SemesterEntity } from '@/api/semester/entities/semester.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
-import { NotificationQueueModule } from '@/background/queues/notification-queue/notification-queue.module';
 import { ActivityOverdueQueueModule } from '@/background/queues/activity-overdue-queue/activity-overdue-queue.module';
+import { NotificationQueueModule } from '@/background/queues/notification-queue/notification-queue.module';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';

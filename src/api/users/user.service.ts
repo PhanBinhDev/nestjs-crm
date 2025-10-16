@@ -25,7 +25,7 @@ import { Workspaces } from '../workspaces/entities/workspace.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ImportUserDto, ImportUsersResponseDto } from './dto/import-users.dto';
 import { QueryUserDto } from './dto/query-user.tdo';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto, UpdateUserDto } from './dto/update-user.dto';
 import { UserResDto } from './dto/user.res.dto';
 import { UserEntity } from './entities/user.entity';
 
@@ -115,6 +115,57 @@ export class UserService {
         excludeExtraneousValues: true,
       }),
       message: 'User retrieved successfully',
+    });
+  }
+
+  async updateProfile(
+    userId: Uuid,
+    dto: UpdateProfileDto,
+  ): Promise<ResponseDto<UserResDto>> {
+    const user = await this.userRepository.findOneByOrFail({ id: userId });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dto.username && dto.username !== user.username) {
+      const existingUser = await this.userRepository.findOne({
+        where: { username: dto.username },
+      });
+
+      if (existingUser && existingUser.id !== userId) {
+        throw new BadRequestException('Username đã tồn tại trong hệ thống');
+      }
+    }
+
+    const allowedFields = [
+      'name',
+      'username',
+      'phone',
+      'dateOfBirth',
+      'major',
+      'avatar',
+    ];
+    const updateData: Partial<UserEntity> = {};
+
+    for (const field of allowedFields) {
+      if (dto[field] !== undefined) {
+        if (field === 'dateOfBirth' && dto[field]) {
+          updateData[field] = new Date(dto[field]);
+        } else {
+          updateData[field] = dto[field];
+        }
+      }
+    }
+
+    Object.assign(user, updateData);
+    await this.userRepository.save(user);
+
+    return new ResponseDto({
+      data: plainToInstance(UserResDto, user, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật thông tin cá nhân thành công',
     });
   }
 
