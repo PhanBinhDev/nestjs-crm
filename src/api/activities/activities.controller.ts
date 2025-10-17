@@ -301,7 +301,7 @@ export class ActivitiesController {
   async getActivityLogs(
     @Param('id') activityId: Uuid,
     @Query() query: QueryActivityLogDto,
-  ): Promise<ActivityLogResDto[]> {
+  ) {
     return this.activitiesService.getActivityLogs(activityId, query);
   }
 

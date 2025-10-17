@@ -1198,7 +1198,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getActivityLogs(
     activityId: string,
     query: QueryActivityLogDto,
-  ): Promise<ActivityLogResDto[]> {
+  ): Promise<ResponseDto<ActivityLogResDto[]>> {
     const qb = this.activityLogRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
@@ -1285,7 +1285,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }),
     );
 
-    return transformedLogs;
+    return new ResponseDto<ActivityLogResDto[]>({
+      data: transformedLogs,
+      message: 'Lấy danh sách nhật ký hoạt động thành công',
+    });
   }
 
   async create(

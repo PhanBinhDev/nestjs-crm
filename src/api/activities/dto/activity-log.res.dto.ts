@@ -51,11 +51,11 @@ export class ActivityLogResDto {
   @ApiProperty({ type: UserInfoDto, required: false })
   @Expose()
   @Type(() => UserInfoDto)
-  user?: UserInfoDto; // Chỉ có id và name
+  user?: UserInfoDto;
 
   @ApiProperty({ required: false })
   @Expose()
-  stageName?: string; // Được set trực tiếp từ Service
+  stageName?: string;
 
   @ApiProperty({ description: 'Thời gian tương đối như "2 giờ trước"' })
   @Transform(({ obj }) => {
