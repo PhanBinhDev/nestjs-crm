@@ -817,6 +817,8 @@ export class WorkspacesService {
       relations,
     });
 
+    console.log('detail workspace', workspace);
+
     if (!workspace) {
       throw new BadRequestException('Workspace not found');
     }
@@ -856,11 +858,31 @@ export class WorkspacesService {
     currentUserId: Uuid,
     avatar?: Express.Multer.File,
   ): Promise<ResponseDto<BaseWorkspaceResDto>> {
-    const { members: _members, ...body } = dto;
+    const { members: _members, removeAvatar, ...body } = dto;
     let uploadedPublicId: string | null = null;
 
     return await this.dataSource
       .transaction(async (manager) => {
+        if (removeAvatar) {
+          const workspace = await manager.findOne(Workspaces, {
+            where: { id },
+          });
+          if (workspace?.avatar) {
+            const oldFile = await manager.findOne(FileEntity, {
+              where: { url: workspace.avatar },
+            });
+            if (oldFile) {
+              if (oldFile.metadata?.public_id) {
+                await this.cloudinaryService.deleteFile(
+                  oldFile.metadata.public_id,
+                );
+              }
+              await manager.delete(FileEntity, oldFile.id);
+            }
+            body.avatar = null;
+          }
+        }
+
         if (avatar) {
           const folder = `workspaces/${id}`;
           const fileName = avatar.originalname;
