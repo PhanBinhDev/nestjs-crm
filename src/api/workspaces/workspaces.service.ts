@@ -40,6 +40,7 @@ import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
+import { QueryWorkspaceMembersReqDto } from './dto/query-workspace-members.req.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
@@ -962,7 +963,11 @@ export class WorkspacesService {
       });
   }
 
-  async findMembers(id: Uuid, currentUserId: Uuid, q: string) {
+  async findMembers(
+    id: Uuid,
+    currentUserId: Uuid,
+    query: QueryWorkspaceMembersReqDto,
+  ) {
     const isInWorkspace = await this.checkUserInWorkspace(currentUserId, id);
     if (!isInWorkspace) {
       throw new BadRequestException(
@@ -978,18 +983,56 @@ export class WorkspacesService {
         status: WorkspaceMemberStatus.ACTIVE,
       });
 
-    if (q) {
+    if (query.q) {
       queryBuilder.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
-        q: `%${q}%`,
+        q: `%${query.q}%`,
       });
     }
 
+    if (query.status) {
+      queryBuilder.andWhere('member.status = :statusFilter', {
+        statusFilter: query.status,
+      });
+    }
+
+    if (query.role) {
+      queryBuilder.andWhere('member.role = :roleFilter', {
+        roleFilter: query.role,
+      });
+    }
+
+    const allowedSortFields = ['name', 'email', 'createdAt'];
+    const sortField = allowedSortFields.includes(query.sortBy || '')
+      ? query.sortBy
+      : 'createdAt';
+    const sortOrder = query.order || 'DESC';
+
+    queryBuilder.orderBy(`member.${sortField}`, sortOrder as 'ASC' | 'DESC');
+
     const members = await queryBuilder.getMany();
+
+    const totalActive = await this.membersRepository.count({
+      where: {
+        workspaceId: id,
+        status: WorkspaceMemberStatus.ACTIVE,
+      },
+    });
+
+    const totalPending = await this.membersRepository.count({
+      where: {
+        workspaceId: id,
+        status: WorkspaceMemberStatus.PENDING,
+      },
+    });
 
     return new ResponseDto<WorkspaceMemberResDto[]>({
       data: plainToInstance(WorkspaceMemberResDto, members, {
         excludeExtraneousValues: true,
       }),
+      metadata: {
+        totalActive,
+        totalPending,
+      },
       message: 'Lấy danh sách thành viên không gian làm việc thành công',
     });
   }

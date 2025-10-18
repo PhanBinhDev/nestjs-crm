@@ -23,6 +23,7 @@ import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { QueryWorkspaceDetailDto } from './dto/query-workspace-detail.dto';
+import { QueryWorkspaceMembersReqDto } from './dto/query-workspace-members.req.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceDetailsResDto } from './dto/workspace-details.res.dto';
@@ -104,9 +105,13 @@ export class WorkspacesController {
   findMembers(
     @Param('workspaceId') workspaceId: Uuid,
     @CurrentUser('id') currentUserId: Uuid,
-    @Query('q') q?: string,
+    @Query() query: QueryWorkspaceMembersReqDto,
   ) {
-    return this.workspacesService.findMembers(workspaceId, currentUserId, q);
+    return this.workspacesService.findMembers(
+      workspaceId,
+      currentUserId,
+      query,
+    );
   }
 
   @Patch(':workspaceId')
