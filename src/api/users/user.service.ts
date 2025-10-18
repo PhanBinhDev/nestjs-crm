@@ -1,3 +1,4 @@
+import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
@@ -6,19 +7,20 @@ import {
   WorkspaceRole,
   WorkspaceVisibility,
 } from '@/database/enum/workspace.enum';
+import { upperCaseFirst } from '@/utils/index.util';
 import { paginate } from '@/utils/offset-pagination';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
+import { FileEntity } from '../files/entities/files.entity';
 import { StagesService } from '../stages/stages.service';
 import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { Workspaces } from '../workspaces/entities/workspace.entity';
@@ -44,6 +46,7 @@ export class UserService {
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly stageService: StagesService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   private canUpdateUser(currentRole: UserRole, targetRole: UserRole): boolean {
@@ -70,7 +73,7 @@ export class UserService {
       await userRepo.save(user);
 
       const workspace = workspaceRepo.create({
-        name: `${user.name}'s Workspace`,
+        name: `${upperCaseFirst(user.name)}'s Workspace`,
         owner: user,
         visibility: WorkspaceVisibility.PRIVATE,
       });
@@ -434,59 +437,113 @@ export class UserService {
     id: Uuid,
     dto: UpdateUserDto,
     currentUserRole: UserRole,
+    avatar?: Express.Multer.File,
   ): Promise<ResponseDto<UserResDto>> {
-    const userToUpdate = await this.userRepository.findOneByOrFail({ id });
+    let uploadedPublicId: string | null = null;
+    let oldPublicId: string | null = null;
 
-    if (!userToUpdate) {
-      throw new NotFoundException('User not found');
-    }
+    return await this.userRepository.manager
+      .transaction(async (manager) => {
+        const userRepo = manager.getRepository(UserEntity);
+        const fileRepo = manager.getRepository(FileEntity);
 
-    // Check role hierarchy
-    if (!this.canUpdateUser(currentUserRole, userToUpdate.role)) {
-      throw new ForbiddenException(
-        "You do not have permission to update this user's information",
-      );
-    }
+        const userToUpdate = await userRepo.findOneByOrFail({ id });
 
-    if (dto.role && dto.role !== userToUpdate.role) {
-      if (
-        currentUserRole !== UserRole.SUPERADMIN &&
-        currentUserRole !== UserRole.TM
-      ) {
-        throw new ForbiddenException(
-          'Only SUPERADMIN or Head of Department can change roles',
-        );
-      }
+        if (!this.canUpdateUser(currentUserRole, userToUpdate.role)) {
+          throw new ForbiddenException(
+            "You do not have permission to update this user's information",
+          );
+        }
 
-      // Cannot assign a role higher than your own
-      if (
-        currentUserRole !== UserRole.SUPERADMIN &&
-        !this.canAssignRole(currentUserRole, dto.role)
-      ) {
-        throw new ForbiddenException(
-          'You cannot assign a role higher than your own',
-        );
-      }
+        // lấy avatar cũ trước khi overwrite
+        const oldAvatarUrl = userToUpdate.avatar;
 
-      if (
-        dto.role === UserRole.SUPERADMIN &&
-        currentUserRole !== UserRole.SUPERADMIN
-      ) {
-        throw new ForbiddenException(
-          'Only SUPERADMIN can assign SUPERADMIN role',
-        );
-      }
-    }
+        // map dto -> entity
+        Object.assign(userToUpdate, dto);
 
-    Object.assign(userToUpdate, dto);
-    await this.userRepository.save(userToUpdate);
+        if (avatar) {
+          const folder = `users/${id}`;
+          const fileName = avatar.originalname;
 
-    return new ResponseDto({
-      data: plainToInstance(UserResDto, userToUpdate, {
-        excludeExtraneousValues: true,
-      }),
-      message: 'User updated successfully',
-    });
+          const uploadResult = await this.cloudinaryService.uploadToFolder(
+            avatar,
+            folder,
+            fileName,
+          );
+
+          if (!('secure_url' in uploadResult)) {
+            throw new BadRequestException('Upload avatar thất bại');
+          }
+
+          // lưu public id để rollback khi transaction lỗi
+          uploadedPublicId = uploadResult.public_id;
+
+          // cập nhật user avatar url
+          userToUpdate.avatar = uploadResult.secure_url;
+
+          // tạo bản ghi FileEntity
+          const fileEntity = fileRepo.create({
+            url: uploadResult.secure_url,
+            originalName: avatar.originalname,
+            mimeType: avatar.mimetype,
+            size: uploadResult.bytes,
+            fileName: fileName,
+            uploadedBy: id,
+            // workspaceId left null for user avatars
+            metadata: {
+              public_id: uploadResult.public_id,
+              format: uploadResult.format,
+              resource_type: uploadResult.resource_type,
+              width: uploadResult.width,
+              height: uploadResult.height,
+              bytes: uploadResult.bytes,
+            },
+          });
+          await fileRepo.save(fileEntity);
+
+          if (oldAvatarUrl) {
+            const oldFile = await fileRepo.findOne({
+              where: { url: oldAvatarUrl },
+            });
+            if (oldFile) {
+              oldPublicId = oldFile.metadata?.public_id || null;
+              await manager.delete(FileEntity, oldFile.id);
+            }
+          }
+        }
+
+        const saved = await userRepo.save(userToUpdate);
+        return new ResponseDto({
+          data: plainToInstance(UserResDto, saved, {
+            excludeExtraneousValues: true,
+          }),
+          message: 'User updated successfully',
+        });
+      })
+      .then(async (res) => {
+        if (oldPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(oldPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot delete old avatar on Cloudinary: ${oldPublicId}`,
+            );
+          }
+        }
+        return res;
+      })
+      .catch(async (error) => {
+        if (uploadedPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(uploadedPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot rollback uploaded avatar on Cloudinary: ${uploadedPublicId}`,
+            );
+          }
+        }
+        throw error;
+      });
   }
 
   async toggleActive(

@@ -100,12 +100,15 @@ export class UserController {
     type: UserResDto,
   })
   @ApiParam({ name: 'id', type: 'String' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('avatar'))
   updateUser(
     @Param('id', ParseUUIDPipe) id: Uuid,
     @Body() dto: UpdateUserDto,
     @CurrentUser('role') currentUserRole: UserRole,
+    @UploadedFile() avatar?: Express.Multer.File,
   ) {
-    return this.userService.update(id, dto, currentUserRole);
+    return this.userService.update(id, dto, currentUserRole, avatar);
   }
 
   @Post('import')

@@ -975,41 +975,42 @@ export class WorkspacesService {
       );
     }
 
-    const queryBuilder = this.membersRepository
+    const qb = this.membersRepository
       .createQueryBuilder('member')
       .leftJoinAndSelect('member.user', 'user')
-      .where('member.workspaceId = :workspaceId', { workspaceId: id })
-      .andWhere('member.status = :status', {
-        status: WorkspaceMemberStatus.ACTIVE,
-      });
+      .where('member.workspaceId = :workspaceId', { workspaceId: id });
+
+    const statusFilter = query.status ?? WorkspaceMemberStatus.ACTIVE;
+    qb.andWhere('member.status = :statusFilter', { statusFilter });
 
     if (query.q) {
-      queryBuilder.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
+      qb.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
         q: `%${query.q}%`,
       });
     }
 
-    if (query.status) {
-      queryBuilder.andWhere('member.status = :statusFilter', {
-        statusFilter: query.status,
-      });
-    }
-
     if (query.role) {
-      queryBuilder.andWhere('member.role = :roleFilter', {
+      qb.andWhere('member.role = :roleFilter', {
         roleFilter: query.role,
       });
     }
 
+    // sort handling: name/email are on user, createdAt on member
     const allowedSortFields = ['name', 'email', 'createdAt'];
     const sortField = allowedSortFields.includes(query.sortBy || '')
       ? query.sortBy
       : 'createdAt';
-    const sortOrder = query.order || 'DESC';
+    const sortOrder = (query.order || 'DESC').toUpperCase() as 'ASC' | 'DESC';
 
-    queryBuilder.orderBy(`member.${sortField}`, sortOrder as 'ASC' | 'DESC');
+    if (sortField === 'name') {
+      qb.orderBy('user.name', sortOrder);
+    } else if (sortField === 'email') {
+      qb.orderBy('user.email', sortOrder);
+    } else {
+      qb.orderBy(`member.${sortField}`, sortOrder);
+    }
 
-    const members = await queryBuilder.getMany();
+    const members = await qb.getMany();
 
     const totalActive = await this.membersRepository.count({
       where: {
