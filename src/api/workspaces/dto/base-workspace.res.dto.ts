@@ -53,6 +53,13 @@ export class BaseWorkspaceResDto extends AuditResDto {
   @Expose()
   ownerId: Uuid;
 
+  @StringFieldOptional({
+    description: 'Tên chủ sở hữu không gian làm việc',
+    example: 'Nguyễn Văn A',
+  })
+  @Expose()
+  ownerName?: string;
+
   @StringField({
     description: 'Mã mời tham gia không gian làm việc',
     example: 'abc123def456ghi789jkl012mno345pq',
