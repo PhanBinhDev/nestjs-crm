@@ -114,6 +114,26 @@ export class WorkspacesController {
     );
   }
 
+  @Get(':workspaceId/members/me')
+  @UseGuards(WorkspaceAccessGuard)
+  @ApiAuth({
+    summary: 'Lấy thông tin của thành viên hiện tại trong không gian làm việc',
+    type: WorkspaceMemberResDto,
+  })
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+  })
+  getCurrentMemberInfo(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.getCurrentMemberInfo(
+      workspaceId,
+      currentUserId,
+    );
+  }
+
   @Patch(':workspaceId')
   @UseInterceptors(FileInterceptor('avatar'))
   @ApiConsumes('multipart/form-data')

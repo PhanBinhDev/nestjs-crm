@@ -73,6 +73,22 @@ export class WorkspacesService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  async getCurrentMemberInfo(
+    workspaceId: Uuid,
+    userId: Uuid,
+  ): Promise<ResponseDto<WorkspaceMemberResDto>> {
+    const member = await this.membersRepository.findOne({
+      where: { workspaceId, userId, status: WorkspaceMemberStatus.ACTIVE },
+    });
+    if (!member) throw new NotFoundException('Không tìm thấy thành viên');
+    return new ResponseDto<WorkspaceMemberResDto>({
+      data: plainToInstance(WorkspaceMemberResDto, member, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Thông tin thành viên',
+    });
+  }
+
   async requestJoin(
     workspaceId: Uuid,
     userId: Uuid,
