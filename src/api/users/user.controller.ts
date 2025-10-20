@@ -84,6 +84,22 @@ export class UserController {
     res.send(buffer);
   }
 
+  @Patch('profile')
+  @ApiAuth({
+    summary: 'Cập nhật người dùng hiện tại',
+    type: UserResDto,
+  })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('avatar'))
+  updateProfile(
+    @CurrentUser('id', ParseUUIDPipe) id: Uuid,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser('role') currentUserRole: UserRole,
+    @UploadedFile() avatar?: Express.Multer.File,
+  ) {
+    return this.userService.update(id, dto, currentUserRole, avatar);
+  }
+
   @Get(':id')
   @ApiAuth({
     summary: 'Lấy người dùng theo ID',
