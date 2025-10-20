@@ -268,18 +268,58 @@ export class NotificationsService {
     });
   }
 
-  async markRead(dto: MarkReadDto): Promise<ResponseNoDataDto> {
-    const notification = await this.notificationRepo.findOne({
-      where: { id: dto.notificationId },
-    });
-
-    if (!notification) {
-      throw new Error('Không tìm thấy thông báo');
+  async markRead(dto: MarkReadDto, userId: Uuid): Promise<ResponseNoDataDto> {
+    // Validate input
+    if (!dto.notificationId) {
+      throw new Error('notificationId không được để trống');
     }
 
-    notification.isRead = true;
-    notification.readAt = new Date();
-    await this.notificationRepo.save(notification);
+    if (!userId) {
+      throw new Error('userId không được để trống - vui lòng đăng nhập lại');
+    }
+
+    // Normalize UUID to lowercase
+    const notificationId = dto.notificationId.toLowerCase();
+    const normalizedUserId = userId.toLowerCase();
+
+    // Tìm notification không care về userId trước để debug
+    const notificationCheck = await this.notificationRepo.findOne({
+      where: { id: notificationId as Uuid },
+      withDeleted: true,
+    });
+
+    if (!notificationCheck) {
+      throw new Error(
+        `Notification ${notificationId} không tồn tại trong hệ thống`,
+      );
+    }
+
+    // Check xem có phải của user này không
+    if (notificationCheck.userId.toLowerCase() !== normalizedUserId) {
+      throw new Error(
+        `Notification này thuộc về user ${notificationCheck.userId}, không phải user ${normalizedUserId}`,
+      );
+    }
+
+    // Kiểm tra đã bị xóa chưa
+    if (notificationCheck.deletedAt) {
+      throw new Error('Notification này đã bị xóa');
+    }
+
+    if (notificationCheck.isRead) {
+      return new ResponseNoDataDto({
+        message: 'Đánh dấu thông báo là đã đọc thành công',
+      });
+    }
+
+    await this.notificationRepo.query(
+      `UPDATE notifications 
+       SET "isRead" = true, 
+           "readAt" = CURRENT_TIMESTAMP, 
+           "updatedAt" = CURRENT_TIMESTAMP
+       WHERE id = $1 AND "userId" = $2 AND "deletedAt" IS NULL`,
+      [notificationId, normalizedUserId],
+    );
 
     return new ResponseNoDataDto({
       message: 'Đánh dấu thông báo là đã đọc thành công',

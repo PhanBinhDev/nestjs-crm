@@ -57,8 +57,11 @@ export class NotificationsController {
   }
 
   @Patch('read')
-  async markRead(@Body() dto: MarkReadDto) {
-    return this.notificationService.markRead(dto);
+  @ApiAuth({
+    summary: 'Đánh dấu thông báo là đã đọc',
+  })
+  async markRead(@Body() dto: MarkReadDto, @CurrentUser('id') userId: Uuid) {
+    return this.notificationService.markRead(dto, userId);
   }
 
   @Patch('clear-all')
