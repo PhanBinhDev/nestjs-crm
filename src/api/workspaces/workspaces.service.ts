@@ -777,6 +777,7 @@ export class WorkspacesService {
     const workspaces = await this.workspaceRepository
       .createQueryBuilder('workspace')
       .leftJoinAndSelect('workspace.members', 'members')
+      .leftJoinAndSelect('workspace.owner', 'owner')
       .where('workspace.ownerId = :userId', { userId })
       .orWhere(`members.userId = :userId AND members.status = :status`, {
         userId,
@@ -787,6 +788,7 @@ export class WorkspacesService {
 
     const workspacesWithCount = workspaces.map((ws) => ({
       ...ws,
+      ownerName: ws.owner?.name,
       membersCount: ws.members
         ? ws.members.filter((m) => m.status === WorkspaceMemberStatus.ACTIVE)
             .length
