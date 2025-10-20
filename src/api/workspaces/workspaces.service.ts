@@ -211,8 +211,11 @@ export class WorkspacesService {
 
     const member = await this.membersRepository.findOne({
       where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      relations: ['workspace'],
     });
     if (!member) throw new BadRequestException('Không có lời mời hợp lệ');
+
+    const workspaceName = member.workspace?.name ?? '';
 
     await this.membersRepository.remove(member);
 
@@ -229,7 +232,7 @@ export class WorkspacesService {
       const notificationData: SendPushNotificationDto = {
         userId: admin.userId,
         title: `${upperCaseFirst(user.name)} đã từ chối lời mời`,
-        message: `Thành viên ${user.name} đã từ chối tham gia không gian làm việc "${upperCaseFirst(member.workspace.name)}"`,
+        message: `Thành viên ${user.name} đã từ chối tham gia không gian làm việc "${upperCaseFirst(workspaceName)}"`,
         type: NotificationType.WORKSPACE,
         senderId: user.id,
         data: {
