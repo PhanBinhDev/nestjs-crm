@@ -44,5 +44,4 @@ export class WorkspaceMemberResDto extends AuditResDto {
   })
   @Expose()
   type: MemberType;
-  })
 }
