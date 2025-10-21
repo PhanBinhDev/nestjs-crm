@@ -84,8 +84,9 @@ export class UserService {
         user,
         workspace: savedWorkspace,
         role: WorkspaceRole.OWNER,
-        status: WorkspaceMemberStatus.
+        status: WorkspaceMemberStatus.ACTIVE,
       });
+
       await workspaceMemberRepo.save(workspaceMember);
 
       await this.stageService.initDefaultStages(savedWorkspace.id, manager);
