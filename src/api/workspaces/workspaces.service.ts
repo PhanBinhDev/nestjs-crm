@@ -32,7 +32,7 @@ import { Cache } from 'cache-manager';
 import { plainToInstance } from 'class-transformer';
 import { randomBytes } from 'crypto';
 import ms from 'ms';
-import { DataSource, In, Repository } from 'typeorm';
+import { Brackets, DataSource, In, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
 import { StagesService } from '../stages/stages.service';
@@ -852,46 +852,30 @@ export class WorkspacesService {
     currentUserId: Uuid,
     query: QueryWorkspaceDetailDto,
   ): Promise<ResponseDto<WorkspaceDetailsResDto>> {
-    const relations = ['owner'];
-    if (query.includeViewSettings) {
-      relations.push('settingsView');
-    }
+    const qb = this.workspaceRepository
+      .createQueryBuilder('workspace')
+      .where('workspace.id = :id', { id })
+      .leftJoinAndSelect('workspace.owner', 'owner')
+      .leftJoin('workspace.members', 'members');
 
     if (query.includeMembers) {
-      relations.push('members', 'members.user');
+      qb.addSelect('members').leftJoinAndSelect('members.user', 'user');
     }
 
-    let workspace = await this.workspaceRepository.findOne({
-      where: { id },
-      select: ['id', 'visibility'],
-      relations,
-    });
+    qb.andWhere(
+      new Brackets((qb) => {
+        qb.where('workspace.visibility = :public', { public: 'public' })
+          .orWhere('workspace.ownerId = :userId', { userId: currentUserId })
+          .orWhere('members.userId = :userId', { userId: currentUserId });
+      }),
+    );
 
-    console.log('detail workspace', workspace);
+    const workspace = await qb.getOne();
 
     if (!workspace) {
-      throw new BadRequestException('Workspace not found');
-    }
-
-    if (workspace.visibility === 'private') {
-      workspace = await this.workspaceRepository.findOne({
-        where: [
-          { id, owner: { id: currentUserId } },
-          { id, members: { userId: currentUserId } },
-        ],
-        relations,
-      });
-
-      if (!workspace) {
-        throw new BadRequestException(
-          'Bạn không phải là thành viên của workspace này',
-        );
-      }
-    } else {
-      workspace = await this.workspaceRepository.findOne({
-        where: { id },
-        relations,
-      });
+      throw new BadRequestException(
+        'Workspace không tồn tại hoặc bạn không có quyền truy cập',
+      );
     }
 
     return new ResponseDto<WorkspaceDetailsResDto>({
