@@ -2,6 +2,7 @@ import { UserResDto } from '@/api/users/dto/user.res.dto';
 import { AuditResDto } from '@/common/dto/audit.res.dto';
 import { Uuid } from '@/common/types/common.type';
 import {
+  MemberType,
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
@@ -37,5 +38,11 @@ export class WorkspaceMemberResDto extends AuditResDto {
   @Expose()
   status: WorkspaceMemberStatus;
 
-  @EnumField(() )
+  @EnumField(() => MemberType, {
+    description: 'Loại thành viên trong không gian làm việc',
+    example: MemberType.NORMAL,
+  })
+  @Expose()
+  type: MemberType;
+  })
 }
