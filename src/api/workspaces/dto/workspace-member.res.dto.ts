@@ -36,4 +36,6 @@ export class WorkspaceMemberResDto extends AuditResDto {
   })
   @Expose()
   status: WorkspaceMemberStatus;
+
+  @EnumField(() )
 }

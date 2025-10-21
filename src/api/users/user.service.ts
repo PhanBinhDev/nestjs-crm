@@ -443,7 +443,6 @@ export class UserService {
     avatar?: Express.Multer.File,
   ): Promise<ResponseDto<UserResDto>> {
     let uploadedPublicId: string | null = null;
-    let oldPublicId: string | null = null;
 
     return await this.userRepository.manager
       .transaction(async (manager) => {
@@ -458,15 +457,44 @@ export class UserService {
           );
         }
 
-        // lấy avatar cũ trước khi overwrite
         const oldAvatarUrl = userToUpdate.avatar;
 
-        // map dto -> entity
         Object.assign(userToUpdate, dto);
+
+        if (dto.removeAvatar) {
+          if (oldAvatarUrl) {
+            const oldFile = await fileRepo.findOne({
+              where: { url: oldAvatarUrl },
+            });
+            if (oldFile) {
+              if (oldFile.metadata?.public_id) {
+                await this.cloudinaryService.deleteFile(
+                  oldFile.metadata.public_id,
+                );
+              }
+              await manager.delete(FileEntity, oldFile.id);
+            }
+            userToUpdate.avatar = null;
+          }
+        }
 
         if (avatar) {
           const folder = `users/${id}`;
           const fileName = avatar.originalname;
+
+          if (oldAvatarUrl) {
+            const oldFile = await fileRepo.findOne({
+              where: { url: oldAvatarUrl },
+            });
+            if (oldFile) {
+              if (oldFile.metadata?.public_id) {
+                await this.cloudinaryService.deleteFile(
+                  oldFile.metadata.public_id,
+                );
+              }
+              await manager.delete(FileEntity, oldFile.id);
+            }
+          }
 
           const uploadResult = await this.cloudinaryService.uploadToFolder(
             avatar,
@@ -478,13 +506,9 @@ export class UserService {
             throw new BadRequestException('Upload avatar thất bại');
           }
 
-          // lưu public id để rollback khi transaction lỗi
           uploadedPublicId = uploadResult.public_id;
-
-          // cập nhật user avatar url
           userToUpdate.avatar = uploadResult.secure_url;
 
-          // tạo bản ghi FileEntity
           const fileEntity = fileRepo.create({
             url: uploadResult.secure_url,
             originalName: avatar.originalname,
@@ -492,7 +516,6 @@ export class UserService {
             size: uploadResult.bytes,
             fileName: fileName,
             uploadedBy: id,
-            // workspaceId left null for user avatars
             metadata: {
               public_id: uploadResult.public_id,
               format: uploadResult.format,
@@ -503,16 +526,6 @@ export class UserService {
             },
           });
           await fileRepo.save(fileEntity);
-
-          if (oldAvatarUrl) {
-            const oldFile = await fileRepo.findOne({
-              where: { url: oldAvatarUrl },
-            });
-            if (oldFile) {
-              oldPublicId = oldFile.metadata?.public_id || null;
-              await manager.delete(FileEntity, oldFile.id);
-            }
-          }
         }
 
         const saved = await userRepo.save(userToUpdate);
@@ -522,18 +535,6 @@ export class UserService {
           }),
           message: 'User updated successfully',
         });
-      })
-      .then(async (res) => {
-        if (oldPublicId) {
-          try {
-            await this.cloudinaryService.deleteFile(oldPublicId);
-          } catch {
-            this.logger.warn(
-              `Cannot delete old avatar on Cloudinary: ${oldPublicId}`,
-            );
-          }
-        }
-        return res;
       })
       .catch(async (error) => {
         if (uploadedPublicId) {

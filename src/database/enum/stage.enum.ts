@@ -3,5 +3,4 @@ export enum StageGroup {
   ACTIVE = 'active',
   DONE = 'done',
   CLOSED = 'closed',
-  OVERDUE = 'overdue',
 }

@@ -3,6 +3,7 @@ import { Uuid } from '@/common/types/common.type';
 import { WrapperType } from '@/common/types/types';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import {
+  MemberType,
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
@@ -47,4 +48,11 @@ export class WorkspaceMembers extends AbstractEntity {
     default: WorkspaceMemberStatus.PENDING,
   })
   status: WorkspaceMemberStatus;
+
+  @Column({
+    type: 'enum',
+    enum: MemberType,
+    default: MemberType.NORMAL,
+  })
+  type: MemberType;
 }

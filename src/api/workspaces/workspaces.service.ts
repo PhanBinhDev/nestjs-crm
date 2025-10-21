@@ -9,6 +9,7 @@ import { CacheKey } from '@/constants/cache.constant';
 import { JobName, QueueName } from '@/constants/job.constant';
 import { NotificationType } from '@/database/enum/notifications.enum';
 import {
+  MemberType,
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
@@ -107,6 +108,7 @@ export class WorkspacesService {
       userId,
       role: WorkspaceRole.MEMBER,
       status: WorkspaceMemberStatus.PENDING,
+      type: MemberType.REQUEST_JOIN,
     });
     await this.membersRepository.save(member);
 
@@ -126,7 +128,8 @@ export class WorkspacesService {
         message: `Người dùng ${member.user.name} đã gửi yêu cầu tham gia không gian làm việc "${member.workspace.name}"`,
         type: NotificationType.WORKSPACE,
         data: {
-          uri: `/workspaces/${workspaceId}`,
+          uri: `/settings/workspaces/${workspaceId}`,
+          tab: 'members/requests',
         },
       };
       await this.notificationQueue.add(
@@ -149,7 +152,11 @@ export class WorkspacesService {
     workspaceId: Uuid,
   ): Promise<ResponseDto<WorkspaceMemberResDto[]>> {
     const requests = await this.membersRepository.find({
-      where: { workspaceId, status: WorkspaceMemberStatus.PENDING },
+      where: {
+        workspaceId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.REQUEST_JOIN,
+      },
       relations: ['user'],
     });
     return new ResponseDto<WorkspaceMemberResDto[]>({
@@ -166,7 +173,12 @@ export class WorkspacesService {
     currentUserId: Uuid,
   ): Promise<ResponseNoDataDto> {
     const member = await this.membersRepository.findOne({
-      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      where: {
+        workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.REQUEST_JOIN,
+      },
       relations: ['user', 'workspace'],
     });
     if (!member) throw new BadRequestException('Không có yêu cầu join hợp lệ');
@@ -195,7 +207,12 @@ export class WorkspacesService {
     currentUserId: Uuid,
   ): Promise<ResponseNoDataDto> {
     const member = await this.membersRepository.findOne({
-      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      where: {
+        workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.REQUEST_JOIN,
+      },
       relations: ['user', 'workspace'],
     });
     if (!member) throw new BadRequestException('Không có yêu cầu join hợp lệ');
@@ -226,7 +243,12 @@ export class WorkspacesService {
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
 
     const member = await this.membersRepository.findOne({
-      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      where: {
+        workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.INVITE,
+      },
       relations: ['workspace'],
     });
     if (!member) throw new BadRequestException('Không có lời mời hợp lệ');
@@ -286,7 +308,12 @@ export class WorkspacesService {
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
 
     const member = await this.membersRepository.findOne({
-      where: { workspaceId, userId, status: WorkspaceMemberStatus.PENDING },
+      where: {
+        workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.INVITE,
+      },
       relations: ['workspace', 'workspace.owner'],
     });
 
@@ -512,6 +539,8 @@ export class WorkspacesService {
         userId: user.id,
         role: WorkspaceRole.MEMBER,
         status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.INVITE,
+        createdBy: userId,
       }),
     );
 
@@ -775,7 +804,6 @@ export class WorkspacesService {
         });
       })
       .catch(async (error) => {
-        // Nếu transaction lỗi, rollback file trên Cloudinary nếu đã upload
         if (uploadedPublicId) {
           try {
             await this.cloudinaryService.deleteFile(uploadedPublicId);

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class InitDb1759251481907 implements MigrationInterface {
-  name = 'InitDb1759251481907';
+export class InitDb1761036255660 implements MigrationInterface {
+  name = 'InitDb1761036255660';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
@@ -29,40 +29,6 @@ export class InitDb1759251481907 implements MigrationInterface {
                 "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_25c393e2e76b3e32e87a79b1dc2" PRIMARY KEY ("id")
             )
-        `);
-    await queryRunner.query(`
-            CREATE TYPE "public"."workspace_members_role_enum" AS ENUM('owner', 'admin', 'member')
-        `);
-    await queryRunner.query(`
-            CREATE TYPE "public"."workspace_members_status_enum" AS ENUM('active', 'pending', 'reject')
-        `);
-    await queryRunner.query(`
-            CREATE TABLE "workspace_members" (
-                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
-                "workspaceId" uuid NOT NULL,
-                "userId" uuid NOT NULL,
-                "role" "public"."workspace_members_role_enum" NOT NULL DEFAULT 'member',
-                "status" "public"."workspace_members_status_enum" NOT NULL DEFAULT 'pending',
-                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                "createdBy" character varying NOT NULL,
-                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                CONSTRAINT "PK_22ab43ac5865cd62769121d2bc4" PRIMARY KEY ("id")
-            )
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_workspace_member_status" ON "workspace_members" ("status")
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_workspace_member_role" ON "workspace_members" ("role")
-        `);
-    await queryRunner.query(`
-            CREATE UNIQUE INDEX "idx_workspace_member_workspace_user" ON "workspace_members" ("workspaceId", "userId")
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_workspace_member_user" ON "workspace_members" ("userId")
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_workspace_member_workspace" ON "workspace_members" ("workspaceId")
         `);
     await queryRunner.query(`
             CREATE TABLE "workspace_view_settings" (
@@ -189,11 +155,32 @@ export class InitDb1759251481907 implements MigrationInterface {
             CREATE INDEX "idx_activity_checklist_item_checklist" ON "activity_checklist_items" ("checklistId")
         `);
     await queryRunner.query(`
+            CREATE TYPE "public"."activity_comment_reactions_type_enum" AS ENUM('like', 'love', 'haha', 'wow', 'sad', 'angry')
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "activity_comment_reactions" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "userId" uuid NOT NULL,
+                "commentId" uuid NOT NULL,
+                "type" "public"."activity_comment_reactions_type_enum" NOT NULL DEFAULT 'like',
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" character varying NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "uq_user_comment_reaction" UNIQUE ("userId", "commentId"),
+                CONSTRAINT "PK_f4a1b4257ce62e419848fe82914" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_comment_reaction_comment" ON "activity_comment_reactions" ("commentId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_comment_reaction_user" ON "activity_comment_reactions" ("userId")
+        `);
+    await queryRunner.query(`
             CREATE TABLE "activity_comments" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "activityId" uuid NOT NULL,
                 "parentCommentId" uuid,
-                "reactions" jsonb,
                 "userId" uuid NOT NULL,
                 "content" text NOT NULL,
                 "isEdited" boolean NOT NULL DEFAULT false,
@@ -234,6 +221,94 @@ export class InitDb1759251481907 implements MigrationInterface {
         `);
     await queryRunner.query(`
             CREATE INDEX "idx_activity_feedback_activity" ON "activity_feedback" ("activityId")
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "files" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "url" character varying NOT NULL,
+                "originalName" character varying NOT NULL,
+                "mimeType" character varying NOT NULL,
+                "size" integer NOT NULL,
+                "fileName" character varying NOT NULL,
+                "metadata" jsonb,
+                "uploadedBy" uuid,
+                "deletedAt" TIMESTAMP,
+                "workspaceId" uuid,
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" character varying NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_6c16b9093a142e0e7613b04a3d9" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_file_deleted" ON "files" ("deletedAt")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_file_uploader" ON "files" ("uploadedBy")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_file_workspace" ON "files" ("workspaceId")
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "activity_files" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "activityId" uuid NOT NULL,
+                "fileId" uuid NOT NULL,
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" character varying NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_0f5c6a6c9caf5fed58f20a3e313" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE UNIQUE INDEX "idx_activity_file_unique" ON "activity_files" ("activityId", "fileId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_activity_file_file" ON "activity_files" ("fileId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_activity_file_activity" ON "activity_files" ("activityId")
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "activity_follows" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "userId" uuid NOT NULL,
+                "activityId" uuid NOT NULL,
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" character varying NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_5c91280cda2b63fb0cc697e2b09" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE UNIQUE INDEX "idx_activity_follow_activity_user" ON "activity_follows" ("activityId", "userId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_activity_follow_user" ON "activity_follows" ("userId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_activity_follow_activity" ON "activity_follows" ("activityId")
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "activity_links" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "activityId" uuid NOT NULL,
+                "title" character varying(255) NOT NULL,
+                "url" character varying(2048) NOT NULL,
+                "description" text,
+                "thumbnail" character varying(2048),
+                "siteName" text,
+                "siteDescription" text,
+                "favicon" character varying(100),
+                "metadata" json,
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" uuid NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_69509fa73dd5706f71fa352c9b3" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_activity_link_activity" ON "activity_links" ("activityId")
         `);
     await queryRunner.query(`
             CREATE TYPE "public"."activity_participants_role_enum" AS ENUM('owner', 'executor', 'participant')
@@ -407,10 +482,8 @@ export class InitDb1759251481907 implements MigrationInterface {
                 "data" json,
                 "isRead" boolean NOT NULL DEFAULT false,
                 "readAt" TIMESTAMP,
-                "isDeleted" boolean NOT NULL DEFAULT false,
-                "workspaceId" uuid,
+                "deletedAt" TIMESTAMP,
                 "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                "createdBy" character varying NOT NULL,
                 "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_6a72c3c0f683f6462415e653c3a" PRIMARY KEY ("id")
             )
@@ -422,13 +495,10 @@ export class InitDb1759251481907 implements MigrationInterface {
             CREATE INDEX "idx_notification_isRead" ON "notifications" ("isRead")
         `);
     await queryRunner.query(`
-            CREATE INDEX "idx_notification_workspace" ON "notifications" ("workspaceId")
-        `);
-    await queryRunner.query(`
             CREATE INDEX "idx_notification_user" ON "notifications" ("userId")
         `);
     await queryRunner.query(`
-            CREATE TYPE "public"."users_role_enum" AS ENUM('CNBM', 'TM', 'GV')
+            CREATE TYPE "public"."users_role_enum" AS ENUM('SUPERADMIN', 'CNBM', 'TM', 'GV')
         `);
     await queryRunner.query(`
             CREATE TABLE "users" (
@@ -449,6 +519,44 @@ export class InitDb1759251481907 implements MigrationInterface {
                 CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"),
                 CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id")
             )
+        `);
+    await queryRunner.query(`
+            CREATE TYPE "public"."workspace_members_role_enum" AS ENUM('owner', 'admin', 'member')
+        `);
+    await queryRunner.query(`
+            CREATE TYPE "public"."workspace_members_status_enum" AS ENUM('active', 'pending', 'reject')
+        `);
+    await queryRunner.query(`
+            CREATE TYPE "public"."workspace_members_type_enum" AS ENUM('normal', 'invite', 'request_join')
+        `);
+    await queryRunner.query(`
+            CREATE TABLE "workspace_members" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "workspaceId" uuid NOT NULL,
+                "userId" uuid NOT NULL,
+                "role" "public"."workspace_members_role_enum" NOT NULL DEFAULT 'member',
+                "status" "public"."workspace_members_status_enum" NOT NULL DEFAULT 'pending',
+                "type" "public"."workspace_members_type_enum" NOT NULL DEFAULT 'normal',
+                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                "createdBy" character varying NOT NULL,
+                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_22ab43ac5865cd62769121d2bc4" PRIMARY KEY ("id")
+            )
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_workspace_member_status" ON "workspace_members" ("status")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_workspace_member_role" ON "workspace_members" ("role")
+        `);
+    await queryRunner.query(`
+            CREATE UNIQUE INDEX "idx_workspace_member_workspace_user" ON "workspace_members" ("workspaceId", "userId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_workspace_member_user" ON "workspace_members" ("userId")
+        `);
+    await queryRunner.query(`
+            CREATE INDEX "idx_workspace_member_workspace" ON "workspace_members" ("workspaceId")
         `);
     await queryRunner.query(`
             CREATE TYPE "public"."tenants_status_enum" AS ENUM('active', 'inactive', 'pending')
@@ -476,41 +584,15 @@ export class InitDb1759251481907 implements MigrationInterface {
             CREATE INDEX "IDX_3021c18db2b363ae9324c826c5" ON "tenants" ("code")
         `);
     await queryRunner.query(`
-            CREATE TABLE "files" (
-                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
-                "url" character varying NOT NULL,
-                "originalName" character varying NOT NULL,
-                "mimeType" character varying NOT NULL,
-                "size" integer NOT NULL,
-                "fileName" character varying NOT NULL,
-                "metadata" jsonb,
-                "uploadedBy" uuid,
-                "deletedAt" TIMESTAMP,
-                "workspaceId" uuid,
-                "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                "createdBy" character varying NOT NULL,
-                "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-                CONSTRAINT "PK_6c16b9093a142e0e7613b04a3d9" PRIMARY KEY ("id")
-            )
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_file_deleted" ON "files" ("deletedAt")
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_file_uploader" ON "files" ("uploadedBy")
-        `);
-    await queryRunner.query(`
-            CREATE INDEX "idx_file_workspace" ON "files" ("workspaceId")
-        `);
-    await queryRunner.query(`
             CREATE TABLE "device-token" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "userId" uuid NOT NULL,
-                "tokens" text NOT NULL,
+                "tokens" jsonb NOT NULL DEFAULT '[]',
                 "deviceInfo" character varying(255),
                 "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
                 "createdBy" character varying NOT NULL,
                 "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT "REL_3cfccbd8d729bf9f340da0900e" UNIQUE ("userId"),
                 CONSTRAINT "PK_5cacd370c5c8cfbc961afa647a9" PRIMARY KEY ("id")
             )
         `);
@@ -550,14 +632,6 @@ export class InitDb1759251481907 implements MigrationInterface {
             ADD CONSTRAINT "FK_ff112764ab1da5561a6ae089f2c" FOREIGN KEY ("semesterId") REFERENCES "semesters"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
-            ALTER TABLE "workspace_members"
-            ADD CONSTRAINT "FK_22176b38813258c2aadaae32448" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-        `);
-    await queryRunner.query(`
-            ALTER TABLE "workspace_members"
-            ADD CONSTRAINT "FK_0dd45cb52108d0664df4e7e33e6" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-        `);
-    await queryRunner.query(`
             ALTER TABLE "workspace_view_settings"
             ADD CONSTRAINT "FK_c41ba76e41f4dbad3d16e242e3d" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE ON UPDATE NO ACTION
         `);
@@ -578,6 +652,14 @@ export class InitDb1759251481907 implements MigrationInterface {
             ADD CONSTRAINT "FK_210840a4f7d614ef80cb8b73cff" FOREIGN KEY ("checklistId") REFERENCES "activity_checklists"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
+            ALTER TABLE "activity_comment_reactions"
+            ADD CONSTRAINT "FK_e2eec437323ff4212f55e1e64d7" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_comment_reactions"
+            ADD CONSTRAINT "FK_44987835df15d5f93cf7136d416" FOREIGN KEY ("commentId") REFERENCES "activity_comments"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
             ALTER TABLE "activity_comments"
             ADD CONSTRAINT "FK_568bccfdaac836fe18b40b29be0" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE NO ACTION
         `);
@@ -596,6 +678,38 @@ export class InitDb1759251481907 implements MigrationInterface {
     await queryRunner.query(`
             ALTER TABLE "activity_feedback"
             ADD CONSTRAINT "FK_e02f7be1920f4f06a379a849f16" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "files"
+            ADD CONSTRAINT "FK_a443b3a690edf7e690e3dace8d9" FOREIGN KEY ("uploadedBy") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "files"
+            ADD CONSTRAINT "FK_734c779fc5d891b8572f7ff9c5e" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_files"
+            ADD CONSTRAINT "FK_0bcf78b5aed931ac01b7f2a3c40" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_files"
+            ADD CONSTRAINT "FK_137667d12e0a683a97f0f5cf96d" FOREIGN KEY ("fileId") REFERENCES "files"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_follows"
+            ADD CONSTRAINT "FK_f905ed177c918f6332ba2859c8a" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_follows"
+            ADD CONSTRAINT "FK_3ea6c4268fe5f90ca1ba44f9832" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_links"
+            ADD CONSTRAINT "FK_a79aa863c38f9417825b6d2f5fb" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_links"
+            ADD CONSTRAINT "FK_e2dfff6c31ef0c97b49045b504a" FOREIGN KEY ("createdBy") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
             ALTER TABLE "activity_participants"
@@ -657,17 +771,21 @@ export class InitDb1759251481907 implements MigrationInterface {
             SET NULL ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
+            ALTER TABLE "workspace_members"
+            ADD CONSTRAINT "FK_22176b38813258c2aadaae32448" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "workspace_members"
+            ADD CONSTRAINT "FK_0dd45cb52108d0664df4e7e33e6" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
+    await queryRunner.query(`
             ALTER TABLE "tenants"
             ADD CONSTRAINT "FK_dccf2382a3ffe4edfc09b8eeb06" FOREIGN KEY ("ownerId") REFERENCES "users"("id") ON DELETE
             SET NULL ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
-            ALTER TABLE "files"
-            ADD CONSTRAINT "FK_a443b3a690edf7e690e3dace8d9" FOREIGN KEY ("uploadedBy") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-        `);
-    await queryRunner.query(`
-            ALTER TABLE "files"
-            ADD CONSTRAINT "FK_734c779fc5d891b8572f7ff9c5e" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+            ALTER TABLE "device-token"
+            ADD CONSTRAINT "FK_3cfccbd8d729bf9f340da0900e2" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION
         `);
     await queryRunner.query(`
             ALTER TABLE "event_feedback"
@@ -680,13 +798,16 @@ export class InitDb1759251481907 implements MigrationInterface {
             ALTER TABLE "event_feedback" DROP CONSTRAINT "FK_2180850236cb098536a90541ff1"
         `);
     await queryRunner.query(`
-            ALTER TABLE "files" DROP CONSTRAINT "FK_734c779fc5d891b8572f7ff9c5e"
-        `);
-    await queryRunner.query(`
-            ALTER TABLE "files" DROP CONSTRAINT "FK_a443b3a690edf7e690e3dace8d9"
+            ALTER TABLE "device-token" DROP CONSTRAINT "FK_3cfccbd8d729bf9f340da0900e2"
         `);
     await queryRunner.query(`
             ALTER TABLE "tenants" DROP CONSTRAINT "FK_dccf2382a3ffe4edfc09b8eeb06"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "workspace_members" DROP CONSTRAINT "FK_0dd45cb52108d0664df4e7e33e6"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "workspace_members" DROP CONSTRAINT "FK_22176b38813258c2aadaae32448"
         `);
     await queryRunner.query(`
             ALTER TABLE "notifications" DROP CONSTRAINT "FK_ddb7981cf939fe620179bfea33a"
@@ -731,6 +852,30 @@ export class InitDb1759251481907 implements MigrationInterface {
             ALTER TABLE "activity_participants" DROP CONSTRAINT "FK_f86e7fd40ff60987a34c3989f1d"
         `);
     await queryRunner.query(`
+            ALTER TABLE "activity_links" DROP CONSTRAINT "FK_e2dfff6c31ef0c97b49045b504a"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_links" DROP CONSTRAINT "FK_a79aa863c38f9417825b6d2f5fb"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_follows" DROP CONSTRAINT "FK_3ea6c4268fe5f90ca1ba44f9832"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_follows" DROP CONSTRAINT "FK_f905ed177c918f6332ba2859c8a"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_files" DROP CONSTRAINT "FK_137667d12e0a683a97f0f5cf96d"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_files" DROP CONSTRAINT "FK_0bcf78b5aed931ac01b7f2a3c40"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "files" DROP CONSTRAINT "FK_734c779fc5d891b8572f7ff9c5e"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "files" DROP CONSTRAINT "FK_a443b3a690edf7e690e3dace8d9"
+        `);
+    await queryRunner.query(`
             ALTER TABLE "activity_feedback" DROP CONSTRAINT "FK_e02f7be1920f4f06a379a849f16"
         `);
     await queryRunner.query(`
@@ -746,6 +891,12 @@ export class InitDb1759251481907 implements MigrationInterface {
             ALTER TABLE "activity_comments" DROP CONSTRAINT "FK_568bccfdaac836fe18b40b29be0"
         `);
     await queryRunner.query(`
+            ALTER TABLE "activity_comment_reactions" DROP CONSTRAINT "FK_44987835df15d5f93cf7136d416"
+        `);
+    await queryRunner.query(`
+            ALTER TABLE "activity_comment_reactions" DROP CONSTRAINT "FK_e2eec437323ff4212f55e1e64d7"
+        `);
+    await queryRunner.query(`
             ALTER TABLE "activity_checklist_items" DROP CONSTRAINT "FK_210840a4f7d614ef80cb8b73cff"
         `);
     await queryRunner.query(`
@@ -759,12 +910,6 @@ export class InitDb1759251481907 implements MigrationInterface {
         `);
     await queryRunner.query(`
             ALTER TABLE "workspace_view_settings" DROP CONSTRAINT "FK_c41ba76e41f4dbad3d16e242e3d"
-        `);
-    await queryRunner.query(`
-            ALTER TABLE "workspace_members" DROP CONSTRAINT "FK_0dd45cb52108d0664df4e7e33e6"
-        `);
-    await queryRunner.query(`
-            ALTER TABLE "workspace_members" DROP CONSTRAINT "FK_22176b38813258c2aadaae32448"
         `);
     await queryRunner.query(`
             ALTER TABLE "semester_blocks" DROP CONSTRAINT "FK_ff112764ab1da5561a6ae089f2c"
@@ -788,18 +933,6 @@ export class InitDb1759251481907 implements MigrationInterface {
             DROP TABLE "device-token"
         `);
     await queryRunner.query(`
-            DROP INDEX "public"."idx_file_workspace"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_file_uploader"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_file_deleted"
-        `);
-    await queryRunner.query(`
-            DROP TABLE "files"
-        `);
-    await queryRunner.query(`
             DROP INDEX "public"."IDX_3021c18db2b363ae9324c826c5"
         `);
     await queryRunner.query(`
@@ -809,6 +942,33 @@ export class InitDb1759251481907 implements MigrationInterface {
             DROP TYPE "public"."tenants_status_enum"
         `);
     await queryRunner.query(`
+            DROP INDEX "public"."idx_workspace_member_workspace"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_workspace_member_user"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_workspace_member_workspace_user"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_workspace_member_role"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_workspace_member_status"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "workspace_members"
+        `);
+    await queryRunner.query(`
+            DROP TYPE "public"."workspace_members_type_enum"
+        `);
+    await queryRunner.query(`
+            DROP TYPE "public"."workspace_members_status_enum"
+        `);
+    await queryRunner.query(`
+            DROP TYPE "public"."workspace_members_role_enum"
+        `);
+    await queryRunner.query(`
             DROP TABLE "users"
         `);
     await queryRunner.query(`
@@ -816,9 +976,6 @@ export class InitDb1759251481907 implements MigrationInterface {
         `);
     await queryRunner.query(`
             DROP INDEX "public"."idx_notification_user"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_notification_workspace"
         `);
     await queryRunner.query(`
             DROP INDEX "public"."idx_notification_isRead"
@@ -929,6 +1086,48 @@ export class InitDb1759251481907 implements MigrationInterface {
             DROP TYPE "public"."activity_participants_role_enum"
         `);
     await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_link_activity"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "activity_links"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_follow_activity"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_follow_user"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_follow_activity_user"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "activity_follows"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_file_activity"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_file_file"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_activity_file_unique"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "activity_files"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_file_workspace"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_file_uploader"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_file_deleted"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "files"
+        `);
+    await queryRunner.query(`
             DROP INDEX "public"."idx_activity_feedback_activity"
         `);
     await queryRunner.query(`
@@ -951,6 +1150,18 @@ export class InitDb1759251481907 implements MigrationInterface {
         `);
     await queryRunner.query(`
             DROP TABLE "activity_comments"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_comment_reaction_user"
+        `);
+    await queryRunner.query(`
+            DROP INDEX "public"."idx_comment_reaction_comment"
+        `);
+    await queryRunner.query(`
+            DROP TABLE "activity_comment_reactions"
+        `);
+    await queryRunner.query(`
+            DROP TYPE "public"."activity_comment_reactions_type_enum"
         `);
     await queryRunner.query(`
             DROP INDEX "public"."idx_activity_checklist_item_checklist"
@@ -1008,30 +1219,6 @@ export class InitDb1759251481907 implements MigrationInterface {
         `);
     await queryRunner.query(`
             DROP TABLE "workspace_view_settings"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_workspace_member_workspace"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_workspace_member_user"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_workspace_member_workspace_user"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_workspace_member_role"
-        `);
-    await queryRunner.query(`
-            DROP INDEX "public"."idx_workspace_member_status"
-        `);
-    await queryRunner.query(`
-            DROP TABLE "workspace_members"
-        `);
-    await queryRunner.query(`
-            DROP TYPE "public"."workspace_members_status_enum"
-        `);
-    await queryRunner.query(`
-            DROP TYPE "public"."workspace_members_role_enum"
         `);
     await queryRunner.query(`
             DROP TABLE "semesters"

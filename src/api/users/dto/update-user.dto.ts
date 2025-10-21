@@ -10,4 +10,10 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
   })
   @BooleanFieldOptional()
   isActive?: boolean;
+
+  @BooleanFieldOptional({
+    description: 'Xoá avatar của workspace nếu có',
+    example: true,
+  })
+  removeAvatar?: boolean;
 }
