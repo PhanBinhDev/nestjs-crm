@@ -78,9 +78,15 @@ export class WorkspacesService {
     workspaceId: Uuid,
     userId: Uuid,
   ): Promise<ResponseDto<WorkspaceMemberResDto>> {
-    const member = await this.membersRepository.findOne({
-      where: { workspaceId, userId, status: WorkspaceMemberStatus.ACTIVE },
-    });
+    const member = await this.membersRepository
+      .createQueryBuilder('member')
+      .leftJoinAndSelect('member.user', 'user')
+      .leftJoinAndSelect('user.assignedActivities', 'assignedActivities')
+      .where('member.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('member.userId = :userId', { userId })
+      .andWhere('member.status = :status', { status: WorkspaceMemberStatus.ACTIVE })
+      .getOne();
+
     if (!member) throw new NotFoundException('Không tìm thấy thành viên');
     return new ResponseDto<WorkspaceMemberResDto>({
       data: plainToInstance(WorkspaceMemberResDto, member, {
@@ -368,11 +374,12 @@ export class WorkspacesService {
   ): Promise<ResponseNoDataDto> {
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
+      relations: ['owner'],
     });
     if (!workspace)
       throw new NotFoundException('Không gian làm việc không tồn tại');
 
-    if (workspace.owner.id === userId) {
+    if (workspace.owner?.id === userId) {
       throw new BadRequestException(
         'Owner phải chuyển quyền trước khi rời khỏi workspace',
       );
@@ -391,7 +398,7 @@ export class WorkspacesService {
         .from('activity_assignees')
         .where('userId = :userId', { userId })
         .andWhere(
-          `activityId IN (SELECT id FROM activities WHERE workspaceId = :workspaceId)`,
+          `activityId IN (SELECT id FROM activities WHERE "workspaceId" = :workspaceId)`,
           { workspaceId },
         )
         .execute();
