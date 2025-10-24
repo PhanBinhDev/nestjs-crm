@@ -11,12 +11,12 @@ import { buildPaginator } from '@/utils/cursor-pagination';
 import { upperCaseFirst } from '@/utils/index.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { plainToInstance } from 'class-transformer';
 import * as admin from 'firebase-admin';
 import moment from 'moment';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
@@ -42,6 +42,8 @@ export class NotificationsService {
     private readonly cloudinaryService: CloudinaryService,
     @InjectRepository(FileEntity)
     private readonly fileRepo: Repository<FileEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async findAll(
@@ -51,7 +53,8 @@ export class NotificationsService {
     const qb = this.notificationRepo
       .createQueryBuilder('notification')
       .andWhere('notification.userId = :userId', { userId: currentUser })
-      .leftJoinAndSelect('notification.user', 'user');
+      .leftJoinAndSelect('notification.user', 'user')
+      .leftJoinAndSelect('notification.sender', 'sender');
 
     if (query.senderId) {
       qb.andWhere('notification.senderId = :senderId', {
@@ -107,8 +110,32 @@ export class NotificationsService {
       where: { userId: currentUser, isRead: false },
     });
 
+    // Lấy memberStatus cho notification type 'workspace'
+    const mappedData = await Promise.all(
+      data.map(async (notification: any) => {
+        let memberStatus = null;
+        
+        if (notification.type === 'workspace' && notification.data?.workspaceId) {
+          const workspaceMember = await this.dataSource
+            .getRepository('workspace_members')
+            .createQueryBuilder('wm')
+            .select('wm.status')
+            .where('wm.workspaceId = :workspaceId', { workspaceId: notification.data.workspaceId })
+            .andWhere('wm.userId = :userId', { userId: notification.userId })
+            .getRawOne();
+          
+          memberStatus = workspaceMember?.wm_status || null;
+        }
+        
+        return {
+          ...notification,
+          memberStatus,
+        };
+      })
+    );
+
     return new CursorPaginatedDto<NotificationResDto>({
-      data: plainToInstance(NotificationResDto, data, {
+      data: plainToInstance(NotificationResDto, mappedData, {
         excludeExtraneousValues: true,
       }),
       meta: metaDto,
