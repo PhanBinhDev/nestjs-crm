@@ -5,6 +5,7 @@ import { ResponseDto } from '@/common/dto/response/response.dto';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,6 +15,7 @@ import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
+import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
 import {
   Document,
   DocumentStatus,
@@ -40,7 +42,6 @@ export class DocumentsService {
     userId: string,
     file?: Express.Multer.File,
   ): Promise<ResponseDto<DocumentResDto>> {
-    // 1. Kiểm tra workspace tồn tại
     const workspace = await this.workspaceRepository.findOne({
       where: { id: dto.workspaceId as any },
       relations: ['owner'],
@@ -49,7 +50,6 @@ export class DocumentsService {
     if (!workspace) {
       throw new NotFoundException('Workspace không tồn tại');
     }
-    // 2. Kiểm tra quyền: phải là CNBM hoặc TM
     const member = await this.workspaceMemberRepository.findOne({
       where: {
         workspaceId: dto.workspaceId as any,
@@ -66,7 +66,6 @@ export class DocumentsService {
       );
     }
 
-    // 3. Validate theo type
     if (dto.type === DocumentType.FILE) {
       if (!file) {
         throw new BadRequestException(
@@ -74,7 +73,6 @@ export class DocumentsService {
         );
       }
 
-      // Validate file type
       const allowedTypes = [
         'application/pdf',
         'application/msword',
@@ -94,7 +92,6 @@ export class DocumentsService {
         );
       }
 
-      // Validate file size (max 50MB)
       const maxSize = 50 * 1024 * 1024;
       if (file.size > maxSize) {
         throw new BadRequestException(
@@ -107,7 +104,6 @@ export class DocumentsService {
       throw new BadRequestException('Link URL là bắt buộc khi type = LINK');
     }
 
-    // 4. Tạo document
     const document = this.documentRepository.create({
       title: dto.title,
       description: dto.description,
@@ -118,11 +114,11 @@ export class DocumentsService {
       metadata: dto.metadata,
     });
 
-    // 5. Upload file nếu type = FILE
     if (dto.type === DocumentType.FILE && file) {
       try {
         const uploadResult = await this.cloudinaryService.uploadFile(file, {
           folder: 'documents',
+          resource_type: 'raw',
         });
 
         document.fileUrl = uploadResult.url;
@@ -138,7 +134,6 @@ export class DocumentsService {
       }
     }
 
-    // 6. Lấy preview nếu type = LINK
     if (dto.type === DocumentType.LINK && dto.linkUrl) {
       try {
         const preview = await this.linkPreviewService.getPreview(dto.linkUrl);
@@ -149,14 +144,11 @@ export class DocumentsService {
       } catch (error) {
         this.logger.warn('Failed to fetch link preview:', error);
         document.linkUrl = dto.linkUrl;
-        // Không throw error, chỉ log warning
       }
     }
 
-    // 7. Lưu document
     const savedDocument = await this.documentRepository.save(document);
 
-    // 8. Load relations
     const documentWithRelations = await this.documentRepository.findOne({
       where: { id: savedDocument.id },
       relations: ['createdByUser', 'workspace'],
@@ -164,7 +156,7 @@ export class DocumentsService {
 
     const responseData = {
       ...documentWithRelations,
-      createdBy: documentWithRelations.createdByUser, // Map relation
+      createdBy: documentWithRelations.createdByUser,
       updatedBy: documentWithRelations.updatedByUser,
     };
 
@@ -173,6 +165,120 @@ export class DocumentsService {
         excludeExtraneousValues: true,
       }),
       message: 'Tạo tài liệu thành công',
+    });
+  }
+  async findAll(
+    query: GetDocumentsQueryDto,
+    userId: string,
+  ): Promise<
+    ResponseDto<{
+      documents: DocumentResDto[];
+      total: number;
+      page: number;
+      limit: number;
+    }>
+  > {
+    const { workspaceId, status, type, search, page = 1, limit = 10 } = query;
+
+    let workspaceIds: string[] = [];
+
+    if (workspaceId) {
+      const member = await this.workspaceMemberRepository.findOne({
+        where: {
+          workspaceId: workspaceId as any,
+          userId: userId as any,
+        },
+      });
+
+      const workspace = await this.workspaceRepository.findOne({
+        where: { id: workspaceId as any },
+        relations: ['owner'],
+      });
+
+      const isOwner = workspace?.owner?.id === userId;
+
+      if (!member && !isOwner) {
+        throw new ForbiddenException(
+          'Bạn không có quyền xem tài liệu của bộ môn này',
+        );
+      }
+
+      workspaceIds = [workspaceId];
+    } else {
+      const myWorkspaces = await this.workspaceMemberRepository.find({
+        where: { userId: userId as any },
+        select: ['workspaceId'],
+      });
+
+      const ownedWorkspaces = await this.workspaceRepository.find({
+        where: { owner: { id: userId as any } },
+        select: ['id'],
+      });
+
+      workspaceIds = [
+        ...myWorkspaces.map((m) => m.workspaceId),
+        ...ownedWorkspaces.map((w) => w.id),
+      ];
+
+      workspaceIds = [...new Set(workspaceIds)];
+
+      if (workspaceIds.length === 0) {
+        return new ResponseDto({
+          data: {
+            documents: [],
+            total: 0,
+            page,
+            limit,
+          },
+          message: 'Lấy danh sách tài liệu thành công',
+        });
+      }
+    }
+
+    const queryBuilder = this.documentRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
+      .where('doc.workspaceId IN (:...workspaceIds)', { workspaceIds });
+
+    if (status) {
+      queryBuilder.andWhere('doc.status = :status', { status });
+    }
+
+    if (type) {
+      queryBuilder.andWhere('doc.type = :type', { type });
+    }
+
+    if (search) {
+      queryBuilder.andWhere(
+        '(doc.title ILIKE :search OR doc.description ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    const skip = (page - 1) * limit;
+    queryBuilder.skip(skip).take(limit);
+
+    queryBuilder.orderBy('doc.createdAt', 'DESC');
+
+    const [documents, total] = await queryBuilder.getManyAndCount();
+
+    const responseData = documents.map((doc) => ({
+      ...doc,
+      createdBy: doc.createdByUser,
+      updatedBy: doc.updatedByUser,
+    }));
+
+    return new ResponseDto({
+      data: {
+        documents: plainToInstance(DocumentResDto, responseData, {
+          excludeExtraneousValues: true,
+        }),
+        total,
+        page,
+        limit,
+      },
+      message: 'Lấy danh sách tài liệu thành công',
     });
   }
 }

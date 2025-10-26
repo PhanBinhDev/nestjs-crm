@@ -36,7 +36,6 @@ export class Document extends AbstractEntity {
   })
   status: DocumentStatus;
 
-  // Cho type = FILE
   @Column({ type: 'varchar', nullable: true })
   fileUrl?: string;
 
@@ -52,7 +51,6 @@ export class Document extends AbstractEntity {
   @Column({ type: 'varchar', nullable: true })
   publicId?: string;
 
-  // Cho type = LINK
   @Column({ type: 'varchar', nullable: true })
   linkUrl?: string;
 
@@ -64,7 +62,6 @@ export class Document extends AbstractEntity {
     siteName?: string;
   };
 
-  // Relations
   @Column({ type: 'uuid' })
   workspaceId: string;
 
@@ -86,7 +83,6 @@ export class Document extends AbstractEntity {
   @JoinColumn({ name: 'updatedById' })
   updatedByUser?: UserEntity;
 
-  // Metadata
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 
