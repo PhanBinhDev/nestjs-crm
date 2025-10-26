@@ -6,13 +6,16 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
@@ -53,5 +56,29 @@ export class DocumentsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.documentsService.findAll(query, userId);
+  }
+  @Get(':id')
+  @ApiAuth({
+    summary: 'Xem chi tiết tài liệu',
+    description: 'Lấy thông tin chi tiết của tài liệu. Tự động tăng viewCount',
+    type: DocumentResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.documentsService.findOne(id, userId);
+  }
+
+  @Get(':id/download')
+  @ApiAuth({
+    summary: 'Download tài liệu',
+    description: 'Download file tài liệu. Tự động tăng downloadCount',
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  async download(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Res() res: Response,
+  ) {
+    return this.documentsService.download(id, userId, res);
   }
 }

@@ -11,7 +11,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
+import { Response } from 'express';
 import { Repository } from 'typeorm';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
@@ -21,7 +23,6 @@ import {
   DocumentStatus,
   DocumentType,
 } from './entities/document.entity';
-
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -280,5 +281,102 @@ export class DocumentsService {
       },
       message: 'Lấy danh sách tài liệu thành công',
     });
+  }
+  async findOne(
+    id: string,
+    userId: string,
+  ): Promise<ResponseDto<DocumentResDto>> {
+    const document = await this.documentRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
+      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .where('doc.id = :id', { id })
+      .getOne();
+
+    if (!document) {
+      throw new NotFoundException('Tài liệu không tồn tại');
+    }
+
+    await this.checkPermission(userId, document.workspaceId);
+
+    const responseData = {
+      ...document,
+      createdBy: document.createdByUser,
+      updatedBy: document.updatedByUser,
+    };
+
+    return new ResponseDto({
+      data: plainToInstance(DocumentResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy chi tiết tài liệu thành công',
+    });
+  }
+
+  async download(id: string, userId: string, res: Response): Promise<void> {
+    const document = await this.documentRepository.findOne({
+      where: { id: id as any },
+      relations: ['workspace'],
+    });
+    if (!document) {
+      throw new NotFoundException('Tài liệu không tồn tại');
+    }
+
+    await this.checkPermission(userId, document.workspaceId);
+
+    if (document.type === DocumentType.LINK) {
+      throw new BadRequestException(
+        'Tài liệu loại LINK không hỗ trợ download. Vui lòng truy cập linkUrl',
+      );
+    }
+
+    if (!document.fileUrl) {
+      throw new BadRequestException('Tài liệu không có file để download');
+    }
+
+    try {
+      const response = await axios.get(document.fileUrl, {
+        responseType: 'stream',
+      });
+
+      res.setHeader(
+        'Content-Type',
+        document.fileType || 'application/octet-stream',
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(
+          document.fileName || 'document',
+        )}"`,
+      );
+
+      response.data.pipe(res);
+    } catch (error) {
+      this.logger.error('Failed to download file:', error);
+      throw new BadRequestException('Không thể tải file. Vui lòng thử lại sau');
+    }
+  }
+
+  private async checkPermission(userId: string, workspaceId: string) {
+    const member = await this.workspaceMemberRepository.findOne({
+      where: {
+        workspaceId: workspaceId as any,
+        userId: userId as any,
+      },
+    });
+
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId as any },
+      relations: ['owner'],
+    });
+
+    const isOwner = workspace?.owner?.id === userId;
+
+    if (!member && !isOwner) {
+      throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
+    }
+
+    return { member, workspace, isOwner };
   }
 }

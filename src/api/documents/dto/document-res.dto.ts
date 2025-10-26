@@ -90,14 +90,6 @@ export class DocumentResDto {
 
   @ApiProperty()
   @Expose()
-  viewCount: number;
-
-  @ApiProperty()
-  @Expose()
-  downloadCount: number;
-
-  @ApiProperty()
-  @Expose()
   createdAt: Date;
 
   @ApiProperty()
