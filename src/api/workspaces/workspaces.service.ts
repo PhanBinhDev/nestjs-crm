@@ -1028,7 +1028,6 @@ export class WorkspacesService {
       });
     }
 
-    // sort handling: name/email are on user, createdAt on member
     const allowedSortFields = ['name', 'email', 'createdAt'];
     const sortField = allowedSortFields.includes(query.sortBy || '')
       ? query.sortBy

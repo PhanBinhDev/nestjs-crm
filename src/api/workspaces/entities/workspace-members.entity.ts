@@ -54,5 +54,5 @@ export class WorkspaceMembers extends AbstractEntity {
     enum: MemberType,
     default: MemberType.NORMAL,
   })
-  type: MemberType;
+  type: MemberMemberd;
 }
