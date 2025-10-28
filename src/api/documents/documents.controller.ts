@@ -7,6 +7,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -20,6 +21,7 @@ import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { UpdateDocumentDto } from './dto/update-document.dto';
 
 @ApiTags('Documents')
 @Controller('documents')
@@ -66,6 +68,24 @@ export class DocumentsController {
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.documentsService.findOne(id, userId);
+  }
+
+  @Patch(':id')
+  @ApiAuth({
+    summary: 'Cập nhật tài liệu',
+    description: 'Chỉ người tạo tài liệu mới có quyền cập nhật',
+    type: DocumentResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  update(
+    @Param('id') id: string,
+    @Body() updateDocumentDto: UpdateDocumentDto,
+    @CurrentUser('id') userId: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.documentsService.update(id, updateDocumentDto, userId, file);
   }
 
   @Get(':id/download')

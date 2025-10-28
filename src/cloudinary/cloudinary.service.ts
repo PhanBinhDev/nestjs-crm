@@ -56,12 +56,21 @@ export class CloudinaryService {
     return Promise.all(files.map((file) => this.uploadToFolder(file, folder)));
   }
 
-  async deleteFile(publicId: string): Promise<any> {
+  async deleteFile(
+    publicId: string,
+    resourceType: 'image' | 'video' | 'raw' = 'image',
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
-      v2.uploader.destroy(publicId, (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      });
+      v2.uploader.destroy(
+        publicId,
+        {
+          resource_type: resourceType,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        },
+      );
     });
   }
 }

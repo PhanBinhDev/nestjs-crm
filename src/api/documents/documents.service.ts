@@ -18,6 +18,7 @@ import { Repository } from 'typeorm';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { UpdateDocumentDto } from './dto/update-document.dto';
 import {
   Document,
   DocumentStatus,
@@ -378,5 +379,152 @@ export class DocumentsService {
     }
 
     return { member, workspace, isOwner };
+  }
+  async update(
+    id: string,
+    dto: UpdateDocumentDto,
+    userId: string,
+    file?: Express.Multer.File,
+  ): Promise<ResponseDto<DocumentResDto>> {
+    const document = await this.documentRepository.findOne({
+      where: { id: id as any },
+      relations: ['workspace', 'createdByUser'],
+    });
+    if (!document) {
+      throw new NotFoundException('Tài liệu không tồn tại');
+    }
+
+    if (document.createdById !== userId) {
+      throw new ForbiddenException(
+        'Bạn không có quyền cập nhật tài liệu này. Chỉ người tạo mới có quyền cập nhật',
+      );
+    }
+
+    if (dto.type && dto.type !== document.type) {
+      if (dto.type === DocumentType.FILE && !file && !document.fileUrl) {
+        throw new BadRequestException(
+          'Cần upload file khi chuyển sang loại FILE',
+        );
+      }
+
+      if (dto.type === DocumentType.LINK && !dto.linkUrl) {
+        throw new BadRequestException(
+          'Cần cung cấp linkUrl khi chuyển sang loại LINK',
+        );
+      }
+    }
+
+    if (file) {
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'text/plain',
+        'image/jpeg',
+        'image/png',
+      ];
+
+      if (!allowedTypes.includes(file.mimetype)) {
+        throw new BadRequestException(
+          'Định dạng file không được hỗ trợ. Chỉ chấp nhận: PDF, Word, Excel, PowerPoint, Text, Image',
+        );
+      }
+
+      const maxSize = 50 * 1024 * 1024;
+      if (file.size > maxSize) {
+        throw new BadRequestException(
+          'Kích thước file không được vượt quá 50MB',
+        );
+      }
+    }
+
+    if (dto.title !== undefined) document.title = dto.title;
+    if (dto.description !== undefined) document.description = dto.description;
+    if (dto.status !== undefined) document.status = dto.status;
+    if (dto.metadata !== undefined) document.metadata = dto.metadata;
+    if (dto.type !== undefined) document.type = dto.type;
+
+    if (file) {
+      if (document.publicId) {
+        try {
+          await this.cloudinaryService.deleteFile(document.publicId);
+          this.logger.log(`Deleted old file: ${document.publicId}`);
+        } catch (error) {
+          this.logger.warn('Failed to delete old file:', error);
+        }
+      }
+
+      try {
+        const uploadResult = await this.cloudinaryService.uploadFile(file, {
+          folder: 'documents',
+          resource_type: 'raw',
+        });
+
+        document.fileUrl = uploadResult.url;
+        document.fileName = file.originalname;
+        document.fileType = file.mimetype;
+        document.fileSize = file.size;
+        document.publicId = uploadResult.publicId;
+        document.type = DocumentType.FILE;
+
+        document.linkUrl = null;
+        document.linkPreview = null;
+
+        this.logger.log(`Uploaded new document file: ${uploadResult.publicId}`);
+      } catch (error) {
+        this.logger.error('Failed to upload new document file:', error);
+        throw new BadRequestException('Không thể upload file tài liệu mới');
+      }
+    }
+
+    if (dto.type === DocumentType.LINK || document.type === DocumentType.LINK) {
+      if (dto.linkUrl && dto.linkUrl !== document.linkUrl) {
+        try {
+          const preview = await this.linkPreviewService.getPreview(dto.linkUrl);
+          document.linkUrl = dto.linkUrl;
+          document.linkPreview = preview;
+
+          document.fileUrl = null;
+          document.fileName = null;
+          document.fileType = null;
+          document.fileSize = null;
+          document.publicId = null;
+
+          this.logger.log(`Updated link preview for: ${dto.linkUrl}`);
+        } catch (error) {
+          this.logger.warn('Failed to fetch link preview:', error);
+          document.linkUrl = dto.linkUrl;
+        }
+      }
+    }
+
+    document.updatedById = userId;
+
+    const savedDocument = await this.documentRepository.save(document);
+
+    const documentWithRelations = await this.documentRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
+      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .where('doc.id = :id', { id: savedDocument.id })
+      .getOne();
+
+    const responseData = {
+      ...documentWithRelations,
+      createdBy: documentWithRelations.createdByUser,
+      updatedBy: documentWithRelations.updatedByUser,
+    };
+
+    return new ResponseDto({
+      data: plainToInstance(DocumentResDto, responseData, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật tài liệu thành công',
+    });
   }
 }
