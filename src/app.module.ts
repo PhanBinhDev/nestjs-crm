@@ -1,9 +1,10 @@
 import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { DocumentsModule } from './api/documents/documents.module';
 import { UserMiddleware } from './common/middleware/user.middleware';
 import generateModulesSet from './utils/modules-set';
 
 @Module({
-  imports: generateModulesSet(),
+  imports: [...generateModulesSet(), DocumentsModule],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {
