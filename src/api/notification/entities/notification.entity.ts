@@ -44,6 +44,9 @@ export class NotificationEntity {
   @Column({ type: 'timestamp', nullable: true })
   readAt: Date;
 
+  @Column({ type: 'uuid', nullable: true })
+  workspaceMemberId: Uuid;
+
   @ManyToOne(() => UserEntity, (user) => user.notifications, {
     onDelete: 'CASCADE',
   })
