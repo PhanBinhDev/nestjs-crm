@@ -20,6 +20,36 @@ class UserBasicDto {
   avatar?: string;
 }
 
+class FileBasicDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty({ description: 'URL của file' })
+  @Expose()
+  url: string;
+
+  @ApiProperty({ description: 'Tên file gốc' })
+  @Expose()
+  originalName: string;
+
+  @ApiProperty({ description: 'Tên file đã xử lý' })
+  @Expose()
+  fileName: string;
+
+  @ApiProperty({ description: 'Loại MIME' })
+  @Expose()
+  mimeType: string;
+
+  @ApiProperty({ description: 'Kích thước file (bytes)' })
+  @Expose()
+  size: number;
+
+  @ApiPropertyOptional({ description: 'Metadata bổ sung' })
+  @Expose()
+  metadata?: Record<string, any>;
+}
+
 export class DocumentResDto {
   @ApiProperty()
   @Expose()
@@ -41,27 +71,19 @@ export class DocumentResDto {
   @Expose()
   status: DocumentStatus;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: FileBasicDto,
+    description: 'Thông tin file đính kèm',
+  })
   @Expose()
-  fileUrl?: string;
+  @Type(() => FileBasicDto)
+  file?: FileBasicDto;
 
-  @ApiPropertyOptional()
-  @Expose()
-  fileName?: string;
-
-  @ApiPropertyOptional()
-  @Expose()
-  fileType?: string;
-
-  @ApiPropertyOptional()
-  @Expose()
-  fileSize?: number;
-
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'URL link (nếu type = LINK)' })
   @Expose()
   linkUrl?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Preview của link' })
   @Expose()
   linkPreview?: {
     title?: string;
@@ -69,10 +91,6 @@ export class DocumentResDto {
     image?: string;
     siteName?: string;
   };
-
-  @ApiProperty()
-  @Expose()
-  workspaceId: string;
 
   @ApiProperty({ type: UserBasicDto })
   @Expose()
@@ -87,6 +105,14 @@ export class DocumentResDto {
   @ApiPropertyOptional()
   @Expose()
   metadata?: Record<string, any>;
+
+  @ApiProperty({ description: 'Số lượt xem' })
+  @Expose()
+  viewCount: number;
+
+  @ApiProperty({ description: 'Số lượt tải xuống' })
+  @Expose()
+  downloadCount: number;
 
   @ApiProperty()
   @Expose()

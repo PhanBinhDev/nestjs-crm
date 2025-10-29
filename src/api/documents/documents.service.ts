@@ -1,6 +1,5 @@
-import { WorkspaceMembers } from '@/api/workspaces/entities/workspace-members.entity';
-import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
-import { CloudinaryService } from '@/cloudinary/cloudinary.service';
+import { FileEntity } from '@/api/files/entities/files.entity';
+import { FilesService } from '@/api/files/files.service';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import {
@@ -24,6 +23,7 @@ import {
   DocumentStatus,
   DocumentType,
 } from './entities/document.entity';
+
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -31,11 +31,9 @@ export class DocumentsService {
   constructor(
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
-    @InjectRepository(Workspaces)
-    private readonly workspaceRepository: Repository<Workspaces>,
-    @InjectRepository(WorkspaceMembers)
-    private readonly workspaceMemberRepository: Repository<WorkspaceMembers>,
-    private readonly cloudinaryService: CloudinaryService,
+    @InjectRepository(FileEntity)
+    private readonly fileRepository: Repository<FileEntity>,
+    private readonly filesService: FilesService,
     private readonly linkPreviewService: LinkPreviewService,
   ) {}
 
@@ -44,62 +42,10 @@ export class DocumentsService {
     userId: string,
     file?: Express.Multer.File,
   ): Promise<ResponseDto<DocumentResDto>> {
-    const workspace = await this.workspaceRepository.findOne({
-      where: { id: dto.workspaceId as any },
-      relations: ['owner'],
-    });
-
-    if (!workspace) {
-      throw new NotFoundException('Workspace không tồn tại');
-    }
-    const member = await this.workspaceMemberRepository.findOne({
-      where: {
-        workspaceId: dto.workspaceId as any,
-        userId: userId as any,
-      },
-    });
-
-    const isOwner = workspace.owner?.id === userId;
-    const allowedRoles = ['CNBM', 'TM'];
-
-    if (!isOwner && (!member || !(allowedRoles as any).includes(member.role))) {
+    if (dto.type === DocumentType.FILE && !file) {
       throw new BadRequestException(
-        'Chỉ Chủ nhiệm bộ môn (CNBM) hoặc Trưởng môn (TM) mới có quyền tạo tài liệu',
+        'File tài liệu là bắt buộc khi type = FILE',
       );
-    }
-
-    if (dto.type === DocumentType.FILE) {
-      if (!file) {
-        throw new BadRequestException(
-          'File tài liệu là bắt buộc khi type = FILE',
-        );
-      }
-
-      const allowedTypes = [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'text/plain',
-        'image/jpeg',
-        'image/png',
-      ];
-
-      if (!allowedTypes.includes(file.mimetype)) {
-        throw new BadRequestException(
-          'Định dạng file không được hỗ trợ. Chỉ chấp nhận: PDF, Word, Excel, PowerPoint, Text, Image',
-        );
-      }
-
-      const maxSize = 50 * 1024 * 1024;
-      if (file.size > maxSize) {
-        throw new BadRequestException(
-          'Kích thước file không được vượt quá 50MB',
-        );
-      }
     }
 
     if (dto.type === DocumentType.LINK && !dto.linkUrl) {
@@ -111,25 +57,20 @@ export class DocumentsService {
       description: dto.description,
       type: dto.type,
       status: dto.status ?? DocumentStatus.DRAFT,
-      workspaceId: dto.workspaceId as any,
       createdById: userId,
       metadata: dto.metadata,
     });
 
     if (dto.type === DocumentType.FILE && file) {
       try {
-        const uploadResult = await this.cloudinaryService.uploadFile(file, {
-          folder: 'documents',
-          resource_type: 'raw',
-        });
+        const uploadedFile = await this.filesService.uploadFile(
+          file,
+          userId,
+          null,
+        );
+        document.fileId = uploadedFile.id;
 
-        document.fileUrl = uploadResult.url;
-        document.fileName = file.originalname;
-        document.fileType = file.mimetype;
-        document.fileSize = file.size;
-        document.publicId = uploadResult.publicId;
-
-        this.logger.log(`Uploaded document file: ${uploadResult.publicId}`);
+        this.logger.log(`Uploaded document file: ${uploadedFile.id}`);
       } catch (error) {
         this.logger.error('Failed to upload document file:', error);
         throw new BadRequestException('Không thể upload file tài liệu');
@@ -153,7 +94,7 @@ export class DocumentsService {
 
     const documentWithRelations = await this.documentRepository.findOne({
       where: { id: savedDocument.id },
-      relations: ['createdByUser', 'workspace'],
+      relations: ['createdByUser', 'updatedByUser', 'file'],
     });
 
     const responseData = {
@@ -169,9 +110,10 @@ export class DocumentsService {
       message: 'Tạo tài liệu thành công',
     });
   }
+
   async findAll(
     query: GetDocumentsQueryDto,
-    userId: string,
+    _userId: string,
   ): Promise<
     ResponseDto<{
       documents: DocumentResDto[];
@@ -180,68 +122,13 @@ export class DocumentsService {
       limit: number;
     }>
   > {
-    const { workspaceId, status, type, search, page = 1, limit = 10 } = query;
-
-    let workspaceIds: string[] = [];
-
-    if (workspaceId) {
-      const member = await this.workspaceMemberRepository.findOne({
-        where: {
-          workspaceId: workspaceId as any,
-          userId: userId as any,
-        },
-      });
-
-      const workspace = await this.workspaceRepository.findOne({
-        where: { id: workspaceId as any },
-        relations: ['owner'],
-      });
-
-      const isOwner = workspace?.owner?.id === userId;
-
-      if (!member && !isOwner) {
-        throw new ForbiddenException(
-          'Bạn không có quyền xem tài liệu của bộ môn này',
-        );
-      }
-
-      workspaceIds = [workspaceId];
-    } else {
-      const myWorkspaces = await this.workspaceMemberRepository.find({
-        where: { userId: userId as any },
-        select: ['workspaceId'],
-      });
-
-      const ownedWorkspaces = await this.workspaceRepository.find({
-        where: { owner: { id: userId as any } },
-        select: ['id'],
-      });
-
-      workspaceIds = [
-        ...myWorkspaces.map((m) => m.workspaceId),
-        ...ownedWorkspaces.map((w) => w.id),
-      ];
-
-      workspaceIds = [...new Set(workspaceIds)];
-
-      if (workspaceIds.length === 0) {
-        return new ResponseDto({
-          data: {
-            documents: [],
-            total: 0,
-            page,
-            limit,
-          },
-          message: 'Lấy danh sách tài liệu thành công',
-        });
-      }
-    }
+    const { status, type, search, page = 1, limit = 10 } = query;
 
     const queryBuilder = this.documentRepository
       .createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
-      .where('doc.workspaceId IN (:...workspaceIds)', { workspaceIds });
+      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser');
 
     if (status) {
       queryBuilder.andWhere('doc.status = :status', { status });
@@ -283,13 +170,14 @@ export class DocumentsService {
       message: 'Lấy danh sách tài liệu thành công',
     });
   }
+
   async findOne(
     id: string,
-    userId: string,
+    _userId: string,
   ): Promise<ResponseDto<DocumentResDto>> {
     const document = await this.documentRepository
       .createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
       .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
       .where('doc.id = :id', { id })
@@ -299,7 +187,8 @@ export class DocumentsService {
       throw new NotFoundException('Tài liệu không tồn tại');
     }
 
-    await this.checkPermission(userId, document.workspaceId);
+    await this.documentRepository.increment({ id: id as any }, 'viewCount', 1);
+    document.viewCount += 1;
 
     const responseData = {
       ...document,
@@ -315,71 +204,6 @@ export class DocumentsService {
     });
   }
 
-  async download(id: string, userId: string, res: Response): Promise<void> {
-    const document = await this.documentRepository.findOne({
-      where: { id: id as any },
-      relations: ['workspace'],
-    });
-    if (!document) {
-      throw new NotFoundException('Tài liệu không tồn tại');
-    }
-
-    await this.checkPermission(userId, document.workspaceId);
-
-    if (document.type === DocumentType.LINK) {
-      throw new BadRequestException(
-        'Tài liệu loại LINK không hỗ trợ download. Vui lòng truy cập linkUrl',
-      );
-    }
-
-    if (!document.fileUrl) {
-      throw new BadRequestException('Tài liệu không có file để download');
-    }
-
-    try {
-      const response = await axios.get(document.fileUrl, {
-        responseType: 'stream',
-      });
-
-      res.setHeader(
-        'Content-Type',
-        document.fileType || 'application/octet-stream',
-      );
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(
-          document.fileName || 'document',
-        )}"`,
-      );
-
-      response.data.pipe(res);
-    } catch (error) {
-      this.logger.error('Failed to download file:', error);
-      throw new BadRequestException('Không thể tải file. Vui lòng thử lại sau');
-    }
-  }
-
-  private async checkPermission(userId: string, workspaceId: string) {
-    const member = await this.workspaceMemberRepository.findOne({
-      where: {
-        workspaceId: workspaceId as any,
-        userId: userId as any,
-      },
-    });
-
-    const workspace = await this.workspaceRepository.findOne({
-      where: { id: workspaceId as any },
-      relations: ['owner'],
-    });
-
-    const isOwner = workspace?.owner?.id === userId;
-
-    if (!member && !isOwner) {
-      throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
-    }
-
-    return { member, workspace, isOwner };
-  }
   async update(
     id: string,
     dto: UpdateDocumentDto,
@@ -388,8 +212,9 @@ export class DocumentsService {
   ): Promise<ResponseDto<DocumentResDto>> {
     const document = await this.documentRepository.findOne({
       where: { id: id as any },
-      relations: ['workspace', 'createdByUser'],
+      relations: ['file', 'createdByUser'],
     });
+
     if (!document) {
       throw new NotFoundException('Tài liệu không tồn tại');
     }
@@ -401,7 +226,7 @@ export class DocumentsService {
     }
 
     if (dto.type && dto.type !== document.type) {
-      if (dto.type === DocumentType.FILE && !file && !document.fileUrl) {
+      if (dto.type === DocumentType.FILE && !file && !document.fileId) {
         throw new BadRequestException(
           'Cần upload file khi chuyển sang loại FILE',
         );
@@ -414,34 +239,6 @@ export class DocumentsService {
       }
     }
 
-    if (file) {
-      const allowedTypes = [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'text/plain',
-        'image/jpeg',
-        'image/png',
-      ];
-
-      if (!allowedTypes.includes(file.mimetype)) {
-        throw new BadRequestException(
-          'Định dạng file không được hỗ trợ. Chỉ chấp nhận: PDF, Word, Excel, PowerPoint, Text, Image',
-        );
-      }
-
-      const maxSize = 50 * 1024 * 1024;
-      if (file.size > maxSize) {
-        throw new BadRequestException(
-          'Kích thước file không được vượt quá 50MB',
-        );
-      }
-    }
-
     if (dto.title !== undefined) document.title = dto.title;
     if (dto.description !== undefined) document.description = dto.description;
     if (dto.status !== undefined) document.status = dto.status;
@@ -449,32 +246,24 @@ export class DocumentsService {
     if (dto.type !== undefined) document.type = dto.type;
 
     if (file) {
-      if (document.publicId) {
-        try {
-          await this.cloudinaryService.deleteFile(document.publicId);
-          this.logger.log(`Deleted old file: ${document.publicId}`);
-        } catch (error) {
-          this.logger.warn('Failed to delete old file:', error);
-        }
-      }
-
       try {
-        const uploadResult = await this.cloudinaryService.uploadFile(file, {
-          folder: 'documents',
-          resource_type: 'raw',
-        });
+        if (document.fileId) {
+          await this.filesService.deleteFile(document.fileId, userId);
+          this.logger.log(`Deleted old file: ${document.fileId}`);
+        }
 
-        document.fileUrl = uploadResult.url;
-        document.fileName = file.originalname;
-        document.fileType = file.mimetype;
-        document.fileSize = file.size;
-        document.publicId = uploadResult.publicId;
+        const uploadedFile = await this.filesService.uploadFile(
+          file,
+          userId,
+          null,
+        );
+        document.fileId = uploadedFile.id;
         document.type = DocumentType.FILE;
 
         document.linkUrl = null;
         document.linkPreview = null;
 
-        this.logger.log(`Uploaded new document file: ${uploadResult.publicId}`);
+        this.logger.log(`Uploaded new document file: ${uploadedFile.id}`);
       } catch (error) {
         this.logger.error('Failed to upload new document file:', error);
         throw new BadRequestException('Không thể upload file tài liệu mới');
@@ -488,11 +277,10 @@ export class DocumentsService {
           document.linkUrl = dto.linkUrl;
           document.linkPreview = preview;
 
-          document.fileUrl = null;
-          document.fileName = null;
-          document.fileType = null;
-          document.fileSize = null;
-          document.publicId = null;
+          if (document.fileId) {
+            await this.filesService.deleteFile(document.fileId, userId);
+            document.fileId = null;
+          }
 
           this.logger.log(`Updated link preview for: ${dto.linkUrl}`);
         } catch (error) {
@@ -503,12 +291,11 @@ export class DocumentsService {
     }
 
     document.updatedById = userId;
-
     const savedDocument = await this.documentRepository.save(document);
 
     const documentWithRelations = await this.documentRepository
       .createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.workspace', 'workspace')
+      .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
       .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
       .where('doc.id = :id', { id: savedDocument.id })
@@ -526,5 +313,110 @@ export class DocumentsService {
       }),
       message: 'Cập nhật tài liệu thành công',
     });
+  }
+
+  async delete(id: string, userId: string): Promise<ResponseDto<null>> {
+    const document = await this.documentRepository.findOne({
+      where: { id: id as any },
+      relations: ['file'],
+    });
+
+    if (!document) {
+      throw new NotFoundException('Tài liệu không tồn tại');
+    }
+
+    if (document.createdById !== userId) {
+      throw new ForbiddenException(
+        'Bạn không có quyền xóa tài liệu này. Chỉ người tạo mới có quyền xóa',
+      );
+    }
+
+    if (document.fileId) {
+      try {
+        await this.filesService.deleteFile(document.fileId, userId);
+        this.logger.log(`Deleted file: ${document.fileId}`);
+      } catch (error) {
+        this.logger.warn('Failed to delete file:', error);
+      }
+    }
+
+    await this.documentRepository.remove(document);
+
+    return new ResponseDto({
+      data: null,
+      message: 'Xóa tài liệu thành công',
+    });
+  }
+
+  async download(id: string, userId: string, res: Response): Promise<void> {
+    const document = await this.documentRepository.findOne({
+      where: { id: id as any },
+      relations: ['file'],
+    });
+
+    if (!document) {
+      throw new NotFoundException('Tài liệu không tồn tại');
+    }
+
+    if (document.type === DocumentType.LINK) {
+      throw new BadRequestException(
+        'Tài liệu loại LINK không hỗ trợ download. Vui lòng truy cập linkUrl',
+      );
+    }
+
+    if (
+      !document.file ||
+      !(
+        (document.file as any).url ||
+        (document.file as any).fileUrl ||
+        (document.file as any).path
+      )
+    ) {
+      throw new BadRequestException('Tài liệu không có file để download');
+    }
+
+    await this.documentRepository.increment(
+      { id: id as any },
+      'downloadCount',
+      1,
+    );
+
+    try {
+      const fileUrl =
+        (document.file as any).url ||
+        (document.file as any).fileUrl ||
+        (document.file as any).path;
+
+      if (!fileUrl) {
+        throw new BadRequestException(
+          'Không thể tải file. URL file không tồn tại',
+        );
+      }
+
+      const response = await axios.get(fileUrl, {
+        responseType: 'stream',
+      });
+
+      const fileMeta = document.file as any;
+      const filename =
+        fileMeta.originalName ||
+        fileMeta.fileName ||
+        fileMeta.name ||
+        'document';
+
+      res.setHeader(
+        'Content-Type',
+        (document.file as any).mimeType || 'application/octet-stream',
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(filename)}"`,
+      );
+
+      response.data.pipe(res);
+    } catch (error) {
+      this.logger.error('Failed to download file:', error);
+      throw new BadRequestException('Không thể tải file. Vui lòng thử lại sau');
+    }
   }
 }

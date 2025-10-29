@@ -1,6 +1,5 @@
-import { WorkspaceMembers } from '@/api/workspaces/entities/workspace-members.entity';
-import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
-import { CloudinaryModule } from '@/cloudinary/cloudinary.module';
+import { FileEntity } from '@/api/files/entities/files.entity';
+import { FilesModule } from '@/api/files/files.module';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,10 +8,7 @@ import { DocumentsService } from './documents.service';
 import { Document } from './entities/document.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Document, Workspaces, WorkspaceMembers]),
-    CloudinaryModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Document, FileEntity]), FilesModule],
   controllers: [DocumentsController],
   providers: [DocumentsService, LinkPreviewService],
   exports: [DocumentsService],
