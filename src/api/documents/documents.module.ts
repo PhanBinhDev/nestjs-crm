@@ -6,9 +6,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { Document } from './entities/document.entity';
+import { DocumentFolder } from './entities/document-folder.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Document, FileEntity]), FilesModule],
+  imports: [
+    TypeOrmModule.forFeature([Document, DocumentFolder, FileEntity]),
+    FilesModule,
+  ],
   controllers: [DocumentsController],
   providers: [DocumentsService, LinkPreviewService],
   exports: [DocumentsService],

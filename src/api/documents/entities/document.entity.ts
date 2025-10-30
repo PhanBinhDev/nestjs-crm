@@ -1,18 +1,9 @@
 import { FileEntity } from '@/api/files/entities/files.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-
-export enum DocumentType {
-  FILE = 'FILE',
-  LINK = 'LINK',
-}
-
-export enum DocumentStatus {
-  DRAFT = 'DRAFT',
-  PUBLISHED = 'PUBLISHED',
-  ARCHIVED = 'ARCHIVED',
-}
+import { DocumentFolder } from './document-folder.entity';
 
 @Entity('documents')
 export class Document extends AbstractEntity {
@@ -70,6 +61,13 @@ export class Document extends AbstractEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ type: 'uuid', nullable: true })
+  folderId?: string;
+
+  @ManyToOne(() => DocumentFolder, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'folderId' })
+  folder?: DocumentFolder;
 
   @Column({ type: 'int', default: 0 })
   viewCount: number;

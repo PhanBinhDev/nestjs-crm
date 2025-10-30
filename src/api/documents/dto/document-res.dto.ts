@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { DocumentStatus, DocumentType } from '../entities/document.entity';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 class UserBasicDto {
   @ApiProperty()
@@ -121,4 +121,12 @@ export class DocumentResDto {
   @ApiProperty()
   @Expose()
   updatedAt: Date;
+
+  @ApiPropertyOptional({ description: 'ID danh mục' })
+  @Expose()
+  folderId?: string;
+
+  @ApiPropertyOptional({ description: 'Tên danh mục' })
+  @Expose()
+  folderName?: string;
 }

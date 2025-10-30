@@ -4,10 +4,11 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { DocumentStatus, DocumentType } from '../entities/document.entity';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 export class UpdateDocumentDto {
   @ApiPropertyOptional({
@@ -67,4 +68,12 @@ export class UpdateDocumentDto {
   })
   @IsOptional()
   metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'ID danh mục tài liệu',
+    example: 'uuid-of-folder',
+  })
+  @IsOptional()
+  @IsUUID()
+  folderId?: string;
 }

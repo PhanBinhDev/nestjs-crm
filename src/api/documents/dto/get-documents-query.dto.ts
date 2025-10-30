@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { DocumentStatus, DocumentType } from '../entities/document.entity';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 export class GetDocumentsQueryDto {
   @ApiPropertyOptional({

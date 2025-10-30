@@ -18,11 +18,13 @@ import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
-import {
-  Document,
-  DocumentStatus,
-  DocumentType,
-} from './entities/document.entity';
+import { Document } from './entities/document.entity';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
+import { DocumentFolder } from './entities/document-folder.entity';
+import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
+import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
+import { DocumentFolderResDto } from './dto/document-folder-res.dto';
+import { DocumentResDto as DocumentDtoForImport } from './dto/document-res.dto';
 
 @Injectable()
 export class DocumentsService {
@@ -33,6 +35,8 @@ export class DocumentsService {
     private readonly documentRepository: Repository<Document>,
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
+    @InjectRepository(DocumentFolder)
+    private readonly folderRepository: Repository<DocumentFolder>,
     private readonly filesService: FilesService,
     private readonly linkPreviewService: LinkPreviewService,
   ) {}
@@ -52,6 +56,16 @@ export class DocumentsService {
       throw new BadRequestException('Link URL là bắt buộc khi type = LINK');
     }
 
+    // Validate folderId nếu có
+    if (dto.folderId) {
+      const folder = await this.folderRepository.findOne({
+        where: { id: dto.folderId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Danh mục không tồn tại');
+      }
+    }
+
     const document = this.documentRepository.create({
       title: dto.title,
       description: dto.description,
@@ -59,6 +73,7 @@ export class DocumentsService {
       status: dto.status ?? DocumentStatus.DRAFT,
       createdById: userId,
       metadata: dto.metadata,
+      folderId: dto.folderId,
     });
 
     if (dto.type === DocumentType.FILE && file) {
@@ -94,13 +109,14 @@ export class DocumentsService {
 
     const documentWithRelations = await this.documentRepository.findOne({
       where: { id: savedDocument.id },
-      relations: ['createdByUser', 'updatedByUser', 'file'],
+      relations: ['createdByUser', 'updatedByUser', 'file', 'folder'],
     });
 
     const responseData = {
       ...documentWithRelations,
       createdBy: documentWithRelations.createdByUser,
       updatedBy: documentWithRelations.updatedByUser,
+      folderName: documentWithRelations.folder?.name,
     };
 
     return new ResponseDto({
@@ -128,7 +144,8 @@ export class DocumentsService {
       .createQueryBuilder('doc')
       .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
-      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser');
+      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .leftJoinAndSelect('doc.folder', 'folder');
 
     if (status) {
       queryBuilder.andWhere('doc.status = :status', { status });
@@ -156,6 +173,7 @@ export class DocumentsService {
       ...doc,
       createdBy: doc.createdByUser,
       updatedBy: doc.updatedByUser,
+      folderName: doc.folder?.name,
     }));
 
     return new ResponseDto({
@@ -180,6 +198,7 @@ export class DocumentsService {
       .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
       .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .leftJoinAndSelect('doc.folder', 'folder')
       .where('doc.id = :id', { id })
       .getOne();
 
@@ -194,6 +213,7 @@ export class DocumentsService {
       ...document,
       createdBy: document.createdByUser,
       updatedBy: document.updatedByUser,
+      folderName: document.folder?.name,
     };
 
     return new ResponseDto({
@@ -237,6 +257,19 @@ export class DocumentsService {
           'Cần cung cấp linkUrl khi chuyển sang loại LINK',
         );
       }
+    }
+
+    // Validate folderId nếu có
+    if (dto.folderId !== undefined) {
+      if (dto.folderId) {
+        const folder = await this.folderRepository.findOne({
+          where: { id: dto.folderId },
+        });
+        if (!folder) {
+          throw new NotFoundException('Danh mục không tồn tại');
+        }
+      }
+      document.folderId = dto.folderId;
     }
 
     if (dto.title !== undefined) document.title = dto.title;
@@ -298,6 +331,7 @@ export class DocumentsService {
       .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
       .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .leftJoinAndSelect('doc.folder', 'folder')
       .where('doc.id = :id', { id: savedDocument.id })
       .getOne();
 
@@ -305,6 +339,7 @@ export class DocumentsService {
       ...documentWithRelations,
       createdBy: documentWithRelations.createdByUser,
       updatedBy: documentWithRelations.updatedByUser,
+      folderName: documentWithRelations.folder?.name,
     };
 
     return new ResponseDto({
@@ -418,5 +453,136 @@ export class DocumentsService {
       this.logger.error('Failed to download file:', error);
       throw new BadRequestException('Không thể tải file. Vui lòng thử lại sau');
     }
+  }
+
+  // ==================== DOCUMENT FOLDER METHODS ====================
+
+  async createFolder(
+    dto: CreateDocumentFolderDto,
+    _userId: string,
+  ): Promise<ResponseDto<DocumentFolderResDto>> {
+    const folder = this.folderRepository.create({
+      name: dto.name,
+      description: dto.description,
+    });
+
+    const savedFolder = await this.folderRepository.save(folder);
+
+    return new ResponseDto({
+      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Tạo danh mục thành công',
+    });
+  }
+
+  async findAllFolders(): Promise<
+    ResponseDto<{
+      folders: DocumentFolderResDto[];
+      total: number;
+    }>
+  > {
+    const [folders, total] = await this.folderRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+    });
+
+    return new ResponseDto({
+      data: {
+        folders: plainToInstance(DocumentFolderResDto, folders, {
+          excludeExtraneousValues: true,
+        }),
+        total,
+      },
+      message: 'Lấy danh sách danh mục thành công',
+    });
+  }
+
+  async findOneFolder(
+    id: string,
+  ): Promise<ResponseDto<DocumentFolderResDto>> {
+    const folder = await this.folderRepository.findOne({ where: { id } });
+
+    if (!folder) {
+      throw new NotFoundException('Danh mục không tồn tại');
+    }
+
+    // Lấy danh sách documents thuộc folder này
+    const documents = await this.documentRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.file', 'file')
+      .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
+      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
+      .where('doc.folderId = :folderId', { folderId: id })
+      .orderBy('doc.createdAt', 'DESC')
+      .getMany();
+
+    const documentsData = documents.map((doc) => ({
+      ...doc,
+      createdBy: doc.createdByUser,
+      updatedBy: doc.updatedByUser,
+    }));
+
+    const folderWithDocuments = {
+      ...folder,
+      documents: plainToInstance(DocumentDtoForImport, documentsData, {
+        excludeExtraneousValues: true,
+      }),
+      totalDocuments: documents.length,
+    };
+
+    return new ResponseDto({
+      data: folderWithDocuments as any,
+      message: 'Lấy chi tiết danh mục thành công',
+    });
+  }
+
+  async updateFolder(
+    id: string,
+    dto: UpdateDocumentFolderDto,
+    _userId: string,
+  ): Promise<ResponseDto<DocumentFolderResDto>> {
+    const folder = await this.folderRepository.findOne({ where: { id } });
+
+    if (!folder) {
+      throw new NotFoundException('Danh mục không tồn tại');
+    }
+
+    if (dto.name !== undefined) folder.name = dto.name;
+    if (dto.description !== undefined) folder.description = dto.description;
+
+    const savedFolder = await this.folderRepository.save(folder);
+
+    return new ResponseDto({
+      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Cập nhật danh mục thành công',
+    });
+  }
+
+  async deleteFolder(id: string): Promise<ResponseDto<null>> {
+    const folder = await this.folderRepository.findOne({ where: { id } });
+
+    if (!folder) {
+      throw new NotFoundException('Danh mục không tồn tại');
+    }
+
+    // Check if any documents are using this folder
+    const documentsCount = await this.documentRepository.count({
+      where: { folderId: id },
+    });
+
+    if (documentsCount > 0) {
+      throw new BadRequestException(
+        `Không thể xóa danh mục này vì đang có ${documentsCount} tài liệu sử dụng`,
+      );
+    }
+
+    await this.folderRepository.remove(folder);
+
+    return new ResponseDto({
+      data: null,
+      message: 'Xóa danh mục thành công',
+    });
   }
 }
