@@ -5,6 +5,7 @@ import { Roles } from '@/decorators/roles.decorator';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -30,11 +31,11 @@ export class DocumentsController {
 
   @Post()
   @ApiAuth({
-    summary: 'Tạo tài liệu (CNBM, TM)',
-    description: 'Chỉ CNBM và TM mới có quyền tạo tài liệu trong workspace',
+    summary: 'Tạo tài liệu',
+    description: 'Tạo tài liệu mới. Hỗ trợ upload file hoặc lưu link',
     type: DocumentResDto,
   })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   create(
@@ -44,11 +45,12 @@ export class DocumentsController {
   ) {
     return this.documentsService.create(createDocumentDto, userId, file);
   }
+
   @Get()
   @ApiAuth({
-    summary: 'Lấy DS tài liệu của bộ môn',
+    summary: 'Lấy danh sách tài liệu',
     description:
-      'Lấy danh sách tài liệu của workspace mà user tham gia. Có thể filter theo status, type, search',
+      'Lấy danh sách tài liệu. Có thể filter theo status, type, search',
     type: DocumentResDto,
     isArray: true,
   })
@@ -59,6 +61,7 @@ export class DocumentsController {
   ) {
     return this.documentsService.findAll(query, userId);
   }
+
   @Get(':id')
   @ApiAuth({
     summary: 'Xem chi tiết tài liệu',
@@ -76,7 +79,7 @@ export class DocumentsController {
     description: 'Chỉ người tạo tài liệu mới có quyền cập nhật',
     type: DocumentResDto,
   })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   update(
@@ -86,6 +89,16 @@ export class DocumentsController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.documentsService.update(id, updateDocumentDto, userId, file);
+  }
+
+  @Delete(':id')
+  @ApiAuth({
+    summary: 'Xóa tài liệu',
+    description: 'Chỉ người tạo tài liệu mới có quyền xóa',
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.documentsService.delete(id, userId);
   }
 
   @Get(':id/download')

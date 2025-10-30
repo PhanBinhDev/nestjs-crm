@@ -1,26 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { DocumentStatus, DocumentType } from '../entities/document.entity';
 
 export class GetDocumentsQueryDto {
-  @ApiPropertyOptional({
-    description:
-      'ID workspace (bộ môn). Nếu không truyền sẽ lấy tất cả workspace mà user tham gia',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @IsOptional()
-  @IsUUID()
-  workspaceId?: string;
-
   @ApiPropertyOptional({
     description: 'Trạng thái tài liệu',
     enum: DocumentStatus,

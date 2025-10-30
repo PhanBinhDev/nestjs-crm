@@ -1,5 +1,5 @@
+import { FileEntity } from '@/api/files/entities/files.entity';
 import { UserEntity } from '@/api/users/entities/user.entity';
-import { Workspaces } from '@/api/workspaces/entities/workspace.entity';
 import { AbstractEntity } from '@/database/entities/abstract.entity';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 
@@ -36,20 +36,12 @@ export class Document extends AbstractEntity {
   })
   status: DocumentStatus;
 
-  @Column({ type: 'varchar', nullable: true })
-  fileUrl?: string;
+  @Column({ type: 'uuid', nullable: true })
+  fileId?: string;
 
-  @Column({ type: 'varchar', nullable: true })
-  fileName?: string;
-
-  @Column({ type: 'varchar', nullable: true })
-  fileType?: string;
-
-  @Column({ type: 'bigint', nullable: true })
-  fileSize?: number;
-
-  @Column({ type: 'varchar', nullable: true })
-  publicId?: string;
+  @ManyToOne(() => FileEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'fileId' })
+  file?: FileEntity;
 
   @Column({ type: 'varchar', nullable: true })
   linkUrl?: string;
@@ -61,13 +53,6 @@ export class Document extends AbstractEntity {
     image?: string;
     siteName?: string;
   };
-
-  @Column({ type: 'uuid' })
-  workspaceId: string;
-
-  @ManyToOne(() => Workspaces, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'workspaceId' })
-  workspace: Workspaces;
 
   @Column({ type: 'uuid' })
   createdById: string;

@@ -56,14 +56,6 @@ export class CreateDocumentDto {
   @IsNotEmpty()
   linkUrl?: string;
 
-  @ApiProperty({
-    description: 'ID workspace',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @IsString()
-  @IsNotEmpty()
-  workspaceId: string;
-
   @ApiPropertyOptional({
     description: 'File tài liệu (bắt buộc nếu type = FILE)',
     type: 'string',
