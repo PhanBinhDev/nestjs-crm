@@ -204,6 +204,52 @@ export class WorkspacesController {
     return this.workspacesService.listJoinRequests(workspaceId);
   }
 
+  @Get(':workspaceId/invitations')
+  @ApiAuth({ summary: 'Danh sách đã gửi lời mời tham gia workspace' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+  })
+  async listPendingInvitations(
+    @Param('workspaceId') workspaceId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.listPendingInvitations(
+      workspaceId,
+      currentUserId,
+    );
+  }
+
+  @Delete(':workspaceId/invitations/:userId')
+  @ApiAuth({ summary: 'Thu hồi lời mời tham gia workspace' })
+  @UseGuards(WorkspaceAccessGuard)
+  @WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID của không gian làm việc',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiParam({
+    name: 'userId',
+    description: 'ID của người dùng bị thu hồi lời mời',
+    type: 'string',
+    format: 'uuid',
+  })
+  async revokeInvitation(
+    @Param('workspaceId') workspaceId: Uuid,
+    @Param('userId') userId: Uuid,
+    @CurrentUser('id') currentUserId: Uuid,
+  ) {
+    return this.workspacesService.revokeInvitation(
+      workspaceId,
+      userId,
+      currentUserId,
+    );
+  }
+
   @Post(':workspaceId/join-requests/:userId/accept')
   @ApiAuth({ summary: 'Duyệt yêu cầu join workspace' })
   @UseGuards(WorkspaceAccessGuard)
