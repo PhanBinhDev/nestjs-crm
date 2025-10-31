@@ -23,6 +23,12 @@ import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
+import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
+import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
+import {
+  DocumentFolderResDto,
+  DocumentFolderWithDocumentsDto,
+} from './dto/document-folder-res.dto';
 
 @ApiTags('Documents')
 @Controller('documents')
@@ -46,6 +52,72 @@ export class DocumentsController {
     return this.documentsService.create(createDocumentDto, userId, file);
   }
 
+  // ==================== DOCUMENT FOLDERS API ====================
+  @Post('folders')
+  @ApiAuth({
+    summary: 'Tạo danh mục tài liệu',
+    description: 'Tạo danh mục mới để phân loại tài liệu',
+    type: DocumentFolderResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  createFolder(
+    @Body() dto: CreateDocumentFolderDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.createFolder(dto, userId);
+  }
+
+  @Get('folders')
+  @ApiAuth({
+    summary: 'Lấy danh sách danh mục',
+    description: 'Lấy tất cả danh mục tài liệu',
+    type: DocumentFolderResDto,
+    isArray: true,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  findAllFolders() {
+    return this.documentsService.findAllFolders();
+  }
+
+  @Get('folders/:id')
+  @ApiAuth({
+    summary: 'Xem chi tiết danh mục',
+    description:
+      'Lấy thông tin chi tiết của danh mục bao gồm danh sách tài liệu trong folder',
+    type: DocumentFolderWithDocumentsDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  findOneFolder(@Param('id') id: string) {
+    return this.documentsService.findOneFolder(id);
+  }
+
+  @Patch('folders/:id')
+  @ApiAuth({
+    summary: 'Cập nhật danh mục',
+    description: 'Cập nhật thông tin danh mục tài liệu',
+    type: DocumentFolderResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  updateFolder(
+    @Param('id') id: string,
+    @Body() dto: UpdateDocumentFolderDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.updateFolder(id, dto, userId);
+  }
+
+  @Delete('folders/:id')
+  @ApiAuth({
+    summary: 'Xóa danh mục',
+    description: 'Xóa danh mục tài liệu (chỉ khi không có tài liệu nào sử dụng)',
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  deleteFolder(@Param('id') id: string) {
+    return this.documentsService.deleteFolder(id);
+  }
+
+  // ==================== DOCUMENTS API ====================
+
   @Get()
   @ApiAuth({
     summary: 'Lấy danh sách tài liệu',
@@ -60,6 +132,20 @@ export class DocumentsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.documentsService.findAll(query, userId);
+  }
+
+  @Get(':id/download')
+  @ApiAuth({
+    summary: 'Download tài liệu',
+    description: 'Download file tài liệu. Tự động tăng downloadCount',
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  async download(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Res() res: Response,
+  ) {
+    return this.documentsService.download(id, userId, res);
   }
 
   @Get(':id')
@@ -99,19 +185,5 @@ export class DocumentsController {
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
   delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.documentsService.delete(id, userId);
-  }
-
-  @Get(':id/download')
-  @ApiAuth({
-    summary: 'Download tài liệu',
-    description: 'Download file tài liệu. Tự động tăng downloadCount',
-  })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
-  async download(
-    @Param('id') id: string,
-    @CurrentUser('id') userId: string,
-    @Res() res: Response,
-  ) {
-    return this.documentsService.download(id, userId, res);
   }
 }
