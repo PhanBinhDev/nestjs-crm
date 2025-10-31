@@ -1,6 +1,8 @@
 import { FileEntity } from '@/api/files/entities/files.entity';
 import { FilesService } from '@/api/files/files.service';
 import { ResponseDto } from '@/common/dto/response/response.dto';
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
+import { UserRole } from '@/database/enum/user.enum';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import {
   BadRequestException,
@@ -8,23 +10,26 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { Response } from 'express';
 import { Repository } from 'typeorm';
-import { CreateDocumentDto } from './dto/create-document.dto';
-import { DocumentResDto } from './dto/document-res.dto';
-import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
-import { UpdateDocumentDto } from './dto/update-document.dto';
-import { Document } from './entities/document.entity';
-import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
-import { DocumentFolder } from './entities/document-folder.entity';
+import { UserEntity } from '../users/entities/user.entity';
 import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
-import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentFolderResDto } from './dto/document-folder-res.dto';
-import { DocumentResDto as DocumentDtoForImport } from './dto/document-res.dto';
+import {
+  DocumentResDto as DocumentDtoForImport,
+  DocumentResDto,
+} from './dto/document-res.dto';
+import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
+import { UpdateDocumentDto } from './dto/update-document.dto';
+import { DocumentFolder } from './entities/document-folder.entity';
+import { Document } from './entities/document.entity';
 
 @Injectable()
 export class DocumentsService {
@@ -37,6 +42,8 @@ export class DocumentsService {
     private readonly fileRepository: Repository<FileEntity>,
     @InjectRepository(DocumentFolder)
     private readonly folderRepository: Repository<DocumentFolder>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
     private readonly filesService: FilesService,
     private readonly linkPreviewService: LinkPreviewService,
   ) {}
@@ -56,14 +63,11 @@ export class DocumentsService {
       throw new BadRequestException('Link URL là bắt buộc khi type = LINK');
     }
 
-    // Validate folderId nếu có
-    if (dto.folderId) {
-      const folder = await this.folderRepository.findOne({
-        where: { id: dto.folderId },
-      });
-      if (!folder) {
-        throw new NotFoundException('Danh mục không tồn tại');
-      }
+    const folder = await this.folderRepository.findOne({
+      where: { id: dto.folderId as any },
+    });
+    if (!folder) {
+      throw new NotFoundException('Danh mục không tồn tại');
     }
 
     const document = this.documentRepository.create({
@@ -129,7 +133,7 @@ export class DocumentsService {
 
   async findAll(
     query: GetDocumentsQueryDto,
-    _userId: string,
+    userId: string,
   ): Promise<
     ResponseDto<{
       documents: DocumentResDto[];
@@ -138,14 +142,38 @@ export class DocumentsService {
       limit: number;
     }>
   > {
-    const { status, type, search, page = 1, limit = 10 } = query;
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const allowedRoles = [UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN];
+    if (!allowedRoles.includes(user.role)) {
+      throw new ForbiddenException(
+        'Chỉ Chủ nhiệm bộ môn (CNBM) hoặc Trưởng môn (TM) mới có quyền xem danh sách tài liệu',
+      );
+    }
+
+    const { folderId, status, type, search, page = 1, limit = 10 } = query;
+
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId as any },
+    });
+
+    if (!folder) {
+      throw new NotFoundException('Danh mục không tồn tại');
+    }
 
     const queryBuilder = this.documentRepository
       .createQueryBuilder('doc')
       .leftJoinAndSelect('doc.file', 'file')
       .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
       .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
-      .leftJoinAndSelect('doc.folder', 'folder');
+      .leftJoinAndSelect('doc.folder', 'folder')
+      .where('doc.folderId = :folderId', { folderId });
 
     if (status) {
       queryBuilder.andWhere('doc.status = :status', { status });
@@ -263,7 +291,7 @@ export class DocumentsService {
     if (dto.folderId !== undefined) {
       if (dto.folderId) {
         const folder = await this.folderRepository.findOne({
-          where: { id: dto.folderId },
+          where: { id: dto.folderId as any },
         });
         if (!folder) {
           throw new NotFoundException('Danh mục không tồn tại');
@@ -497,16 +525,15 @@ export class DocumentsService {
     });
   }
 
-  async findOneFolder(
-    id: string,
-  ): Promise<ResponseDto<DocumentFolderResDto>> {
-    const folder = await this.folderRepository.findOne({ where: { id } });
+  async findOneFolder(id: string): Promise<ResponseDto<DocumentFolderResDto>> {
+    const folder = await this.folderRepository.findOne({
+      where: { id: id as any },
+    });
 
     if (!folder) {
       throw new NotFoundException('Danh mục không tồn tại');
     }
 
-    // Lấy danh sách documents thuộc folder này
     const documents = await this.documentRepository
       .createQueryBuilder('doc')
       .leftJoinAndSelect('doc.file', 'file')
@@ -541,7 +568,9 @@ export class DocumentsService {
     dto: UpdateDocumentFolderDto,
     _userId: string,
   ): Promise<ResponseDto<DocumentFolderResDto>> {
-    const folder = await this.folderRepository.findOne({ where: { id } });
+    const folder = await this.folderRepository.findOne({
+      where: { id: id as any },
+    });
 
     if (!folder) {
       throw new NotFoundException('Danh mục không tồn tại');
@@ -561,13 +590,14 @@ export class DocumentsService {
   }
 
   async deleteFolder(id: string): Promise<ResponseDto<null>> {
-    const folder = await this.folderRepository.findOne({ where: { id } });
+    const folder = await this.folderRepository.findOne({
+      where: { id: id as any },
+    });
 
     if (!folder) {
       throw new NotFoundException('Danh mục không tồn tại');
     }
 
-    // Check if any documents are using this folder
     const documentsCount = await this.documentRepository.count({
       where: { folderId: id },
     });

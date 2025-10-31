@@ -20,4 +20,3 @@ export class CreateDocumentFolderDto {
   @IsOptional()
   description?: string;
 }
-

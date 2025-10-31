@@ -20,4 +20,3 @@ export class UpdateDocumentFolderDto {
   @IsOptional()
   description?: string;
 }
-

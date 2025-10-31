@@ -1,6 +1,6 @@
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 class UserBasicDto {
   @ApiProperty()

@@ -1,3 +1,4 @@
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
@@ -9,7 +10,6 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 export class CreateDocumentDto {
   @ApiProperty({
@@ -77,5 +77,6 @@ export class CreateDocumentDto {
   })
   @IsOptional()
   @IsUUID()
+  @IsNotEmpty({ message: 'ID danh mục tài liệu là bắt buộc' })
   folderId?: string;
 }
