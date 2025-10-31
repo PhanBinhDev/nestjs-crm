@@ -1246,4 +1246,150 @@ export class WorkspacesService {
       message: 'Cập nhật vai trò thành viên thành công',
     });
   }
+
+  async revokeInvitation(
+    workspaceId: Uuid,
+    userId: Uuid,
+    currentUserId: Uuid,
+  ): Promise<ResponseNoDataDto> {
+    return await this.dataSource.transaction(async (manager) => {
+      const workspace = await manager.findOne(Workspaces, {
+        where: { id: workspaceId },
+        relations: ['owner', 'members'],
+      });
+
+      if (!workspace) {
+        throw new NotFoundException('Workspace không tồn tại');
+      }
+
+      const isOwner = workspace.owner.id === currentUserId;
+      const currentUserMember = workspace.members.find(
+        (m) => m.userId === currentUserId,
+      );
+
+      const isAdmin =
+        currentUserMember &&
+        currentUserMember.role === WorkspaceRole.ADMIN &&
+        currentUserMember.status === WorkspaceMemberStatus.ACTIVE;
+
+      if (!isOwner && !isAdmin) {
+        throw new ForbiddenException(
+          'Chỉ Owner hoặc Admin mới có quyền thu hồi lời mời',
+        );
+      }
+
+      const invitation = await manager.findOne(WorkspaceMembers, {
+        where: {
+          workspaceId,
+          userId,
+          status: WorkspaceMemberStatus.PENDING,
+          type: MemberType.INVITE,
+        },
+        relations: ['user', 'workspace'],
+      });
+
+      if (!invitation) {
+        throw new NotFoundException(
+          'Không tìm thấy lời mời hợp lệ hoặc lời mời đã được chấp nhận/từ chối',
+        );
+      }
+
+      await manager.remove(WorkspaceMembers, invitation);
+      const cacheKeyPattern = createCacheKey(CacheKey.WORKSPACE_INVITE, '*');
+      const store = this.cacheManager.store as any;
+
+      if (store.keys) {
+        const keys = await store.keys(cacheKeyPattern);
+        for (const key of keys) {
+          const cachedData = await this.cacheManager.store.get<string>(key);
+          if (cachedData) {
+            const data = JSON.parse(cachedData);
+            if (data.workspaceId === workspaceId && data.userId === userId) {
+              await this.cacheManager.store.del(key);
+              this.logger.log(`Deleted invite token cache: ${key}`);
+            }
+          }
+        }
+      }
+
+      const notificationData: SendPushNotificationDto = {
+        userId: userId,
+        title: 'Lời mời đã bị thu hồi',
+        message: `Lời mời tham gia không gian làm việc "${workspace.name}" đã bị thu hồi`,
+        type: NotificationType.WORKSPACE,
+        senderId: currentUserId,
+        data: {
+          uri: `/workspaces`,
+        },
+      };
+
+      await this.notificationQueue.add(
+        JobName.WORKSPACE_INVITATION_REVOKED,
+        notificationData,
+        {
+          attempts: 3,
+          removeOnComplete: true,
+          backoff: {
+            type: 'exponential',
+            delay: 5000,
+          },
+        },
+      );
+
+      this.logger.log(
+        `Revoked invitation for user ${userId} from workspace ${workspaceId} by ${currentUserId}`,
+      );
+
+      return new ResponseNoDataDto({
+        message: 'Thu hồi lời mời thành công',
+      });
+    });
+  }
+
+  async listPendingInvitations(
+    workspaceId: Uuid,
+    currentUserId: Uuid,
+  ): Promise<ResponseDto<WorkspaceMemberResDto[]>> {
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      relations: ['owner', 'members'],
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
+    const isOwner = workspace.owner.id === currentUserId;
+    const currentUserMember = workspace.members.find(
+      (m) => m.userId === currentUserId,
+    );
+
+    const isAdmin =
+      currentUserMember &&
+      currentUserMember.role === WorkspaceRole.ADMIN &&
+      currentUserMember.status === WorkspaceMemberStatus.ACTIVE;
+
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException(
+        'Chỉ Owner hoặc Admin mới có quyền xem danh sách lời mời',
+      );
+    }
+
+    const invitations = await this.membersRepository.find({
+      where: {
+        workspaceId,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.INVITE,
+      },
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return new ResponseDto<WorkspaceMemberResDto[]>({
+      data: plainToInstance(WorkspaceMemberResDto, invitations, {
+        excludeExtraneousValues: true,
+      }),
+      message: 'Lấy danh sách lời mời thành công',
+    });
+  }
 }
