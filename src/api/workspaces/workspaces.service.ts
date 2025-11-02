@@ -1016,6 +1016,12 @@ export class WorkspacesService {
     const statusFilter = query.status ?? WorkspaceMemberStatus.ACTIVE;
     qb.andWhere('member.status = :statusFilter', { statusFilter });
 
+    if (query.type) {
+      qb.andWhere('member.type = :typeFilter', {
+        typeFilter: query.type,
+      });
+    }
+
     if (query.q) {
       qb.andWhere('(user.name ILIKE :q OR user.email ILIKE :q)', {
         q: `%${query.q}%`,

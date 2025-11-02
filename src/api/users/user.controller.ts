@@ -44,8 +44,13 @@ export class UserController {
     summary: 'Tạo người dùng',
     type: CreateUserDto,
   })
-  createUser(@Body() dto: CreateUserDto) {
-    return this.userService.create(dto);
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('avatar'))
+  createUser(
+    @Body() dto: CreateUserDto,
+    @UploadedFile() avatar?: Express.Multer.File,
+  ) {
+    return this.userService.create(dto, avatar);
   }
 
   @Get('all')

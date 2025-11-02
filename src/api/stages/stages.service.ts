@@ -647,26 +647,25 @@ export class StagesService {
   private getDefaultStagesConfig() {
     return [
       {
-        title: 'TO DO',
-        color: '#FF0000',
+        title: 'BACKLOG',
+        color: '#6B7280',
         stageGroup: StageGroup.NOT_STARTED,
         isBuiltIn: true,
         groupPosition: 0,
       },
       {
+        title: 'TO DO',
+        color: '#EF4444',
+        stageGroup: StageGroup.NOT_STARTED,
+        isBuiltIn: true,
+        groupPosition: 1,
+      },
+      {
         title: 'IN PROGRESS',
-        color: '#0000FF',
+        color: '#2563EB',
         stageGroup: StageGroup.ACTIVE,
         isBuiltIn: true,
         groupPosition: 0,
-      },
-      {
-        title: 'OVERDUE',
-        color: '#FFA500',
-        stageGroup: StageGroup.ACTIVE,
-        isBuiltIn: true,
-        groupPosition: 1,
-        isOverdue: true,
       },
       {
         title: 'DONE',

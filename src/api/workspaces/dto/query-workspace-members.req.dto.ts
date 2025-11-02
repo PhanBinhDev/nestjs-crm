@@ -1,5 +1,6 @@
 import { PageOptionsDto } from '@/common/dto/offset-pagination/page-options.dto';
 import {
+  MemberType,
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '@/database/enum/workspace.enum';
@@ -17,4 +18,10 @@ export class QueryWorkspaceMembersReqDto extends PageOptionsDto {
     example: WorkspaceRole.MEMBER,
   })
   role: WorkspaceRole;
+
+  @EnumFieldOptional(() => MemberType, {
+    description: 'Loại thành viên trong workspace',
+    example: MemberType.NORMAL,
+  })
+  type: MemberType;
 }

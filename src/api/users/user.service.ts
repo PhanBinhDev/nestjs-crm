@@ -58,46 +58,103 @@ export class UserService {
     return this.roleHierarchy[currentRole] > this.roleHierarchy[newRole];
   }
 
-  async create(data: CreateUserDto): Promise<ResponseDto<UserResDto>> {
-    return this.userRepository.manager.transaction(async (manager) => {
-      const userRepo = manager.getRepository(UserEntity);
-      const workspaceRepo = manager.getRepository(Workspaces);
-      const workspaceMemberRepo = manager.getRepository(WorkspaceMembers);
+  async create(
+    data: CreateUserDto,
+    avatar?: Express.Multer.File,
+  ): Promise<ResponseDto<UserResDto>> {
+    let uploadedPublicId: string | null = null;
 
-      const existingUser = await userRepo.findOne({
-        where: { email: data.email },
+    return await this.userRepository.manager
+      .transaction(async (manager) => {
+        const userRepo = manager.getRepository(UserEntity);
+        const workspaceRepo = manager.getRepository(Workspaces);
+        const workspaceMemberRepo = manager.getRepository(WorkspaceMembers);
+        const fileRepo = manager.getRepository(FileEntity);
+
+        const existingUser = await userRepo.findOne({
+          where: { email: data.email },
+        });
+        if (existingUser) {
+          throw new BadRequestException('Email đã tồn tại trong hệ thống');
+        }
+
+        const user = userRepo.create(data);
+        const savedUser = await userRepo.save(user);
+
+        const workspace = workspaceRepo.create({
+          name: `${upperCaseFirst(savedUser.name)}'s Workspace`,
+          owner: savedUser,
+          visibility: WorkspaceVisibility.PRIVATE,
+        });
+        const savedWorkspace = await workspaceRepo.save(workspace);
+
+        const workspaceMember = workspaceMemberRepo.create({
+          user: savedUser,
+          workspace: savedWorkspace,
+          role: WorkspaceRole.OWNER,
+          status: WorkspaceMemberStatus.ACTIVE,
+        });
+        await workspaceMemberRepo.save(workspaceMember);
+
+        if (avatar) {
+          const folder = `users/${savedUser.id}`;
+          const fileName = avatar.originalname;
+
+          const uploadResult = await this.cloudinaryService.uploadToFolder(
+            avatar,
+            folder,
+            fileName,
+          );
+
+          if (!('secure_url' in uploadResult)) {
+            throw new BadRequestException('Upload avatar thất bại');
+          }
+
+          uploadedPublicId = uploadResult.public_id;
+
+          savedUser.avatar = uploadResult.secure_url;
+
+          const fileEntity = fileRepo.create({
+            url: uploadResult.secure_url,
+            originalName: avatar.originalname,
+            mimeType: avatar.mimetype,
+            size: uploadResult.bytes,
+            fileName: fileName,
+            uploadedBy: savedUser.id,
+            metadata: {
+              public_id: uploadResult.public_id,
+              format: uploadResult.format,
+              resource_type: uploadResult.resource_type,
+              width: uploadResult.width,
+              height: uploadResult.height,
+              bytes: uploadResult.bytes,
+            },
+          });
+          await fileRepo.save(fileEntity);
+          await userRepo.save(savedUser);
+        }
+
+        await this.stageService.initDefaultStages(savedWorkspace.id, manager);
+
+        return new ResponseDto({
+          data: plainToInstance(UserResDto, savedUser, {
+            excludeExtraneousValues: true,
+          }),
+          message: 'Tạo người dùng thành công',
+        });
+      })
+      .catch(async (error) => {
+        if (uploadedPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(uploadedPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot rollback uploaded avatar on Cloudinary: ${uploadedPublicId}`,
+            );
+          }
+        }
+        throw error;
       });
-      if (existingUser) {
-        throw new BadRequestException('Email đã tồn tại trong hệ thống');
-      }
-      const user = userRepo.create(data);
-      await userRepo.save(user);
-
-      const workspace = workspaceRepo.create({
-        name: `${upperCaseFirst(user.name)}'s Workspace`,
-        owner: user,
-        visibility: WorkspaceVisibility.PRIVATE,
-      });
-      const savedWorkspace = await workspaceRepo.save(workspace);
-
-      const workspaceMember = workspaceMemberRepo.create({
-        user,
-        workspace: savedWorkspace,
-        role: WorkspaceRole.OWNER,
-        status: WorkspaceMemberStatus.ACTIVE,
-      });
-
-      await workspaceMemberRepo.save(workspaceMember);
-
-      await this.stageService.initDefaultStages(savedWorkspace.id, manager);
-
-      return new ResponseDto({
-        data: plainToInstance(UserResDto, user, {
-          excludeExtraneousValues: true,
-        }),
-        message: 'Tạo người dùng thành công',
-      });
-    });
   }
 
   async findOne(id: Uuid): Promise<ResponseDto<UserResDto | null>> {
