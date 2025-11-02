@@ -533,16 +533,51 @@ export class WorkspacesService {
       throw new BadRequestException('No valid user IDs provided');
     }
 
-    const invitations = membersToInvite.map((user) =>
-      this.membersRepository.create({
+    const existingMembers = await this.membersRepository.find({
+      where: {
         workspaceId,
-        userId: user.id,
-        role: WorkspaceRole.MEMBER,
-        status: WorkspaceMemberStatus.PENDING,
-        type: MemberType.INVITE,
-        createdBy: userId,
-      }),
-    );
+        userId: In(inviteMemberDto.userIds),
+      },
+    });
+
+    const invitations = [];
+
+    for (const user of membersToInvite) {
+      const existing = existingMembers.find((m) => m.userId === user.id);
+
+      if (existing) {
+        if (existing.status === WorkspaceMemberStatus.REVOKED) {
+          existing.status = WorkspaceMemberStatus.PENDING;
+          existing.type = MemberType.INVITE;
+          existing.revokedAt = null;
+          existing.revokedBy = null;
+          existing.createdBy = userId;
+          invitations.push(existing);
+        } else if (existing.status === WorkspaceMemberStatus.PENDING) {
+          this.logger.warn(`User ${user.id} already has pending invitation`);
+          continue;
+        } else if (existing.status === WorkspaceMemberStatus.ACTIVE) {
+          this.logger.warn(`User ${user.id} is already an active member`);
+          continue;
+        } else if (existing.status === WorkspaceMemberStatus.REJECT) {
+          existing.status = WorkspaceMemberStatus.PENDING;
+          existing.type = MemberType.INVITE;
+          existing.createdBy = userId;
+          invitations.push(existing);
+        }
+      } else {
+        invitations.push(
+          this.membersRepository.create({
+            workspaceId,
+            userId: user.id,
+            role: WorkspaceRole.MEMBER,
+            status: WorkspaceMemberStatus.PENDING,
+            type: MemberType.INVITE,
+            createdBy: userId,
+          }),
+        );
+      }
+    }
 
     await this.membersRepository.save(invitations);
 
@@ -1294,7 +1329,11 @@ export class WorkspacesService {
         );
       }
 
-      await manager.remove(WorkspaceMembers, invitation);
+      invitation.status = WorkspaceMemberStatus.REVOKED;
+      invitation.revokedAt = new Date();
+      invitation.revokedBy = currentUserId;
+      await manager.save(WorkspaceMembers, invitation);
+
       const cacheKeyPattern = createCacheKey(CacheKey.WORKSPACE_INVITE, '*');
       const store = this.cacheManager.store as any;
 
@@ -1312,29 +1351,16 @@ export class WorkspacesService {
         }
       }
 
-      const notificationData: SendPushNotificationDto = {
-        userId: userId,
-        title: 'Lời mời đã bị thu hồi',
-        message: `Lời mời tham gia không gian làm việc "${workspace.name}" đã bị thu hồi`,
-        type: NotificationType.WORKSPACE,
-        senderId: currentUserId,
-        data: {
-          uri: `/workspaces`,
-        },
-      };
-
-      await this.notificationQueue.add(
-        JobName.WORKSPACE_INVITATION_REVOKED,
-        notificationData,
-        {
-          attempts: 3,
-          removeOnComplete: true,
-          backoff: {
-            type: 'exponential',
-            delay: 5000,
-          },
-        },
-      );
+      await manager
+        .createQueryBuilder()
+        .softDelete()
+        .from('notifications')
+        .where('userId = :userId', { userId })
+        .andWhere('type = :type', { type: NotificationType.WORKSPACE })
+        .andWhere("data->>'workspaceId' = :workspaceId", { workspaceId })
+        .andWhere("title LIKE '%Lời mời%'")
+        .andWhere('deletedAt IS NULL')
+        .execute();
 
       this.logger.log(
         `Revoked invitation for user ${userId} from workspace ${workspaceId} by ${currentUserId}`,
