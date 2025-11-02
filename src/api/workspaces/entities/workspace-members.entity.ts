@@ -55,9 +55,4 @@ export class WorkspaceMembers extends AbstractEntity {
     default: MemberType.NORMAL,
   })
   type: MemberType;
-  @Column({ type: 'timestamp', nullable: true })
-  revokedAt?: Date;
-
-  @Column({ type: 'uuid', nullable: true })
-  revokedBy?: Uuid;
 }

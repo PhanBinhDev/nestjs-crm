@@ -537,47 +537,33 @@ export class WorkspacesService {
       where: {
         workspaceId,
         userId: In(inviteMemberDto.userIds),
+        status: In([
+          WorkspaceMemberStatus.PENDING,
+          WorkspaceMemberStatus.ACTIVE,
+        ]),
       },
     });
 
-    const invitations = [];
+    const usersToInvite = membersToInvite.filter(
+      (user) => !existingMembers.some((m) => m.userId === user.id),
+    );
 
-    for (const user of membersToInvite) {
-      const existing = existingMembers.find((m) => m.userId === user.id);
-
-      if (existing) {
-        if (existing.status === WorkspaceMemberStatus.REVOKED) {
-          existing.status = WorkspaceMemberStatus.PENDING;
-          existing.type = MemberType.INVITE;
-          existing.revokedAt = null;
-          existing.revokedBy = null;
-          existing.createdBy = userId;
-          invitations.push(existing);
-        } else if (existing.status === WorkspaceMemberStatus.PENDING) {
-          this.logger.warn(`User ${user.id} already has pending invitation`);
-          continue;
-        } else if (existing.status === WorkspaceMemberStatus.ACTIVE) {
-          this.logger.warn(`User ${user.id} is already an active member`);
-          continue;
-        } else if (existing.status === WorkspaceMemberStatus.REJECT) {
-          existing.status = WorkspaceMemberStatus.PENDING;
-          existing.type = MemberType.INVITE;
-          existing.createdBy = userId;
-          invitations.push(existing);
-        }
-      } else {
-        invitations.push(
-          this.membersRepository.create({
-            workspaceId,
-            userId: user.id,
-            role: WorkspaceRole.MEMBER,
-            status: WorkspaceMemberStatus.PENDING,
-            type: MemberType.INVITE,
-            createdBy: userId,
-          }),
-        );
-      }
+    if (usersToInvite.length === 0) {
+      throw new BadRequestException(
+        'Tất cả người dùng đã là thành viên hoặc đã có lời mời pending',
+      );
     }
+
+    const invitations = usersToInvite.map((user) =>
+      this.membersRepository.create({
+        workspaceId,
+        userId: user.id,
+        role: WorkspaceRole.MEMBER,
+        status: WorkspaceMemberStatus.PENDING,
+        type: MemberType.INVITE,
+        createdBy: userId,
+      }),
+    );
 
     await this.membersRepository.save(invitations);
 
@@ -586,7 +572,7 @@ export class WorkspacesService {
     });
 
     await Promise.all(
-      membersToInvite.map(async (user) => {
+      usersToInvite.map(async (user) => {
         const token = randomBytes(32).toString('hex');
         const inviteLink = `${baseURL}/invite-members/${token}`;
 
@@ -1329,10 +1315,7 @@ export class WorkspacesService {
         );
       }
 
-      invitation.status = WorkspaceMemberStatus.REVOKED;
-      invitation.revokedAt = new Date();
-      invitation.revokedBy = currentUserId;
-      await manager.save(WorkspaceMembers, invitation);
+      await manager.remove(WorkspaceMembers, invitation);
 
       const cacheKeyPattern = createCacheKey(CacheKey.WORKSPACE_INVITE, '*');
       const store = this.cacheManager.store as any;

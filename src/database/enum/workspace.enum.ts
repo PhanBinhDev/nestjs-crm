@@ -13,7 +13,6 @@ export enum WorkspaceMemberStatus {
   ACTIVE = 'active',
   PENDING = 'pending',
   REJECT = 'reject',
-  REVOKED = 'revoked',
 }
 
 export enum MemberType {

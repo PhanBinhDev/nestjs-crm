@@ -8,7 +8,6 @@ import {
 } from '@/database/enum/workspace.enum';
 import {
   ClassField,
-  DateField,
   EnumField,
   UUIDField,
 } from '@/decorators/field.decorators';
@@ -45,18 +44,4 @@ export class WorkspaceMemberResDto extends AuditResDto {
   })
   @Expose()
   type: MemberType;
-
-  @DateField({
-    nullable: true,
-    description: 'Thời điểm lời mời bị thu hồi',
-  })
-  @Expose()
-  revokedAt?: Date;
-
-  @UUIDField({
-    nullable: true,
-    description: 'ID người thu hồi lời mời',
-  })
-  @Expose()
-  revokedBy?: Uuid;
 }
