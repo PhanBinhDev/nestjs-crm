@@ -1,3 +1,4 @@
+import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
@@ -8,7 +9,6 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 
 export class UpdateDocumentDto {
   @ApiPropertyOptional({

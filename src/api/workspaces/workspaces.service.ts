@@ -533,7 +533,28 @@ export class WorkspacesService {
       throw new BadRequestException('No valid user IDs provided');
     }
 
-    const invitations = membersToInvite.map((user) =>
+    const existingMembers = await this.membersRepository.find({
+      where: {
+        workspaceId,
+        userId: In(inviteMemberDto.userIds),
+        status: In([
+          WorkspaceMemberStatus.PENDING,
+          WorkspaceMemberStatus.ACTIVE,
+        ]),
+      },
+    });
+
+    const usersToInvite = membersToInvite.filter(
+      (user) => !existingMembers.some((m) => m.userId === user.id),
+    );
+
+    if (usersToInvite.length === 0) {
+      throw new BadRequestException(
+        'Tất cả người dùng đã là thành viên hoặc đã có lời mời pending',
+      );
+    }
+
+    const invitations = usersToInvite.map((user) =>
       this.membersRepository.create({
         workspaceId,
         userId: user.id,
@@ -551,7 +572,7 @@ export class WorkspacesService {
     });
 
     await Promise.all(
-      membersToInvite.map(async (user) => {
+      usersToInvite.map(async (user) => {
         const token = randomBytes(32).toString('hex');
         const inviteLink = `${baseURL}/invite-members/${token}`;
 
@@ -1301,6 +1322,7 @@ export class WorkspacesService {
       }
 
       await manager.remove(WorkspaceMembers, invitation);
+
       const cacheKeyPattern = createCacheKey(CacheKey.WORKSPACE_INVITE, '*');
       const store = this.cacheManager.store as any;
 
@@ -1318,29 +1340,16 @@ export class WorkspacesService {
         }
       }
 
-      const notificationData: SendPushNotificationDto = {
-        userId: userId,
-        title: 'Lời mời đã bị thu hồi',
-        message: `Lời mời tham gia không gian làm việc "${workspace.name}" đã bị thu hồi`,
-        type: NotificationType.WORKSPACE,
-        senderId: currentUserId,
-        data: {
-          uri: `/workspaces`,
-        },
-      };
-
-      await this.notificationQueue.add(
-        JobName.WORKSPACE_INVITATION_REVOKED,
-        notificationData,
-        {
-          attempts: 3,
-          removeOnComplete: true,
-          backoff: {
-            type: 'exponential',
-            delay: 5000,
-          },
-        },
-      );
+      await manager
+        .createQueryBuilder()
+        .softDelete()
+        .from('notifications')
+        .where('userId = :userId', { userId })
+        .andWhere('type = :type', { type: NotificationType.WORKSPACE })
+        .andWhere("data->>'workspaceId' = :workspaceId", { workspaceId })
+        .andWhere("title LIKE '%Lời mời%'")
+        .andWhere('deletedAt IS NULL')
+        .execute();
 
       this.logger.log(
         `Revoked invitation for user ${userId} from workspace ${workspaceId} by ${currentUserId}`,

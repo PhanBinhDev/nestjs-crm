@@ -1,9 +1,27 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class GetDocumentsQueryDto {
+  @ApiProperty({
+    description: 'ID danh mục tài liệu (bắt buộc)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: true,
+  })
+  @IsUUID()
+  @IsNotEmpty({ message: 'ID danh mục tài liệu là bắt buộc' })
+  folderId: string;
+
   @ApiPropertyOptional({
     description: 'Trạng thái tài liệu',
     enum: DocumentStatus,
