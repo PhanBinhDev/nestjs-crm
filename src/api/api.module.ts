@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ActivitiesModule } from './activities/activities.module';
 import { AuthModule } from './auth/auth.module';
 import { DeviceTokensModule } from './device-token/device-tokens.module';
+import { ExamSchedulesModule } from './exam-schedules/exam-schedules.module';
 import { FilesModule } from './files/files.module';
 import { HealthModule } from './health/health.module';
 import { HomeModule } from './home/home.module';
@@ -27,6 +28,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     NotificationsModule,
     FilesModule,
     WorkspacesModule,
+    ExamSchedulesModule,
   ],
 })
 export class ApiModule {}
