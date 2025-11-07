@@ -17,7 +17,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiConsumes, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
@@ -26,8 +26,10 @@ import {
   DocumentFolderResDto,
   DocumentFolderWithDocumentsDto,
 } from './dto/document-folder-res.dto';
+import { DocumentHistoryResDto } from './dto/document-history-res.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { RandomDocumentResDto } from './dto/random-document-res.dto';
 import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 
@@ -170,6 +172,47 @@ export class DocumentsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.documentsService.findAll(query, userId);
+  }
+
+  @Get('folders/:folderId/random')
+  @ApiAuth({
+    summary: 'Lấy random tài liệu PDF/Word của bộ môn',
+    description:
+      'Lấy ngẫu nhiên 1 tài liệu PDF hoặc Word từ bộ môn. Lịch sử sẽ được lưu vào Redis. Chỉ CNBM, TM, GV có quyền.',
+    type: RandomDocumentResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  @ApiParam({
+    name: 'folderId',
+    description: 'ID bộ môn',
+    type: 'string',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  getRandomDocument(
+    @Param('folderId') folderId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.getRandomDocument(folderId, userId);
+  }
+
+  @Get('folders/:folderId/history')
+  @ApiAuth({
+    summary: 'Lịch sử lấy tài liệu của bộ môn',
+    description:
+      'Xem lịch sử các lần lấy random tài liệu của bộ môn. Lưu tối đa 100 items gần nhất.',
+    type: DocumentHistoryResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  @ApiParam({
+    name: 'folderId',
+    description: 'ID bộ môn',
+    type: 'string',
+  })
+  getDocumentHistory(
+    @Param('folderId') folderId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.getDocumentHistory(folderId, userId);
   }
 
   @Get(':id/download')

@@ -4,9 +4,11 @@ import { ResponseDto } from '@/common/dto/response/response.dto';
 import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { UserRole } from '@/database/enum/user.enum';
 import { LinkPreviewService } from '@/services/link-preview.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,18 +16,22 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
+import { Cache } from 'cache-manager';
 import { plainToInstance } from 'class-transformer';
+import { randomBytes } from 'crypto';
 import { Response } from 'express';
 import { Repository } from 'typeorm';
 import { UserEntity } from '../users/entities/user.entity';
 import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { DocumentFolderResDto } from './dto/document-folder-res.dto';
+import { DocumentHistoryResDto } from './dto/document-history-res.dto';
 import {
   DocumentResDto as DocumentDtoForImport,
   DocumentResDto,
 } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { RandomDocumentResDto } from './dto/random-document-res.dto';
 import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 import { DocumentFolder } from './entities/document-folder.entity';
@@ -34,6 +40,8 @@ import { Document } from './entities/document.entity';
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
+  private readonly HISTORY_KEY_PREFIX = 'DOC_RANDOM_HISTORY:';
+  private readonly MAX_HISTORY_ITEMS = 100;
 
   constructor(
     @InjectRepository(Document)
@@ -46,6 +54,7 @@ export class DocumentsService {
     private readonly userRepository: Repository<UserEntity>,
     private readonly filesService: FilesService,
     private readonly linkPreviewService: LinkPreviewService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async create(
@@ -481,6 +490,190 @@ export class DocumentsService {
       this.logger.error('Failed to download file:', error);
       throw new BadRequestException('Không thể tải file. Vui lòng thử lại sau');
     }
+  }
+
+  async getRandomDocument(
+    folderId: string,
+    userId: string,
+  ): Promise<ResponseDto<RandomDocumentResDto>> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const allowedRoles = [
+      UserRole.CNBM,
+      UserRole.TM,
+      UserRole.GV,
+      UserRole.SUPERADMIN,
+    ];
+    if (!allowedRoles.includes(user.role)) {
+      throw new ForbiddenException(
+        'Chỉ CNBM, TM hoặc GV mới có quyền lấy tài liệu ngẫu nhiên',
+      );
+    }
+
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId as any },
+    });
+
+    if (!folder) {
+      throw new NotFoundException('Bộ môn không tồn tại');
+    }
+
+    const documents = await this.documentRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.file', 'file')
+      .where('doc.folderId = :folderId', { folderId })
+      .andWhere('doc.type = :type', { type: DocumentType.FILE })
+      .andWhere('doc.status = :status', { status: DocumentStatus.PUBLISHED })
+      .andWhere('doc.fileId IS NOT NULL')
+      .andWhere('(file.mimeType = :pdf OR file.mimeType IN (:...wordTypes))', {
+        pdf: 'application/pdf',
+        wordTypes: [
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+      })
+      .getMany();
+
+    if (!documents || documents.length === 0) {
+      throw new NotFoundException(
+        `Không có tài liệu PDF/Word nào trong bộ môn "${folder.name}"`,
+      );
+    }
+
+    const randomIndex = Math.floor(Math.random() * documents.length);
+    const document = documents[randomIndex];
+
+    const randomId = randomBytes(16).toString('hex');
+
+    const file = document.file as any;
+    const fileUrl = file?.url || file?.fileUrl || file?.path;
+    const fileName = file?.originalName || file?.fileName || file?.name;
+    const mimeType = file?.mimeType;
+
+    if (!fileUrl) {
+      throw new BadRequestException('Không thể lấy URL file');
+    }
+
+    const now = new Date();
+    const historyData = {
+      randomId,
+      documentId: document.id,
+      title: document.title,
+      description: document.description,
+      fileName,
+      mimeType,
+      fileUrl,
+      folderId: folder.id,
+      folderName: folder.name,
+      createdByUserId: userId,
+      createdByUserName: user.name,
+      createdAt: now.toISOString(),
+    };
+
+    await this.saveToHistory(folderId, historyData);
+
+    await this.documentRepository.increment(
+      { id: document.id as any },
+      'viewCount',
+      1,
+    );
+
+    this.logger.log(
+      `User ${userId} (${user.name}) got random document ${document.id} from folder ${folderId}`,
+    );
+
+    return new ResponseDto({
+      data: plainToInstance(
+        RandomDocumentResDto,
+        {
+          ...historyData,
+          createdAt: now,
+        },
+        { excludeExtraneousValues: true },
+      ),
+      message: 'Lấy tài liệu ngẫu nhiên thành công',
+    });
+  }
+
+  async getDocumentHistory(
+    folderId: string,
+    userId: string,
+  ): Promise<ResponseDto<DocumentHistoryResDto>> {
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId as any },
+    });
+
+    if (!folder) {
+      throw new NotFoundException('Bộ môn không tồn tại');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const allowedRoles = [
+      UserRole.CNBM,
+      UserRole.TM,
+      UserRole.GV,
+      UserRole.SUPERADMIN,
+    ];
+    if (!allowedRoles.includes(user.role)) {
+      throw new ForbiddenException(
+        'Chỉ CNBM, TM hoặc GV mới có quyền xem lịch sử',
+      );
+    }
+
+    const historyKey = `${this.HISTORY_KEY_PREFIX}${folderId}`;
+    const historyStr = await this.cacheManager.get<string>(historyKey);
+    const history = historyStr ? JSON.parse(historyStr) : [];
+
+    const items = history.map((item: any) => ({
+      ...item,
+      createdAt: new Date(item.createdAt),
+    }));
+
+    return new ResponseDto({
+      data: plainToInstance(
+        DocumentHistoryResDto,
+        {
+          items,
+          total: items.length,
+          folderId: folder.id,
+          folderName: folder.name,
+        },
+        { excludeExtraneousValues: true },
+      ),
+      message: 'Lấy lịch sử thành công',
+    });
+  }
+
+  private async saveToHistory(folderId: string, data: any): Promise<void> {
+    const historyKey = `${this.HISTORY_KEY_PREFIX}${folderId}`;
+
+    const historyStr = await this.cacheManager.get<string>(historyKey);
+    const history = historyStr ? JSON.parse(historyStr) : [];
+
+    history.unshift(data);
+
+    if (history.length > this.MAX_HISTORY_ITEMS) {
+      history.splice(this.MAX_HISTORY_ITEMS);
+    }
+
+    await this.cacheManager.set(historyKey, JSON.stringify(history), 0);
+
+    this.logger.log(
+      `Saved history item ${data.randomId} to folder ${folderId}, total items: ${history.length}`,
+    );
   }
 
   // ==================== DOCUMENT FOLDER METHODS ====================
