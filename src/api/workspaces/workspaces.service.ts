@@ -699,11 +699,11 @@ export class WorkspacesService {
             fileName,
           );
 
-          if ('secure_url' in uploadResult) {
+          if ('url' in uploadResult) {
             uploadedPublicId = uploadResult.public_id;
 
             const fileEntity = manager.create(FileEntity, {
-              url: uploadResult.secure_url,
+              url: uploadResult.url,
               originalName: avatar.originalname,
               mimeType: avatar.mimetype,
               size: uploadResult.bytes,
@@ -722,9 +722,9 @@ export class WorkspacesService {
             await manager.save(FileEntity, fileEntity);
 
             await manager.update(Workspaces, savedWorkspace.id, {
-              avatar: uploadResult.secure_url,
+              avatar: uploadResult.url,
             });
-            savedWorkspace.avatar = uploadResult.secure_url;
+            savedWorkspace.avatar = uploadResult.url;
           }
         }
 
@@ -966,12 +966,12 @@ export class WorkspacesService {
             fileName,
           );
 
-          if ('secure_url' in uploadResult) {
-            body.avatar = uploadResult.secure_url;
+          if ('url' in uploadResult) {
+            body.avatar = uploadResult.url;
             uploadedPublicId = uploadResult.public_id;
 
             const fileEntity = manager.create(FileEntity, {
-              url: uploadResult.secure_url,
+              url: uploadResult.url,
               originalName: avatar.originalname,
               mimeType: avatar.mimetype,
               size: uploadResult.bytes,

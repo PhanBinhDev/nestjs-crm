@@ -175,7 +175,7 @@ export class NotificationsService {
             uploadedPublicIds.push(resUpload.public_id);
 
             const fileEntity = manager.create(FileEntity, {
-              url: resUpload.secure_url,
+              url: resUpload.url,
               originalName: file.originalname,
               mimeType: file.mimetype,
               size: resUpload.bytes,

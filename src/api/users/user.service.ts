@@ -106,16 +106,16 @@ export class UserService {
             fileName,
           );
 
-          if (!('secure_url' in uploadResult)) {
+          if (!('url' in uploadResult)) {
             throw new BadRequestException('Upload avatar thất bại');
           }
 
           uploadedPublicId = uploadResult.public_id;
 
-          savedUser.avatar = uploadResult.secure_url;
+          savedUser.avatar = uploadResult.url;
 
           const fileEntity = fileRepo.create({
-            url: uploadResult.secure_url,
+            url: uploadResult.url,
             originalName: avatar.originalname,
             mimeType: avatar.mimetype,
             size: uploadResult.bytes,
@@ -559,15 +559,15 @@ export class UserService {
             fileName,
           );
 
-          if (!('secure_url' in uploadResult)) {
+          if (!('url' in uploadResult)) {
             throw new BadRequestException('Upload avatar thất bại');
           }
 
           uploadedPublicId = uploadResult.public_id;
-          userToUpdate.avatar = uploadResult.secure_url;
+          userToUpdate.avatar = uploadResult.url;
 
           const fileEntity = fileRepo.create({
-            url: uploadResult.secure_url,
+            url: uploadResult.url,
             originalName: avatar.originalname,
             mimeType: avatar.mimetype,
             size: uploadResult.bytes,
