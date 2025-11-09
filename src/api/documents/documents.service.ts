@@ -1,6 +1,7 @@
 import { FileEntity } from '@/api/files/entities/files.entity';
 import { FilesService } from '@/api/files/files.service';
 import { ResponseDto } from '@/common/dto/response/response.dto';
+import { Uuid } from '@/common/types/common.type';
 import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { UserRole } from '@/database/enum/user.enum';
 import { LinkPreviewService } from '@/services/link-preview.service';
@@ -493,7 +494,7 @@ export class DocumentsService {
   }
 
   async getRandomDocument(
-    folderId: string,
+    folderId: Uuid,
     userId: string,
   ): Promise<ResponseDto<RandomDocumentResDto>> {
     const user = await this.userRepository.findOne({
@@ -504,20 +505,8 @@ export class DocumentsService {
       throw new UnauthorizedException('Người dùng không tồn tại');
     }
 
-    const allowedRoles = [
-      UserRole.CNBM,
-      UserRole.TM,
-      UserRole.GV,
-      UserRole.SUPERADMIN,
-    ];
-    if (!allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(
-        'Chỉ CNBM, TM hoặc GV mới có quyền lấy tài liệu ngẫu nhiên',
-      );
-    }
-
     const folder = await this.folderRepository.findOne({
-      where: { id: folderId as any },
+      where: { id: folderId },
     });
 
     if (!folder) {
@@ -602,11 +591,11 @@ export class DocumentsService {
   }
 
   async getDocumentHistory(
-    folderId: string,
+    folderId: Uuid,
     userId: string,
   ): Promise<ResponseDto<DocumentHistoryResDto>> {
     const folder = await this.folderRepository.findOne({
-      where: { id: folderId as any },
+      where: { id: folderId },
     });
 
     if (!folder) {
@@ -619,18 +608,6 @@ export class DocumentsService {
 
     if (!user) {
       throw new UnauthorizedException('Người dùng không tồn tại');
-    }
-
-    const allowedRoles = [
-      UserRole.CNBM,
-      UserRole.TM,
-      UserRole.GV,
-      UserRole.SUPERADMIN,
-    ];
-    if (!allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(
-        'Chỉ CNBM, TM hoặc GV mới có quyền xem lịch sử',
-      );
     }
 
     const historyKey = `${this.HISTORY_KEY_PREFIX}${folderId}`;
@@ -657,7 +634,7 @@ export class DocumentsService {
     });
   }
 
-  private async saveToHistory(folderId: string, data: any): Promise<void> {
+  private async saveToHistory(folderId: Uuid, data: any): Promise<void> {
     const historyKey = `${this.HISTORY_KEY_PREFIX}${folderId}`;
 
     const historyStr = await this.cacheManager.get<string>(historyKey);
