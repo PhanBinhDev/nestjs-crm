@@ -8,6 +8,7 @@ import { CloudinaryModule } from '@/cloudinary/cloudinary.module';
 import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { NotificationEntity } from '../notification/entities/notification.entity';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { WorkspaceViewSettings } from './entities/workspace-view-settings.entity';
 import { Workspaces } from './entities/workspace.entity';
@@ -24,6 +25,7 @@ import { WorkspacesService } from './workspaces.service';
       UserEntity,
       DataSource,
       FileEntity,
+      NotificationEntity,
     ]),
     CloudinaryModule,
     EmailQueueModule,
