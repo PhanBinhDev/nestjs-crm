@@ -35,6 +35,7 @@ import ms from 'ms';
 import { Brackets, DataSource, In, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
+import { NotificationEntity } from '../notification/entities/notification.entity';
 import { StagesService } from '../stages/stages.service';
 import { UserEntity } from '../users/entities/user.entity';
 import { BaseWorkspaceResDto } from './dto/base-workspace.res.dto';
@@ -68,6 +69,8 @@ export class WorkspacesService {
     private readonly emailQueue: Queue<IWorkspaceMemberJob, any, string>,
     @InjectQueue(QueueName.NOTIFICATION)
     private readonly notificationQueue: Queue,
+    @InjectRepository(NotificationEntity)
+    private readonly notificationRepository: Repository<NotificationEntity>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly configService: ConfigService<AllConfigType>,
@@ -292,6 +295,20 @@ export class WorkspacesService {
       );
     }
 
+    const key = createCacheKey(CacheKey.WORKSPACE_INVITE, user.id);
+
+    await this.notificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.userId = :userId', { userId })
+      .andWhere('notification.type = :type', {
+        type: NotificationType.WORKSPACE,
+      })
+      .andWhere("notification.data->>'key' = :key", { key })
+      .andWhere("notification.data->>'status' = :status", {
+        status: WorkspaceMemberStatus.PENDING,
+      })
+      .getOne();
+
     return new ResponseNoDataDto({
       message: 'Bạn đã từ chối lời mời tham gia workspace',
     });
@@ -356,6 +373,20 @@ export class WorkspacesService {
         },
       );
     }
+
+    const key = createCacheKey(CacheKey.WORKSPACE_INVITE, user.id);
+
+    await this.notificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.userId = :userId', { userId })
+      .andWhere('notification.type = :type', {
+        type: NotificationType.WORKSPACE,
+      })
+      .andWhere("notification.data->>'key' = :key", { key })
+      .andWhere("notification.data->>'status' = :status", {
+        status: WorkspaceMemberStatus.PENDING,
+      })
+      .getOne();
 
     return new ResponseNoDataDto({
       message: 'Bạn đã tham gia workspace thành công',
@@ -601,6 +632,8 @@ export class WorkspacesService {
           data: {
             uri: `/invite-members/${token}`,
             workspaceId: workspace.id,
+            status: WorkspaceMemberStatus.PENDING,
+            key: createCacheKey(CacheKey.WORKSPACE_INVITE, user.id),
           },
         };
 
@@ -798,6 +831,8 @@ export class WorkspacesService {
                 data: {
                   uri: `/invite-members/${token}`,
                   workspace,
+                  status: WorkspaceMemberStatus.PENDING,
+                  key: createCacheKey(CacheKey.WORKSPACE_INVITE, user.id),
                 },
               };
 
