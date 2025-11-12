@@ -1,3 +1,4 @@
+import { Uuid } from '@/common/types/common.type';
 import { DocumentStatus, DocumentType } from '@/database/enum/document.enum';
 import { UserRole } from '@/database/enum/user.enum';
 import { CurrentUser } from '@/decorators/current-user.decorator';
@@ -17,7 +18,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiConsumes, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { CreateDocumentFolderDto } from './dto/create-document-folder.dto';
@@ -26,8 +27,10 @@ import {
   DocumentFolderResDto,
   DocumentFolderWithDocumentsDto,
 } from './dto/document-folder-res.dto';
+import { DocumentHistoryResDto } from './dto/document-history-res.dto';
 import { DocumentResDto } from './dto/document-res.dto';
 import { GetDocumentsQueryDto } from './dto/get-documents-query.dto';
+import { RandomDocumentResDto } from './dto/random-document-res.dto';
 import { UpdateDocumentFolderDto } from './dto/update-document-folder.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 
@@ -87,7 +90,7 @@ export class DocumentsController {
     type: DocumentFolderWithDocumentsDto,
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
-  findOneFolder(@Param('id') id: string) {
+  findOneFolder(@Param('id') id: Uuid) {
     return this.documentsService.findOneFolder(id);
   }
 
@@ -99,7 +102,7 @@ export class DocumentsController {
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   updateFolder(
-    @Param('id') id: string,
+    @Param('id') id: Uuid,
     @Body() dto: UpdateDocumentFolderDto,
     @CurrentUser('id') userId: string,
   ) {
@@ -113,7 +116,7 @@ export class DocumentsController {
       'Xóa danh mục tài liệu (chỉ khi không có tài liệu nào sử dụng)',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
-  deleteFolder(@Param('id') id: string) {
+  deleteFolder(@Param('id') id: Uuid) {
     return this.documentsService.deleteFolder(id);
   }
 
@@ -125,10 +128,10 @@ export class DocumentsController {
     type: DocumentResDto,
     isArray: true,
   })
-  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN) // CHỈ CNBM VÀ TM
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
   @ApiQuery({
     name: 'folderId',
-    required: true, // BẮT BUỘC
+    required: true,
     description: 'ID danh mục (bắt buộc)',
     type: 'string',
     example: '123e4567-e89b-12d3-a456-426614174000',
@@ -172,6 +175,47 @@ export class DocumentsController {
     return this.documentsService.findAll(query, userId);
   }
 
+  @Get('folders/:folderId/random')
+  @ApiAuth({
+    summary: 'Lấy random tài liệu PDF/Word của bộ môn',
+    description:
+      'Lấy ngẫu nhiên 1 tài liệu PDF hoặc Word từ bộ môn. Lịch sử sẽ được lưu vào Redis. Chỉ CNBM, TM, GV có quyền.',
+    type: RandomDocumentResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  @ApiParam({
+    name: 'folderId',
+    description: 'ID bộ môn',
+    type: 'string',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  getRandomDocument(
+    @Param('folderId') folderId: Uuid,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.getRandomDocument(folderId, userId);
+  }
+
+  @Get('folders/:folderId/history')
+  @ApiAuth({
+    summary: 'Lịch sử lấy tài liệu của bộ môn',
+    description:
+      'Xem lịch sử các lần lấy random tài liệu của bộ môn. Lưu tối đa 100 items gần nhất.',
+    type: DocumentHistoryResDto,
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  @ApiParam({
+    name: 'folderId',
+    description: 'ID bộ môn',
+    type: 'string',
+  })
+  getDocumentHistory(
+    @Param('folderId') folderId: Uuid,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentsService.getDocumentHistory(folderId, userId);
+  }
+
   @Get(':id/download')
   @ApiAuth({
     summary: 'Download tài liệu',
@@ -179,7 +223,7 @@ export class DocumentsController {
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   async download(
-    @Param('id') id: string,
+    @Param('id') id: Uuid,
     @CurrentUser('id') userId: string,
     @Res() res: Response,
   ) {
@@ -193,7 +237,7 @@ export class DocumentsController {
     type: DocumentResDto,
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
-  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
+  findOne(@Param('id') id: Uuid, @CurrentUser('id') userId: string) {
     return this.documentsService.findOne(id, userId);
   }
 
@@ -207,7 +251,7 @@ export class DocumentsController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   update(
-    @Param('id') id: string,
+    @Param('id') id: Uuid,
     @Body() updateDocumentDto: UpdateDocumentDto,
     @CurrentUser('id') userId: string,
     @UploadedFile() file?: Express.Multer.File,
@@ -221,7 +265,7 @@ export class DocumentsController {
     description: 'Chỉ người tạo tài liệu mới có quyền xóa',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
-  delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
+  delete(@Param('id') id: Uuid, @CurrentUser('id') userId: string) {
     return this.documentsService.delete(id, userId);
   }
 }
