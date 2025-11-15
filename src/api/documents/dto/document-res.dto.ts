@@ -129,4 +129,11 @@ export class DocumentResDto {
   @ApiPropertyOptional({ description: 'Tên danh mục' })
   @Expose()
   folderName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tổng số tài liệu trong folder này',
+    example: 15,
+  })
+  @Expose()
+  totalDocumentsInFolder?: number;
 }

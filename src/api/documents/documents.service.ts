@@ -126,11 +126,16 @@ export class DocumentsService {
       relations: ['createdByUser', 'updatedByUser', 'file', 'folder'],
     });
 
+    const totalDocumentsInFolder = await this.documentRepository.count({
+      where: { folderId: dto.folderId },
+    });
+
     const responseData = {
       ...documentWithRelations,
       createdBy: documentWithRelations.createdByUser,
       updatedBy: documentWithRelations.updatedByUser,
       folderName: documentWithRelations.folder?.name,
+      totalDocumentsInFolder,
     };
 
     return new ResponseDto({
@@ -631,6 +636,74 @@ export class DocumentsService {
         { excludeExtraneousValues: true },
       ),
       message: 'Lấy lịch sử thành công',
+    });
+  }
+
+  async getAllHistory(userId: string): Promise<
+    ResponseDto<{
+      folders: DocumentHistoryResDto[];
+      totalItems: number;
+      totalFolders: number;
+    }>
+  > {
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const folders = await this.folderRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+
+    const historyResults: DocumentHistoryResDto[] = [];
+    let totalItems = 0;
+
+    for (const folder of folders) {
+      const historyKey = `${this.HISTORY_KEY_PREFIX}${folder.id}`;
+      const historyStr = await this.cacheManager.get<string>(historyKey);
+
+      if (historyStr) {
+        const history = JSON.parse(historyStr);
+
+        if (history.length > 0) {
+          const items = history.map((item: any) => ({
+            ...item,
+            createdAt: new Date(item.createdAt),
+          }));
+
+          const folderHistory = plainToInstance(
+            DocumentHistoryResDto,
+            {
+              items,
+              total: items.length,
+              folderId: folder.id,
+              folderName: folder.name,
+            },
+            { excludeExtraneousValues: true },
+          );
+
+          historyResults.push(folderHistory);
+          totalItems += items.length;
+        }
+      }
+    }
+
+    historyResults.sort((a, b) => {
+      const timeA = a.items[0]?.createdAt?.getTime() || 0;
+      const timeB = b.items[0]?.createdAt?.getTime() || 0;
+      return timeB - timeA;
+    });
+
+    return new ResponseDto({
+      data: {
+        folders: historyResults,
+        totalItems,
+        totalFolders: historyResults.length,
+      },
+      message: 'Lấy lịch sử tất cả bộ môn thành công',
     });
   }
 

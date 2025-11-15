@@ -78,3 +78,26 @@ export class DocumentHistoryResDto {
   @Expose()
   folderName: string;
 }
+export class AllDocumentHistoryResDto {
+  @ApiProperty({
+    type: [DocumentHistoryResDto],
+    description: 'Danh sách lịch sử theo từng bộ môn',
+  })
+  @Expose()
+  @Type(() => DocumentHistoryResDto)
+  folders: DocumentHistoryResDto[];
+
+  @ApiProperty({
+    example: 150,
+    description: 'Tổng số lần lấy tài liệu của tất cả bộ môn',
+  })
+  @Expose()
+  totalItems: number;
+
+  @ApiProperty({
+    example: 5,
+    description: 'Số lượng bộ môn có lịch sử',
+  })
+  @Expose()
+  totalFolders: number;
+}
