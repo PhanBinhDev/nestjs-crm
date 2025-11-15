@@ -196,9 +196,20 @@ export class DocumentsController {
     return this.documentsService.getRandomDocument(folderId, userId);
   }
 
+  @Get('history/all')
+  @ApiAuth({
+    summary: 'Lịch sử lấy tài liệu của tất cả bộ môn',
+    description:
+      'Xem lịch sử các lần lấy random tài liệu của tất cả các bộ môn. Lưu tối đa 100 items gần nhất mỗi folder.',
+  })
+  @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
+  getAllHistory(@CurrentUser('id') userId: string) {
+    return this.documentsService.getAllHistory(userId);
+  }
+
   @Get('folders/:folderId/history')
   @ApiAuth({
-    summary: 'Lịch sử lấy tài liệu của bộ môn',
+    summary: 'Lịch sử lấy tài liệu của từng bộ môn',
     description:
       'Xem lịch sử các lần lấy random tài liệu của bộ môn. Lưu tối đa 100 items gần nhất.',
     type: DocumentHistoryResDto,
