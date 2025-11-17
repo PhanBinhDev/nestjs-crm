@@ -730,17 +730,33 @@ export class DocumentsService {
 
   async createFolder(
     dto: CreateDocumentFolderDto,
-    _userId: string,
+    userId: string,
   ): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = this.folderRepository.create({
       name: dto.name,
       description: dto.description,
+      createdBy: userId,
     });
 
     const savedFolder = await this.folderRepository.save(folder);
 
+    const folderWithUser = await this.folderRepository.findOne({
+      where: { id: savedFolder.id },
+      relations: ['createdByUser'],
+    });
+
+    const totalDocuments = await this.documentRepository.count({
+      where: { folderId: savedFolder.id },
+    });
+
+    const responseData = {
+      ...folderWithUser,
+      createdBy: folderWithUser.createdByUser || { id: userId },
+      totalDocuments,
+    };
+
     return new ResponseDto({
-      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+      data: plainToInstance(DocumentFolderResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Tạo danh mục thành công',
@@ -754,12 +770,27 @@ export class DocumentsService {
     }>
   > {
     const [folders, total] = await this.folderRepository.findAndCount({
+      relations: ['createdByUser'],
       order: { createdAt: 'DESC' },
     });
 
+    const foldersWithCount = await Promise.all(
+      folders.map(async (folder) => {
+        const totalDocuments = await this.documentRepository.count({
+          where: { folderId: folder.id },
+        });
+
+        return {
+          ...folder,
+          createdBy: folder.createdByUser || { id: folder.createdBy },
+          totalDocuments,
+        };
+      }),
+    );
+
     return new ResponseDto({
       data: {
-        folders: plainToInstance(DocumentFolderResDto, folders, {
+        folders: plainToInstance(DocumentFolderResDto, foldersWithCount, {
           excludeExtraneousValues: true,
         }),
         total,
@@ -771,6 +802,7 @@ export class DocumentsService {
   async findOneFolder(id: string): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = await this.folderRepository.findOne({
       where: { id: id as any },
+      relations: ['createdByUser'],
     });
 
     if (!folder) {
@@ -794,6 +826,7 @@ export class DocumentsService {
 
     const folderWithDocuments = {
       ...folder,
+      createdBy: folder.createdByUser || { id: folder.createdBy },
       documents: plainToInstance(DocumentDtoForImport, documentsData, {
         excludeExtraneousValues: true,
       }),
@@ -813,6 +846,7 @@ export class DocumentsService {
   ): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = await this.folderRepository.findOne({
       where: { id: id as any },
+      relations: ['createdByUser'],
     });
 
     if (!folder) {
@@ -824,8 +858,25 @@ export class DocumentsService {
 
     const savedFolder = await this.folderRepository.save(folder);
 
+    const folderWithUser = await this.folderRepository.findOne({
+      where: { id: savedFolder.id },
+      relations: ['createdByUser'],
+    });
+
+    const totalDocuments = await this.documentRepository.count({
+      where: { folderId: savedFolder.id },
+    });
+
+    const responseData = {
+      ...folderWithUser,
+      createdBy: folderWithUser.createdByUser || {
+        id: folderWithUser.createdBy,
+      },
+      totalDocuments,
+    };
+
     return new ResponseDto({
-      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+      data: plainToInstance(DocumentFolderResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Cập nhật danh mục thành công',
