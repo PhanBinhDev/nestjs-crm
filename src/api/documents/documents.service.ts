@@ -462,9 +462,21 @@ export class DocumentsService {
       throw new NotFoundException('Tài liệu không tồn tại');
     }
 
-    if (document.createdById !== userId) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const isCreator = document.createdById === userId;
+    const isCNBM = user.role === UserRole.CNBM;
+    const isAdmin = user.role === UserRole.SUPERADMIN;
+
+    if (!isCreator && !isCNBM && !isAdmin) {
       throw new ForbiddenException(
-        'Bạn không có quyền xóa tài liệu này. Chỉ người tạo mới có quyền xóa',
+        'Bạn không có quyền xóa tài liệu này. Chỉ người tạo, Chủ nhiệm bộ môn (CNBM) hoặc Admin mới có quyền xóa',
       );
     }
 
