@@ -255,14 +255,21 @@ export class DocumentsController {
   @Patch(':id')
   @ApiAuth({
     summary: 'Cập nhật tài liệu',
-    description: 'Chỉ người tạo tài liệu mới có quyền cập nhật',
+    description:
+      'Người tạo, Chủ nhiệm bộ môn (CNBM) hoặc Admin có quyền cập nhật',
     type: DocumentResDto,
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.GV, UserRole.SUPERADMIN)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
+  @ApiParam({
+    name: 'id',
+    description: 'ID của tài liệu cần cập nhật',
+    type: 'string',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
   update(
-    @Param('id') id: Uuid,
+    @Param('id') id: string,
     @Body() updateDocumentDto: UpdateDocumentDto,
     @CurrentUser('id') userId: string,
     @UploadedFile() file?: Express.Multer.File,
