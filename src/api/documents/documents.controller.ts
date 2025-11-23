@@ -280,9 +280,14 @@ export class DocumentsController {
   @Delete(':id')
   @ApiAuth({
     summary: 'Xóa tài liệu',
-    description: 'Chỉ người tạo tài liệu mới có quyền xóa',
+    description:
+      'Người tạo tài liệu, Chủ nhiệm bộ môn (CNBM) hoặc Admin có quyền xóa',
   })
   @Roles(UserRole.CNBM, UserRole.TM, UserRole.SUPERADMIN)
+  @ApiParam({
+    name: 'id',
+    description: 'ID của tài liệu cần xóa',
+  })
   delete(@Param('id') id: Uuid, @CurrentUser('id') userId: string) {
     return this.documentsService.delete(id, userId);
   }
