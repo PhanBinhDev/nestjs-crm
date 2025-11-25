@@ -9,6 +9,7 @@ import { ErrorCode } from '@/constants/error-code.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
+  ActivityStatus,
   ActivityType,
   AssigneeRole,
   AssignmentStatus,
@@ -31,6 +32,7 @@ import { plainToInstance } from 'class-transformer';
 import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
+import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -72,22 +74,14 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
-import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
-import { JobName, QueueName } from '@/constants/job.constant';
-import { NotificationType } from '@/database/enum/notifications.enum';
-import { WorkspaceMemberStatus } from '@/database/enum/workspace.enum';
-import { upperCaseFirst } from '@/utils/index.util';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Queue } from 'bullmq';
-import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
-import { WorkspaceMembers } from '../workspaces/entities/workspace-members.entity';
 import { ActivityProgressResDto } from './dto/activity-progres.res.dto';
 
 @Injectable()
@@ -128,23 +122,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     @InjectRepository(ActivityFollowEntity)
     private readonly activityFollowRepo: Repository<ActivityFollowEntity>,
     private readonly linkPreviewService: LinkPreviewService,
-    @InjectQueue(QueueName.NOTIFICATION)
-    private readonly notificationQueue: Queue,
-    @InjectRepository(WorkspaceMembers)
-    private readonly workspaceMemberRepo: Repository<WorkspaceMembers>,
   ) {
     super(activityRepo);
   }
 
+
   async getActivityFollowers(activityId: Uuid) {
-    const follows = await this.activityFollowRepo.find({
-      where: { activityId },
-      relations: ['user'],
-    });
-    return new ResponseDto({
-      data: follows,
-      message: 'Lấy danh sách người theo dõi thành công',
-    });
+    const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
+    return new ResponseDto({ data: follows, message: 'Lấy danh sách người theo dõi thành công' });
   }
 
   async getMyFollowedActivities(userId: Uuid) {
@@ -153,31 +138,23 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       relations: ['activity'],
     });
     const activities = follows.map((f) => f.activity);
-    return new ResponseDto({
-      data: activities,
-      message: 'Lấy danh sách activity đã theo dõi thành công',
-    });
+    return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
   }
 
   async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
     try {
-      const activity = await this.activityRepo.findOne({
-        where: { id: activityId },
-      });
+      // Validate activity exists
+      const activity = await this.activityRepo.findOne({ where: { id: activityId } });
       if (!activity) {
         throw new NotFoundException('Activity không tồn tại');
       }
 
-      const values = userIds.map((uid) => ({
-        activityId,
-        userId: uid,
-        createdBy: actorId,
-      }));
+      const values = userIds.map((uid) => ({ activityId, userId: uid, createdBy: actorId }));
 
       if (values.length === 0) {
-        return new ResponseDto({
-          data: { activityId, userIds: [] },
-          message: 'Không có userId nào',
+        return new ResponseDto({ 
+          data: { activityId, userIds: [] }, 
+          message: 'Không có userId nào' 
         });
       }
 
@@ -189,9 +166,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .onConflict('("activityId", "userId") DO NOTHING')
         .execute();
 
-      return new ResponseDto({
-        data: { activityId, userIds },
-        message: 'Theo dõi thành công',
+      return new ResponseDto({ 
+        data: { activityId, userIds }, 
+        message: 'Theo dõi thành công' 
       });
     } catch (error) {
       this.logger.error('Error in batchFollow:', error);
@@ -202,9 +179,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async batchUnfollow(activityId: Uuid, userIds: Uuid[]) {
     try {
       if (!userIds?.length) {
-        return new ResponseDto({
-          data: { activityId, userIds: [] },
-          message: 'Không có userId nào',
+        return new ResponseDto({ 
+          data: { activityId, userIds: [] }, 
+          message: 'Không có userId nào' 
         });
       }
 
@@ -216,9 +193,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .andWhere('"userId" IN (:...userIds)', { userIds })
         .execute();
 
-      return new ResponseDto({
-        data: { activityId, userIds },
-        message: 'Bỏ theo dõi thành công',
+      return new ResponseDto({ 
+        data: { activityId, userIds }, 
+        message: 'Bỏ theo dõi thành công' 
       });
     } catch (error) {
       this.logger.error('Error in batchUnfollow:', error);
@@ -851,6 +828,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     const sortOrder = query.order || 'DESC';
 
     qb.orderBy(`comment.${sortField}`, sortOrder as 'ASC' | 'DESC');
+
     qb.addOrderBy('replies.createdAt', 'ASC');
 
     const comments = await qb.getMany();
@@ -866,33 +844,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             reply.reactions || [],
           );
 
-          const userReplyReaction = reply.reactions?.find(
-            (r) => r.userId === currentUserId,
-          );
-
-          const totalReplyReactions = Object.values(
-            replyReactionsByType.counts || {},
-          ).reduce((s, v) => s + v, 0);
-
           return {
             ...reply,
             reactionCounts: replyReactionsByType.counts,
             reactionSummary: replyReactionsByType.summary,
-            totalReactions: totalReplyReactions,
-            currentUserReaction: userReplyReaction
-              ? userReplyReaction.type
-              : null,
-            hasUserReacted: !!userReplyReaction,
           };
         }) || [];
 
       const userReaction = comment.reactions?.find(
         (r) => r.userId === currentUserId,
-      );
-
-      const totalReactions = Object.values(reactionsByType.counts || {}).reduce(
-        (s, v) => s + v,
-        0,
       );
 
       return {
@@ -902,7 +862,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         currentUserReaction: userReaction ? userReaction.type : null,
         hasUserReacted: !!userReaction,
         replies: processedReplies,
-        totalReactions,
       };
     });
 
@@ -918,7 +877,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     commentId: Uuid,
     query: PageOptionsDto,
-    currentUserId: Uuid,
+    currentUserId: Uuid, // Thêm currentUserId parameter
   ): Promise<CursorPaginatedDto<ActivityCommentResDto>> {
     const activity = await this.activityRepo.findOne({
       where: { id: activityId },
@@ -1015,6 +974,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
       const userRepo = manager.getRepository(UserEntity);
 
+      // Validate activity exists
       const activity = await activityRepo.findOne({
         where: { id: activityId },
       });
@@ -1198,7 +1158,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getActivityLogs(
     activityId: string,
     query: QueryActivityLogDto,
-  ): Promise<ResponseDto<ActivityLogResDto[]>> {
+  ): Promise<ActivityLogResDto[]> {
     const qb = this.activityLogRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
@@ -1285,10 +1245,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }),
     );
 
-    return new ResponseDto<ActivityLogResDto[]>({
-      data: transformedLogs,
-      message: 'Lấy danh sách nhật ký hoạt động thành công',
-    });
+    return transformedLogs;
   }
 
   async create(
@@ -1296,8 +1253,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     userId: Uuid,
   ): Promise<ResponseDto<ActivityResDto>> {
     return this.dataSource.transaction(async (manager) => {
-      const userNotifications = new Map<Uuid, 'assignee' | 'follow'>();
-
       const userCreator = await manager.getRepository(UserEntity).findOne({
         where: { id: userId },
       });
@@ -1312,6 +1267,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         ActivityChecklistItemEntity,
       );
       const activityLogRepo = manager.getRepository(ActivityLogEntity);
+      const notificationRepo = manager.getRepository(NotificationEntity);
 
       const count = await activityRepo.count({
         where: { stageId: dto.stageId },
@@ -1320,26 +1276,42 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       let assignees: ActivityAssigneeEntity[] = [];
       if (dto.assignees?.length > 0) {
         const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
-        assignees = dto.assignees.map((assigneeDto) => {
-          if (assigneeDto.userId !== userId) {
-            userNotifications.set(assigneeDto.userId, 'assignee');
-          }
-          return assigneeRepo.create({
+        assignees = dto.assignees.map((assigneeDto) =>
+          assigneeRepo.create({
             userId: assigneeDto.userId,
             role: assigneeDto.role || AssigneeRole.COLLABORATOR,
             note: assigneeDto.note,
             assignedAt: new Date(),
             assignedBy: userId,
             status: AssignmentStatus.PENDING,
-          });
-        });
+          }),
+        );
+
+        const notifications = await Promise.all(
+          dto.assignees.map(async (assigneeDto) => {
+            const userAssignee = await this.userRepo.findOne({
+              where: { id: assigneeDto.userId },
+            });
+
+            return notificationRepo.create({
+              userId: assigneeDto.userId,
+              title: `Có ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} mới`,
+              message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
+              sender: userCreator,
+              user: userAssignee,
+            });
+          }),
+        );
+
+        await notificationRepo.save(notifications);
       }
 
+      // Remove follows from activityData before creating ActivityEntity
       const { assignees: _, follows: __, ...activityData } = dto;
       const activity = activityRepo.create({
         ...activityData,
         position: count + 1,
-        assignees,
+        assignees: assignees,
       });
       const savedActivity = await activityRepo.save(activity);
 
@@ -1348,9 +1320,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         user: userCreator,
         action: ActivityLogActionEnum.CREATED,
         message: 'Tạo hoạt động mới',
+        metadata: {
+          type: 'MAIN_ACTIVITY',
+          activityType: dto.type,
+        },
       });
       await activityLogRepo.save(mainActivityLog);
 
+      // Handle subtasks and logging
       if (dto.subtask?.length > 0) {
         const subActivities: ActivityEntity[] = [];
         const logs: ActivityLogEntity[] = [];
@@ -1447,16 +1424,22 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+      // Handle file attachments
       if (dto.attachments && dto.attachments.length > 0) {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
 
+        console.log('Processing file attachments:', dto.attachments);
+
         for (const fileId of dto.attachments) {
           try {
+            // Validate fileId format
             if (!fileId || typeof fileId !== 'string') {
+              console.error('Invalid fileId:', fileId);
               continue;
             }
 
+            // Verify file exists by URL (frontend sends URL, not ID)
             const file = await manager.getRepository(FileEntity).findOne({
               where: { url: fileId },
             });
@@ -1466,13 +1449,18 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               continue;
             }
 
+            // Create ActivityFileEntity
             const activityFile = activityFileRepo.create({
               activityId: savedActivity.id,
-              fileId: file.id,
+              fileId: file.id, // Use actual file ID, not URL
               createdBy: userId,
             });
 
-            await activityFileRepo.save(activityFile);
+            const savedActivityFile = await activityFileRepo.save(activityFile);
+            console.log(
+              'ActivityFile saved successfully:',
+              savedActivityFile.id,
+            );
 
             // Log file attachment
             const fileLog = activityLogRepo.create({
@@ -1499,19 +1487,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
+      // Handle follows
       if (dto.follows?.length) {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
-        const follows = dto.follows.map((followUserId) => {
-          if (followUserId !== userId && !userNotifications.has(followUserId)) {
-            userNotifications.set(followUserId, 'follow');
-          }
-          return {
-            activityId: savedActivity.id,
-            userId: followUserId,
-            createdBy: userId,
-          };
-        });
-
+        const follows = dto.follows.map(userId => ({
+          activityId: savedActivity.id,
+          userId,
+          createdBy: userId
+        }));
+        
         await activityFollowRepo
           .createQueryBuilder()
           .insert()
@@ -1520,6 +1504,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           .onConflict('("activityId", "userId") DO NOTHING')
           .execute();
 
+        // Log follow actions
         const followLog = activityLogRepo.create({
           activity: savedActivity,
           user: userCreator,
@@ -1527,7 +1512,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           message: `Thêm ${follows.length} người theo dõi`,
           metadata: {
             type: 'FOLLOW',
-            userIds: dto.follows,
+            userIds: dto.follows
           },
         });
         await activityLogRepo.save(followLog);
@@ -1536,72 +1521,15 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
         relations: [
-          'subActivities',
+          'subActivities', 
           'assignees',
           'assignees.user',
           'files',
           'files.file',
           'follows',
-          'follows.user',
+          'follows.user'
         ],
       });
-
-      for (const [notifUserId, notifType] of userNotifications) {
-        const activityLabel =
-          dto?.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
-        const activityName = savedActivity?.name || 'hoạt động';
-        const creatorName = upperCaseFirst(userCreator?.name || 'Người tạo');
-        const workspaceName =
-          (savedActivity as any)?.workspaceName ||
-          savedActivity?.workspace?.name;
-        const start = savedActivity?.startTime
-          ? new Date(savedActivity.startTime)
-          : null;
-        const end = savedActivity?.endTime
-          ? new Date(savedActivity.endTime)
-          : null;
-
-        const timePart = end
-          ? `, hạn ${end.toLocaleString()}`
-          : start
-            ? `, bắt đầu ${start.toLocaleString()}`
-            : '';
-
-        const workspacePart = workspaceName ? ` trong ${workspaceName}` : '';
-
-        const message =
-          notifType === 'assignee'
-            ? `Bạn được giao ${activityLabel} "${activityName}" bởi ${creatorName}${workspacePart}${timePart}`
-            : `${creatorName} đã thêm bạn theo dõi ${activityLabel} "${activityName}"${workspacePart}`;
-
-        const notificationData: SendPushNotificationDto = {
-          userId: notifUserId,
-          type:
-            notifType === 'assignee'
-              ? NotificationType.MENTION
-              : NotificationType.FOLLOW,
-          title:
-            notifType === 'assignee'
-              ? 'Bạn được giao một công việc mới'
-              : `${upperCaseFirst(userCreator.name)} đã thêm bạn theo dõi một công việc`,
-          message,
-          data: {
-            uri: `/workspaces/${savedActivity.workspaceId}`,
-            open: savedActivity,
-          },
-        };
-
-        await this.notificationQueue.add(
-          JobName.NOTIFICATION,
-          notificationData,
-          {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 1000 },
-            removeOnComplete: true,
-            removeOnFail: false,
-          },
-        );
-      }
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, result, {
@@ -1614,13 +1542,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
   async findAll(
     query: QueryActivityDto,
-  ): Promise<ResponseDto<ActivityResDto[]>> {
+  ): Promise<OffsetPaginatedDto<ActivityResDto>> {
     const qb = this.activityRepo
       .createQueryBuilder('activity')
-      .where('activity.workspaceId = :workspaceId', {
+      .andWhere('activity.workspaceId = :workspaceId', {
         workspaceId: query.workspaceId,
       })
-      .leftJoinAndSelect('activity.workspace', 'workspace')
       .leftJoinAndSelect('activity.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
       .leftJoinAndSelect('activity.feedbacks', 'feedbacks')
@@ -1674,20 +1601,23 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       qb.andWhere('activity.createdBy = :createdBy', {
         createdBy: query.createdBy,
       });
-
     qb.orderBy('activity.createdAt', 'DESC');
 
-    const activities = await qb.getMany();
+    const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
+      skipCount: false,
+      takeAll: true,
+    });
 
     const activitiesWithProgress = activities.map((activity) => {
       const progress = this.calculateProgress(activity);
       return { ...activity, progress };
     });
 
-    return new ResponseDto<ActivityResDto[]>({
+    return new OffsetPaginatedDto({
       data: plainToInstance(ActivityResDto, activitiesWithProgress, {
         excludeExtraneousValues: true,
       }),
+      meta: metaDto,
       message: 'Lấy danh sách hoạt động thành công',
     });
   }
@@ -1950,8 +1880,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         assignees: activity.assignees || [],
       };
 
-      const { hasStageChange, hasPositionChange } =
-        await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
+      await this.handlePositionAndStageChanges(dto, oldValues, activityRepo);
 
       if (dto.assignees !== undefined) {
         await this.updateActivityAssignees(
@@ -1974,39 +1903,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         oldValues,
         activityLogRepo,
       );
-
-      if (hasStageChange) {
-        const members = await this.getMembersInWorkspace(activity.workspaceId);
-        const newStage = await manager
-          .getRepository(StagesEntity)
-          .findOne({ where: { id: dto.stageId } });
-
-        for (const member of members) {
-          if (member.id === userId) continue;
-
-          const notificationData: SendPushNotificationDto = {
-            userId: member.id,
-            title: upperCaseFirst(activity.name),
-            message: `${upperCaseFirst(user.name)} đã xét trạng thái thành: ${newStage.title.toLocaleUpperCase()}`,
-            data: {
-              uri: `/workspaces/${activity.workspaceId}`,
-              open: activity,
-            },
-            type: NotificationType.ACTIVITY,
-          };
-
-          await this.notificationQueue.add(
-            JobName.NOTIFICATION,
-            notificationData,
-            {
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 1000 },
-              removeOnComplete: true,
-              removeOnFail: false,
-            },
-          );
-        }
-      }
 
       return new ResponseDto<ActivityResDto>({
         data: plainToInstance(ActivityResDto, activity, {
@@ -2248,7 +2144,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     userId: Uuid,
     dto: AssignUserToActivityDto,
-    currentUserId: Uuid,
+    currentUserId: Uuid, // Thêm parameter
   ): Promise<ResponseDto<ActivityAssigneeResDto>> {
     return this.dataSource.transaction(async (manager) => {
       const activityAssigneeRepo = manager.getRepository(
@@ -2336,6 +2232,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     semesterId: Uuid,
   ): Promise<ResponseNoDataDto> {
+    // Kiểm tra activity tồn tại
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
       relations: ['semester'],
@@ -2353,7 +2250,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Xóa liên kết với kỳ học thành công',
     });
   }
-
   async findFilteredActivities(
     userId: Uuid,
     query: QueryActivityDto,
@@ -2373,140 +2269,89 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('files.file', 'file');
 
-    // Exclude sub-tasks by default - LUÔN áp dụng
+    // Build WHERE conditions array
+    const whereConditions: string[] = [];
+    const whereParams: any = {};
+
+    // Exclude sub-tasks by default
     if (!query.includeSubTasks) {
-      qb.where('activity.parentId IS NULL');
-    } else {
-      qb.where('1=1'); // dummy WHERE
+      whereConditions.push('activity.parentId IS NULL');
     }
 
-    // Apply queryType filters - TRƯỚC khi xử lý filters khác
+    // Apply queryType filters
     switch (type) {
       case QueryType.CREATED_BY_ME:
-        qb.andWhere('activity.createdBy = :userId', { userId });
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereConditions.push('activity.createdBy = :userId');
+        whereParams.userId = userId;
         break;
 
       case QueryType.ASSIGNED_TO_ME:
-        qb.andWhere(
+        whereConditions.push(
           'EXISTS (SELECT 1 FROM activity_assignees aa WHERE aa."activityId" = activity.id AND aa."userId" = :userId)',
-          { userId },
         );
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereParams.userId = userId;
         break;
 
       case QueryType.OVERDUE:
-        qb.andWhere('UPPER(stage.title) = :overdueTitle', {
-          overdueTitle: 'OVERDUE',
-        });
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereConditions.push('UPPER(stage.title) = :overdueTitle');
+        whereParams.overdueTitle = 'OVERDUE';
         break;
 
       case QueryType.IN_PROGRESS:
-        qb.andWhere('UPPER(stage.title) = :inProgressTitle', {
-          inProgressTitle: 'IN PROGRESS',
-        });
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereConditions.push('UPPER(stage.title) = :inProgressTitle');
+        whereParams.inProgressTitle = 'IN PROGRESS';
         break;
 
       case QueryType.TODAY: {
         const today = new Date();
-        const startOfDay = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate(),
-          0,
-          0,
-          0,
-          0,
-        );
-        const endOfDay = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate(),
-          23,
-          59,
-          59,
-          999,
-        );
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
-        // Filter workspace trước
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
-
-        // Filter thời gian (không filter user)
-        qb.andWhere(
-          '(' +
-            '(activity.startTime IS NOT NULL AND activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay) OR ' +
-            '(activity.endTime IS NOT NULL AND activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay) OR ' +
-            '(activity.startTime IS NOT NULL AND activity.endTime IS NOT NULL AND activity.startTime <= :startOfDay AND activity.endTime >= :endOfDay)' +
-            ')',
-          { startOfDay, endOfDay },
+        whereConditions.push(
+          '(activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay OR activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay)',
         );
+        whereParams.startOfDay = startOfDay;
+        whereParams.endOfDay = endOfDay;
         break;
       }
 
       case QueryType.COMPLETED:
-        qb.andWhere('UPPER(stage.title) = :doneTitle', { doneTitle: 'DONE' });
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereConditions.push('UPPER(stage.title) = :doneTitle');
+        whereParams.doneTitle = 'DONE';
         break;
 
       case QueryType.TODO:
-        qb.andWhere('UPPER(stage.title) = :todoTitle', { todoTitle: 'TO DO' });
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        whereConditions.push('UPPER(stage.title) = :todoTitle');
+        whereParams.todoTitle = 'TO DO';
         break;
 
       case QueryType.ALL:
-        // Lấy tất cả (nhưng vẫn filter workspace nếu có)
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
+        // All activities
         break;
 
       default:
-        if (query.workspaceId) {
-          qb.andWhere('activity.workspaceId = :workspaceId', {
-            workspaceId: query.workspaceId,
-          });
-        }
         break;
     }
 
-    // Apply additional filters (sau khi áp dụng queryType)
+    // Apply workspace filter if provided
+    if (query.workspaceId) {
+      whereConditions.push('activity.workspaceId = :workspaceId');
+      whereParams.workspaceId = query.workspaceId;
+    }
+
+    // Build main WHERE clause
+    const whereClause = whereConditions.length > 0 ? whereConditions.join(' AND ') : '1=1';
+    qb.where(whereClause, whereParams);
+
+    // Apply additional filters with andWhere
+    if (query.assigneeId) {
+      qb.andWhere('assignees.userId = :assigneeId', { assigneeId: query.assigneeId });
+    }
+
     if (query.q) {
-      qb.andWhere(
-        '(activity.name ILIKE :search OR activity.description ILIKE :search)',
-        { search: `%${query.q}%` },
-      );
+      qb.andWhere('(activity.name ILIKE :search OR activity.description ILIKE :search)', {
+        search: `%${query.q}%`,
+      });
     }
 
     if (query.type) {
@@ -2514,9 +2359,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     if (query.priority) {
-      qb.andWhere('activity.priority = :priority', {
-        priority: query.priority,
-      });
+      qb.andWhere('activity.priority = :priority', { priority: query.priority });
     }
 
     if (query.stageId) {
@@ -2524,54 +2367,38 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     if (query.stageGroupStatus) {
-      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
-        stageGroupStatus: query.stageGroupStatus,
-      });
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', { stageGroupStatus: query.stageGroupStatus });
     }
 
     if (query.categoryId) {
-      qb.andWhere('activity.categoryId = :categoryId', {
-        categoryId: query.categoryId,
-      });
+      qb.andWhere('activity.categoryId = :categoryId', { categoryId: query.categoryId });
     }
 
     if (query.mandatory !== undefined) {
-      qb.andWhere('activity.mandatory = :mandatory', {
-        mandatory: query.mandatory,
-      });
+      qb.andWhere('activity.mandatory = :mandatory', { mandatory: query.mandatory });
     }
 
     if (query.startTimeFrom) {
-      qb.andWhere('activity.startTime >= :startTimeFrom', {
-        startTimeFrom: query.startTimeFrom,
-      });
+      qb.andWhere('activity.startTime >= :startTimeFrom', { startTimeFrom: query.startTimeFrom });
     }
 
     if (query.endTimeTo) {
-      qb.andWhere('activity.endTime <= :endTimeTo', {
-        endTimeTo: query.endTimeTo,
-      });
+      qb.andWhere('activity.endTime <= :endTimeTo', { endTimeTo: query.endTimeTo });
     }
 
     if (query.createdBy) {
-      qb.andWhere('activity.createdBy = :createdBy', {
-        createdBy: query.createdBy,
-      });
+      qb.andWhere('activity.createdBy = :createdBy', { createdBy: query.createdBy });
     }
 
-    // Order by creation date
+    // Order and paginate
     qb.orderBy('activity.createdAt', 'DESC');
 
-    this.logger.log('SQL:', qb.getSql());
-    this.logger.log('Params:', qb.getParameters());
-
-    // Paginate results
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
       takeAll: false,
     });
 
-    // Calculate progress for each activity
+    // Calculate progress
     const activitiesWithProgress = activities.map((activity) => {
       const progress = this.calculateProgress(activity);
       return { ...activity, progress };
@@ -2585,7 +2412,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       message: 'Lấy danh sách công việc thành công',
     });
   }
-
   async createEventFeedback(
     activityId: Uuid,
     dto: CreateEventFeedbackDto,
@@ -2670,6 +2496,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
   async getEventFeedbackStats(activityId: Uuid): Promise<ResponseDto<any>> {
+    // Kiểm tra activity tồn tại và phải là event
     const activity = await this.activityRepo.findOneOrFail({
       where: { id: activityId },
     });
@@ -2680,6 +2507,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
+    // Lấy tất cả feedbacks để tính toán thống kê
     const feedbacks = await this.eventFeedbackRepo.find({
       where: { activityId },
       select: ['rating'],
@@ -2698,10 +2526,12 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
     }
 
+    // Tính điểm trung bình
     const ratingValues = feedbacks.map((f) => f.rating);
     const averageRating =
       ratingValues.reduce((sum, rating) => sum + rating, 0) / totalFeedbacks;
 
+    // Tính phân bố điểm
     const ratingDistribution = feedbacks.reduce(
       (acc, feedback) => {
         const rating = feedback.rating;
@@ -2714,7 +2544,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     return new ResponseDto({
       data: {
         totalFeedbacks,
-        averageRating: Math.round(averageRating * 100) / 100,
+        averageRating: Math.round(averageRating * 100) / 100, // Làm tròn 2 chữ số thập phân
         ratingDistribution,
       },
       message: 'Lấy thống kê đánh giá sự kiện thành công',
@@ -2734,6 +2564,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Activity không tồn tại');
     }
 
+    // Fetch link preview data
     let linkPreviewData = null;
     if (this.linkPreviewService.isValidUrl(dto.url)) {
       try {
@@ -2752,6 +2583,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       url: dto.url,
       description: dto.description,
       createdBy: userId,
+      // Lưu metadata từ link preview
       thumbnail: linkPreviewData
         ? this.linkPreviewService.getBestThumbnail(linkPreviewData.images || [])
         : undefined,
@@ -2769,11 +2601,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
     const savedLink = await this.activityLinkRepo.save(link);
 
+    // Load lại với relations để có thông tin creator
     const linkWithCreator = await this.activityLinkRepo.findOne({
       where: { id: savedLink.id },
       relations: ['creator'],
     });
 
+    // Transform data cho response
     const responseData = {
       ...linkWithCreator,
       linkPreview: linkPreviewData
@@ -2785,28 +2619,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           }
         : undefined,
     };
-
-    const members = await this.getMembersInWorkspace(activity.workspaceId);
-
-    for (const member of members) {
-      const notificationData: SendPushNotificationDto = {
-        userId: member.id,
-        title: 'Thêm link mới',
-        message: `${activity.name} có link mới được thêm vào bởi ${linkWithCreator.creator.name}.`,
-        type: NotificationType.ACTIVITY,
-        data: {
-          uri: `/workspaces/${activity.workspaceId}`,
-          open: activity,
-        },
-      };
-
-      await this.notificationQueue.add(JobName.NOTIFICATION, notificationData, {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 },
-        removeOnComplete: true,
-        removeOnFail: false,
-      });
-    }
 
     return new ResponseDto<ActivityLinkResDto>({
       data: plainToInstance(ActivityLinkResDto, responseData, {
@@ -2833,6 +2645,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       order: { createdAt: 'DESC' },
     });
 
+    // Transform data để include link preview
     const linksWithPreview = links.map((link) => ({
       ...link,
       linkPreview:
@@ -2876,6 +2689,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       throw new NotFoundException('Link không tồn tại');
     }
 
+    // Nếu URL thay đổi, fetch preview mới
     const shouldUpdatePreview = link.url !== dto.url;
     let linkPreviewData = null;
 
@@ -2890,6 +2704,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
     }
 
+    // Cập nhật thông tin
     link.title = dto.title;
     link.url = dto.url;
     link.description = dto.description;
@@ -2963,6 +2778,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     });
   }
 
+  /**
+   * Tính progress của activity
+   * @param activity Activity entity với relations đã load
+   * @returns Progress percentage (0-100)
+   */
   private calculateProgress(activity: ActivityEntity): number {
     const hasSubActivities = activity.subActivities?.length > 0;
     const hasChecklists = activity.checklists?.length > 0;
@@ -2978,6 +2798,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const subTaskCount = activity.subActivities.length;
       const subTaskWeight = 100 / (subTaskCount + 1);
 
+      // Tính progress của các subtask
       activity.subActivities.forEach((subActivity) => {
         totalWeight += subTaskWeight;
         if (subActivity.stage?.isCompleted) {
@@ -2985,12 +2806,14 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       });
 
+      // Thêm weight cho task chính
       totalWeight += subTaskWeight;
       if (activity.stage?.isCompleted) {
         completedWeight += subTaskWeight;
       }
     }
 
+    // Case 3: Task có checklists
     if (hasChecklists) {
       let totalChecklistItems = 0;
       let completedChecklistItems = 0;
@@ -3007,25 +2830,30 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       });
 
       if (totalChecklistItems > 0) {
+        // Nếu có cả subtask và checklist, chia weight
         if (hasSubActivities) {
           const checklistWeight = 50;
           const subTaskActualWeight = 50;
 
+          // Rescale subtask progress
           const subTaskProgress =
             totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
           completedWeight = (subTaskProgress * subTaskActualWeight) / 100;
           totalWeight = subTaskActualWeight;
 
+          // Add checklist progress
           const checklistProgress =
             (completedChecklistItems / totalChecklistItems) * checklistWeight;
           completedWeight += checklistProgress;
           totalWeight += checklistWeight;
         } else {
+          // Chỉ có checklist
           const itemWeight = 100 / (totalChecklistItems + 1); // +1 cho task chính
 
           completedWeight = completedChecklistItems * itemWeight;
           totalWeight = totalChecklistItems * itemWeight;
 
+          // Thêm weight cho task chính
           totalWeight += itemWeight;
           if (activity.stage?.isCompleted) {
             completedWeight += itemWeight;
@@ -3034,9 +2862,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }
     }
 
+    // Tính phần trăm cuối cùng
     const progress =
       totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
 
+    // Làm tròn đến 2 chữ số thập phân
     return Math.round(progress * 100) / 100;
   }
 
@@ -3044,7 +2874,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     dto: UpdateActivityDto,
     oldValues: any,
     activityRepo: Repository<ActivityEntity>,
-  ): Promise<{ hasStageChange: boolean; hasPositionChange: boolean }> {
+  ): Promise<void> {
     const hasStageChange =
       dto.stageId !== undefined && dto.stageId !== oldValues.stageId;
     const hasPositionChange =
@@ -3097,11 +2927,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           .execute();
       }
     }
-
-    return {
-      hasStageChange,
-      hasPositionChange,
-    };
   }
 
   private async updateActivityAssignees(
@@ -3185,9 +3010,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: oldValues.priority
-              ? `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`
-              : `Thiết lập độ ưu tiên: ${dto.priority}`,
+            message: `Thay đổi độ ưu tiên từ ${oldValues.priority} sang ${dto.priority}`,
+            oldValue: oldValues.priority,
+            newValue: dto.priority,
             metadata: {
               type: 'PRIORITY_CHANGE',
               field: 'priority',
@@ -3197,6 +3022,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
+    // Log type change
     if (dto.type !== undefined && dto.type !== oldValues.type) {
       logPromises.push(
         activityLogRepo.save(
@@ -3204,7 +3030,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: `Thay đổi loại hoạt động thành ${dto.type}`,
+            message: `Thay đổi loại hoạt động từ ${oldValues.type} sang ${dto.type}`,
+            oldValue: oldValues.type,
+            newValue: dto.type,
             metadata: {
               type: 'TYPE_CHANGE',
               field: 'type',
@@ -3214,6 +3042,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       );
     }
 
+    // Log description change
     if (
       dto.description !== undefined &&
       dto.description !== oldValues.description
@@ -3224,9 +3053,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: dto.description
-              ? `Cập nhật mô tả hoạt động thành "${dto.description}"`
-              : 'Xóa mô tả hoạt động',
+            message: `Cập nhật mô tả hoạt động thành "${dto.description || 'chưa có'}"`,
             metadata: {
               type: 'DESCRIPTION_CHANGE',
             },
@@ -3242,9 +3069,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             activity,
             user,
             action: ActivityLogActionEnum.UPDATED,
-            message: oldValues.location
-              ? `Cập nhập địa điểm từ "${oldValues.location || 'chưa có'}" thành "${dto.location || 'chưa có'}"`
-              : `Thêm địa điểm: "${dto.location || 'chưa có'}"`,
+            message: `Cập nhập địa điểm từ "${oldValues.location || 'chưa có'}" thành "${dto.location || 'chưa có'}"`,
             metadata: {
               type: 'LOCATION_CHANGE',
             },
@@ -3545,16 +3370,5 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         completedChecklistItems,
       },
     };
-  }
-
-  private async getMembersInWorkspace(workspaceId: Uuid) {
-    const members = await this.workspaceMemberRepo.find({
-      where: {
-        workspaceId,
-        status: WorkspaceMemberStatus.ACTIVE,
-      },
-      relations: ['user'],
-    });
-    return members.map((member) => member.user);
   }
 }

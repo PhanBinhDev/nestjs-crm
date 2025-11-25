@@ -328,15 +328,21 @@ export class ActivitiesController {
     description:
       'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, todo, all',
   })
+  @ApiQuery({
+    name: 'assigneeId',
+    required: false,
+    description: 'Lọc activity theo assignee người được giao công việc',
+  })
   getFilteredActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
   ) {
-    if (query.queryType)
+    // Nếu có queryType hoặc assigneeId, dùng findFilteredActivities
+    if (query.queryType || query.assigneeId)
       return this.activitiesService.findFilteredActivities(
         userId,
         query,
-        query.queryType,
+        query.queryType || QueryType.ALL,
       );
 
     return this.activitiesService.findAll(query);
