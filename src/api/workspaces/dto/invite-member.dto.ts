@@ -12,7 +12,6 @@ export class InviteMemberDto {
   @IsString({ each: true })
   userIds: Uuid[];
 
-  // role
   @EnumField(() => WorkspaceMemberRoleInvite, {
     description: 'Vai trò của thành viên được mời vào workspace',
     example: WorkspaceMemberRoleInvite.MEMBER,
