@@ -314,12 +314,11 @@ export class ActivitiesController {
     return this.activitiesService.create(dto, userId);
   }
 
-  @Get('filter')
+  @Get()
   @ApiAuth({
-    summary:
-      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành, cần làm)',
+    summary: 'Lấy danh sách activities',
+    isPaginated: true,
     type: ActivityResDto,
-    isArray: true,
   })
   @ApiQuery({
     name: 'queryType',
@@ -333,7 +332,7 @@ export class ActivitiesController {
     required: false,
     description: 'Lọc activity theo assignee người được giao công việc',
   })
-  getFilteredActivities(
+  getActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
   ) {
@@ -345,16 +344,6 @@ export class ActivitiesController {
         query.queryType || QueryType.ALL,
       );
 
-    return this.activitiesService.findAll(query);
-  }
-
-  @Get()
-  @ApiAuth({
-    summary: 'Lấy danh sách activities',
-    isPaginated: true,
-    type: ActivityResDto,
-  })
-  getActivities(@Query() query: QueryActivityDto) {
     return this.activitiesService.findAll(query);
   }
 
