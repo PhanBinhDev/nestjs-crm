@@ -92,10 +92,7 @@ async function bootstrap() {
     preflightContinue: false,
   });
 
-  console.log(
-    'API Prefix:',
-    configService.getOrThrow('app.apiPrefix', { infer: true }),
-  );
+
 
   // Use global prefix if you don't have subdomain
   app.setGlobalPrefix(
