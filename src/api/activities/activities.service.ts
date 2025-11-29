@@ -1432,7 +1432,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
 
-        console.log('Processing file attachments:', dto.attachments);
 
         for (const fileId of dto.attachments) {
           try {
