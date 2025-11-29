@@ -1459,12 +1459,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             });
 
             const savedActivityFile = await activityFileRepo.save(activityFile);
-            console.log(
-              'ActivityFile saved successfully:',
-              savedActivityFile.id,
-            );
-
-            // Log file attachment
+          
             const fileLog = activityLogRepo.create({
               activity: savedActivity,
               user: userCreator,
