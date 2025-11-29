@@ -1986,7 +1986,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
       const assignees: ActivityAssigneeEntity[] = [];
 
-      console.log('Assigning users to activity:', id, userIds, dto);
 
       const activity = await activityRepo.findOneOrFail({ where: { id } });
       const currentUser = await userRepo.findOneOrFail({
