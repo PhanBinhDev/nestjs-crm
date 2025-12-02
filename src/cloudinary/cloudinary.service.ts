@@ -44,7 +44,6 @@ export class CloudinaryService {
       options.public_id = fileName;
     }
 
-    console.log('Uploading to folder:', folder, 'with options:', options);
 
     return this.uploadFile(file, options);
   }

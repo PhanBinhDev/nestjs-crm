@@ -246,7 +246,6 @@ export class NotificationsService {
       },
     };
 
-    console.log('createNotificationDto', createNotificationDto);
 
     return this.sendPushNotification(createNotificationDto);
   }

@@ -22,7 +22,6 @@ export class WorkspaceMemberMiddleware implements NestMiddleware {
         req.body.workspaceId ||
         (req.query.workspaceId as string);
 
-      console.log('Workspace ID:', workspaceId);
 
       if (workspaceId) {
         let member = await this.membersRepository.findOne({

@@ -1158,7 +1158,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getActivityLogs(
     activityId: string,
     query: QueryActivityLogDto,
-  ): Promise<ActivityLogResDto[]> {
+  ): Promise<ResponseDto<ActivityLogResDto[]>> {
     const qb = this.activityLogRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
@@ -1245,7 +1245,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       }),
     );
 
-    return transformedLogs;
+    return new ResponseDto<ActivityLogResDto[]>({
+      data: transformedLogs,
+      message: 'Lấy danh sách log hoạt động thành công',
+    });
   }
 
   async create(
@@ -1429,7 +1432,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
 
-        console.log('Processing file attachments:', dto.attachments);
 
         for (const fileId of dto.attachments) {
           try {
@@ -1457,12 +1459,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             });
 
             const savedActivityFile = await activityFileRepo.save(activityFile);
-            console.log(
-              'ActivityFile saved successfully:',
-              savedActivityFile.id,
-            );
-
-            // Log file attachment
+          
             const fileLog = activityLogRepo.create({
               activity: savedActivity,
               user: userCreator,
@@ -1989,7 +1986,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
       const assignees: ActivityAssigneeEntity[] = [];
 
-      console.log('Assigning users to activity:', id, userIds, dto);
 
       const activity = await activityRepo.findOneOrFail({ where: { id } });
       const currentUser = await userRepo.findOneOrFail({
