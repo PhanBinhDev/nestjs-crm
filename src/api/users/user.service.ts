@@ -290,23 +290,164 @@ export class UserService {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
-      // Chuyển đổi thành JSON với tên cột
-      const rawData = XLSX.utils.sheet_to_json(worksheet, {
-        header: [
-          'Name',
-          'Username',
-          'Email',
-          'Phone',
-          'Role',
-          'DateOfBirth',
-          'Major',
-          'Avatar',
-        ],
-        range: 1, // Bỏ qua header row
+      // Chuyển đổi thành array of arrays để tìm header
+      const allData = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1, // Đọc thành array of arrays
+        defval: '', // Giá trị mặc định cho cell trống
+        raw: false,
       });
 
+      if (allData.length < 2) {
+        throw new BadRequestException('File Excel phải có ít nhất 1 dòng header và 1 dòng dữ liệu');
+      }
+
+      // Hàm normalize để tìm kiếm
+      const normalizeKey = (key: string): string => {
+        if (!key) return '';
+        return key
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/\u00A0/g, ' ')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+      };
+
+      // Danh sách các cột cần thiết
+      const columnMappings = {
+        name: ['Họ và tên', 'Họ Tên', 'Họ tên', 'Họ Và Tên', 'Name', 'Full Name', 'Hoten', 'Ho va ten', 'Ho ten'],
+        username: ['Username', 'Tên đăng nhập', 'Tendangnhap', 'Ten dang nhap'],
+        email: ['Email', 'email', 'EMAIL'],
+        phone: ['Số điện thoại', 'Phone', 'Phone Number', 'Sodienthoai', 'SDT', 'So dien thoai'],
+        role: ['Vai trò', 'Role', 'Vaitro', 'Vai tro'],
+        dateOfBirth: ['Ngày sinh', 'Date of Birth', 'DateOfBirth', 'Ngaysinh', 'DOB', 'Ngay sinh'],
+        major: ['Chuyên ngành', 'Major', 'Chuyennganh', 'Chuyen nganh'],
+        avatar: ['Avatar', 'Ảnh đại diện', 'Anhdaidien', 'Anh dai dien'],
+      };
+
+      // Log dữ liệu thô từ file để debug
+      this.logger.error('Raw data from Excel (first 5 rows):');
+      for (let i = 0; i < Math.min(5, allData.length); i++) {
+        const row = allData[i] as any[];
+        this.logger.error(`Row ${i}: ${JSON.stringify(row)}`);
+      }
+
+      // Tìm header row - duyệt từ trên xuống để tìm hàng đầu tiên có đủ cột
+      let headerRowIndex = -1;
+      let headerRowData: any[] = [];
+      
+      for (let rowIndex = 0; rowIndex < allData.length && rowIndex < 10; rowIndex++) {
+        const row = allData[rowIndex] as any[];
+        let matchedColumns = 0;
+        const matchedColumnNames: string[] = [];
+        
+        for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
+          const cell = row[cellIndex];
+          if (!cell) continue;
+          const cellStr = String(cell).trim();
+          if (!cellStr) continue;
+          
+          this.logger.error(`  Checking cell [${rowIndex},${cellIndex}]: "${cellStr}"`);
+          
+          // Kiểm tra xem cell này match với bất kỳ cột nào không
+          for (const [columnKey, possibleNames] of Object.entries(columnMappings)) {
+            for (const possibleName of possibleNames) {
+              const normalized = normalizeKey(cellStr);
+              const normalizedPossible = normalizeKey(possibleName);
+              
+              if (normalized === normalizedPossible) {
+                this.logger.error(`    ✓ Matched: "${cellStr}" === "${possibleName}" (${columnKey})`);
+                matchedColumns++;
+                matchedColumnNames.push(columnKey);
+                break;
+              }
+            }
+          }
+        }
+        
+        this.logger.error(`Row ${rowIndex}: ${matchedColumns} matched columns - [${matchedColumnNames.join(', ')}]`);
+        
+        // Nếu hàng này có ít nhất 3 cột match, đó là header
+        if (matchedColumns >= 3) {
+          headerRowIndex = rowIndex;
+          headerRowData = row;
+          this.logger.error(`✓ Found header at row ${rowIndex + 1} with ${matchedColumns} matched columns`);
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1 || headerRowData.length === 0) {
+        this.logger.error('Header not found. Checked data:', allData.slice(0, 10));
+        throw new BadRequestException(
+          'Không tìm thấy header row trong file Excel. Vui lòng kiểm tra lại file.',
+        );
+      }
+
+      // Map các cột
+      const columnMap: { [key: string]: number } = {};
+      
+      this.logger.error(`Mapping columns from header: ${JSON.stringify(headerRowData)}`);
+      
+      headerRowData.forEach((header, index) => {
+        if (!header) return;
+        
+        const headerStr = String(header).trim();
+        const normalizedHeader = normalizeKey(headerStr);
+        
+        this.logger.error(`  Mapping [${index}] "${headerStr}" (normalized: "${normalizedHeader}")`);
+        
+        for (const [columnKey, possibleNames] of Object.entries(columnMappings)) {
+          if (columnMap[columnKey] !== undefined) continue;
+          
+          for (const possibleName of possibleNames) {
+            const normalizedPossible = normalizeKey(possibleName);
+            
+            if (normalizedHeader === normalizedPossible) {
+              columnMap[columnKey] = index;
+              this.logger.error(`    ✓ Mapped "${columnKey}" to index ${index}`);
+              break;
+            }
+          }
+        }
+      });
+
+      this.logger.error(`Final columnMap: ${JSON.stringify(columnMap)}`);
+
+      // Kiểm tra các cột bắt buộc
+      if (columnMap['name'] === undefined || columnMap['email'] === undefined || columnMap['phone'] === undefined || columnMap['role'] === undefined) {
+        this.logger.error(`Missing required columns - name: ${columnMap['name']}, email: ${columnMap['email']}, phone: ${columnMap['phone']}, role: ${columnMap['role']}`);
+        throw new BadRequestException(
+          'File Excel thiếu cột bắt buộc. Vui lòng kiểm tra lại header row.',
+        );
+      }
+
+      // Parse dữ liệu từ hàng sau header
+      const rawData: any[] = [];
+      for (let i = headerRowIndex + 1; i < allData.length; i++) {
+        const row = allData[i] as any[];
+        
+        // Bỏ qua hàng trống
+        if (row.every(cell => !cell || String(cell).trim() === '')) {
+          if (rawData.length > 0) break; // Dừng khi gặp hàng trống sau dữ liệu
+          continue;
+        }
+        
+        const mappedRow = {
+          Name: row[columnMap['name']] || '',
+          Username: row[columnMap['username']] || '',
+          Email: row[columnMap['email']] || '',
+          Phone: row[columnMap['phone']] || '',
+          Role: row[columnMap['role']] || '',
+          DateOfBirth: row[columnMap['dateOfBirth']] || '',
+          Major: row[columnMap['major']] || '',
+          Avatar: row[columnMap['avatar']] || '',
+        };
+        
+        rawData.push(mappedRow);
+      }
+
       if (rawData.length === 0) {
-        throw new BadRequestException('Excel file contains no data');
+        throw new BadRequestException('File Excel không có dữ liệu');
       }
 
       const importResults: ImportUserDto[] = [];
@@ -410,22 +551,35 @@ export class UserService {
     url: string,
   ): Promise<ResponseDto<ImportUsersResponseDto>> {
     try {
+      let downloadUrl = url;
+      
       try {
         const urlObj = new URL(url);
-        if (
-          !urlObj.hostname.includes('docs.google.com') ||
-          !urlObj.pathname.includes('/spreadsheets/') ||
-          urlObj.searchParams.get('format') !== 'xlsx'
-        ) {
-          throw new BadRequestException(
-            'Invalid Google Sheets URL. URL must be in export format: /export?format=xlsx',
-          );
+        
+        // Kiểm tra nếu là Google Sheets URL
+        if (urlObj.hostname.includes('docs.google.com') && urlObj.pathname.includes('/spreadsheets/')) {
+          // Extract spreadsheet ID from URL
+          // Format: /spreadsheets/d/{spreadsheetId}/...
+          const spreadsheetIdMatch = urlObj.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+          
+          if (!spreadsheetIdMatch) {
+            throw new BadRequestException('Invalid Google Sheets URL format');
+          }
+          
+          const spreadsheetId = spreadsheetIdMatch[1];
+          // Chuyển sang export URL format
+          downloadUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx`;
+        } else if (!urlObj.protocol.match(/^https?:/)) {
+          throw new BadRequestException('URL must use HTTP or HTTPS protocol');
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
         throw new BadRequestException('Invalid URL format');
       }
 
-      const response = await axios.get(url, {
+      const response = await axios.get(downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
       });

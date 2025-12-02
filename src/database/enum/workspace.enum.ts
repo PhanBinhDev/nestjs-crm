@@ -4,6 +4,11 @@ export enum WorkspaceRole {
   MEMBER = 'member',
 }
 
+export enum WorkspaceMemberRoleInvite {
+  ADMIN = 'admin',
+  MEMBER = 'member',
+}
+
 export enum WorkspaceVisibility {
   PRIVATE = 'private',
   PUBLIC = 'public',

@@ -273,6 +273,8 @@ export class DocumentsService {
     userId: string,
     file?: Express.Multer.File,
   ): Promise<ResponseDto<DocumentResDto>> {
+    this.logger.log(`Updating document with id: ${id}`);
+
     const document = await this.documentRepository.findOne({
       where: { id: id as any },
       relations: ['file', 'createdByUser'],
@@ -282,9 +284,21 @@ export class DocumentsService {
       throw new NotFoundException('Tài liệu không tồn tại');
     }
 
-    if (document.createdById !== userId) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const isCreator = document.createdById === userId;
+    const isCNBM = user.role === UserRole.CNBM;
+    const isAdmin = user.role === UserRole.SUPERADMIN;
+
+    if (!isCreator && !isCNBM && !isAdmin) {
       throw new ForbiddenException(
-        'Bạn không có quyền cập nhật tài liệu này. Chỉ người tạo mới có quyền cập nhật',
+        'Bạn không có quyền cập nhật tài liệu này. Chỉ người tạo, Chủ nhiệm bộ môn (CNBM) hoặc Admin mới có quyền cập nhật',
       );
     }
 
@@ -302,7 +316,6 @@ export class DocumentsService {
       }
     }
 
-    // Validate folderId nếu có
     if (dto.folderId !== undefined) {
       if (dto.folderId) {
         const folder = await this.folderRepository.findOne({
@@ -322,40 +335,89 @@ export class DocumentsService {
     if (dto.type !== undefined) document.type = dto.type;
 
     if (file) {
+      this.logger.log(`Processing file upload...`);
+      this.logger.log(`File details:`, {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        fieldname: file.fieldname,
+        hasBuffer: !!file.buffer,
+        bufferLength: file.buffer?.length,
+      });
+
+      const oldFileId = document.fileId;
+
       try {
-        if (document.fileId) {
-          await this.filesService.deleteFile(document.fileId, userId);
-          this.logger.log(`Deleted old file: ${document.fileId}`);
+        if (!file.buffer || file.buffer.length === 0) {
+          throw new BadRequestException('File buffer is empty or invalid');
         }
 
+        this.logger.log(`Uploading new file...`);
         const uploadedFile = await this.filesService.uploadFile(
           file,
           userId,
           null,
         );
+
         document.fileId = uploadedFile.id;
         document.type = DocumentType.FILE;
-
         document.linkUrl = null;
         document.linkPreview = null;
 
-        this.logger.log(`Uploaded new document file: ${uploadedFile.id}`);
+        this.logger.log(`Successfully uploaded new file: ${uploadedFile.id}`);
+
+        if (oldFileId) {
+          try {
+            await this.filesService.deleteFile(oldFileId, userId);
+            this.logger.log(`Deleted old file: ${oldFileId}`);
+          } catch (deleteError) {
+            this.logger.warn(
+              `Failed to delete old file ${oldFileId}:`,
+              deleteError,
+            );
+          }
+        }
       } catch (error) {
         this.logger.error('Failed to upload new document file:', error);
-        throw new BadRequestException('Không thể upload file tài liệu mới');
+
+        this.logger.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          response: error.response,
+          name: error.name,
+        });
+
+        this.logger.error('File info:', {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+        });
+
+        throw new BadRequestException(
+          `Không thể upload file tài liệu mới: ${error.message || 'Vui lòng thử lại'}`,
+        );
       }
     }
 
     if (dto.type === DocumentType.LINK || document.type === DocumentType.LINK) {
       if (dto.linkUrl && dto.linkUrl !== document.linkUrl) {
+        const oldFileId = document.fileId;
+
         try {
           const preview = await this.linkPreviewService.getPreview(dto.linkUrl);
           document.linkUrl = dto.linkUrl;
           document.linkPreview = preview;
 
-          if (document.fileId) {
-            await this.filesService.deleteFile(document.fileId, userId);
-            document.fileId = null;
+          if (oldFileId) {
+            try {
+              await this.filesService.deleteFile(oldFileId, userId);
+              document.fileId = null;
+              this.logger.log(
+                `Deleted old file when switching to LINK: ${oldFileId}`,
+              );
+            } catch (deleteError) {
+              this.logger.warn(`Failed to delete old file:`, deleteError);
+            }
           }
 
           this.logger.log(`Updated link preview for: ${dto.linkUrl}`);
@@ -367,16 +429,13 @@ export class DocumentsService {
     }
 
     document.updatedById = userId;
+
     const savedDocument = await this.documentRepository.save(document);
 
-    const documentWithRelations = await this.documentRepository
-      .createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.file', 'file')
-      .leftJoinAndSelect('doc.createdByUser', 'createdByUser')
-      .leftJoinAndSelect('doc.updatedByUser', 'updatedByUser')
-      .leftJoinAndSelect('doc.folder', 'folder')
-      .where('doc.id = :id', { id: savedDocument.id })
-      .getOne();
+    const documentWithRelations = await this.documentRepository.findOne({
+      where: { id: savedDocument.id },
+      relations: ['file', 'createdByUser', 'updatedByUser', 'folder'],
+    });
 
     const responseData = {
       ...documentWithRelations,
@@ -403,9 +462,21 @@ export class DocumentsService {
       throw new NotFoundException('Tài liệu không tồn tại');
     }
 
-    if (document.createdById !== userId) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId as any },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Người dùng không tồn tại');
+    }
+
+    const isCreator = document.createdById === userId;
+    const isCNBM = user.role === UserRole.CNBM;
+    const isAdmin = user.role === UserRole.SUPERADMIN;
+
+    if (!isCreator && !isCNBM && !isAdmin) {
       throw new ForbiddenException(
-        'Bạn không có quyền xóa tài liệu này. Chỉ người tạo mới có quyền xóa',
+        'Bạn không có quyền xóa tài liệu này. Chỉ người tạo, Chủ nhiệm bộ môn (CNBM) hoặc Admin mới có quyền xóa',
       );
     }
 
@@ -730,17 +801,33 @@ export class DocumentsService {
 
   async createFolder(
     dto: CreateDocumentFolderDto,
-    _userId: string,
+    userId: string,
   ): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = this.folderRepository.create({
       name: dto.name,
       description: dto.description,
+      createdBy: userId,
     });
 
     const savedFolder = await this.folderRepository.save(folder);
 
+    const folderWithUser = await this.folderRepository.findOne({
+      where: { id: savedFolder.id },
+      relations: ['createdByUser'],
+    });
+
+    const totalDocuments = await this.documentRepository.count({
+      where: { folderId: savedFolder.id },
+    });
+
+    const responseData = {
+      ...folderWithUser,
+      createdBy: folderWithUser.createdByUser || { id: userId },
+      totalDocuments,
+    };
+
     return new ResponseDto({
-      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+      data: plainToInstance(DocumentFolderResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Tạo danh mục thành công',
@@ -754,12 +841,27 @@ export class DocumentsService {
     }>
   > {
     const [folders, total] = await this.folderRepository.findAndCount({
+      relations: ['createdByUser'],
       order: { createdAt: 'DESC' },
     });
 
+    const foldersWithCount = await Promise.all(
+      folders.map(async (folder) => {
+        const totalDocuments = await this.documentRepository.count({
+          where: { folderId: folder.id },
+        });
+
+        return {
+          ...folder,
+          createdBy: folder.createdByUser || { id: folder.createdBy },
+          totalDocuments,
+        };
+      }),
+    );
+
     return new ResponseDto({
       data: {
-        folders: plainToInstance(DocumentFolderResDto, folders, {
+        folders: plainToInstance(DocumentFolderResDto, foldersWithCount, {
           excludeExtraneousValues: true,
         }),
         total,
@@ -771,6 +873,7 @@ export class DocumentsService {
   async findOneFolder(id: string): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = await this.folderRepository.findOne({
       where: { id: id as any },
+      relations: ['createdByUser'],
     });
 
     if (!folder) {
@@ -794,6 +897,7 @@ export class DocumentsService {
 
     const folderWithDocuments = {
       ...folder,
+      createdBy: folder.createdByUser || { id: folder.createdBy },
       documents: plainToInstance(DocumentDtoForImport, documentsData, {
         excludeExtraneousValues: true,
       }),
@@ -813,6 +917,7 @@ export class DocumentsService {
   ): Promise<ResponseDto<DocumentFolderResDto>> {
     const folder = await this.folderRepository.findOne({
       where: { id: id as any },
+      relations: ['createdByUser'],
     });
 
     if (!folder) {
@@ -824,8 +929,25 @@ export class DocumentsService {
 
     const savedFolder = await this.folderRepository.save(folder);
 
+    const folderWithUser = await this.folderRepository.findOne({
+      where: { id: savedFolder.id },
+      relations: ['createdByUser'],
+    });
+
+    const totalDocuments = await this.documentRepository.count({
+      where: { folderId: savedFolder.id },
+    });
+
+    const responseData = {
+      ...folderWithUser,
+      createdBy: folderWithUser.createdByUser || {
+        id: folderWithUser.createdBy,
+      },
+      totalDocuments,
+    };
+
     return new ResponseDto({
-      data: plainToInstance(DocumentFolderResDto, savedFolder, {
+      data: plainToInstance(DocumentFolderResDto, responseData, {
         excludeExtraneousValues: true,
       }),
       message: 'Cập nhật danh mục thành công',

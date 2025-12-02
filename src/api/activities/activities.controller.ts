@@ -314,12 +314,11 @@ export class ActivitiesController {
     return this.activitiesService.create(dto, userId);
   }
 
-  @Get('filter')
+  @Get()
   @ApiAuth({
-    summary:
-      'Lấy danh sách công việc theo loại (do mình tạo, được giao, trễ hẹn, hôm nay, đã hoàn thành, cần làm)',
+    summary: 'Lấy danh sách activities',
+    isPaginated: true,
     type: ActivityResDto,
-    isArray: true,
   })
   @ApiQuery({
     name: 'queryType',
@@ -328,27 +327,23 @@ export class ActivitiesController {
     description:
       'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, todo, all',
   })
-  getFilteredActivities(
+  @ApiQuery({
+    name: 'assigneeId',
+    required: false,
+    description: 'Lọc activity theo assignee người được giao công việc',
+  })
+  getActivities(
     @CurrentUser('id') userId: Uuid,
     @Query() query: QueryActivityDto,
   ) {
-    if (query.queryType)
+    // Nếu có queryType hoặc assigneeId, dùng findFilteredActivities
+    if (query.queryType || query.assigneeId)
       return this.activitiesService.findFilteredActivities(
         userId,
         query,
-        query.queryType,
+        query.queryType || QueryType.ALL,
       );
 
-    return this.activitiesService.findAll(query);
-  }
-
-  @Get()
-  @ApiAuth({
-    summary: 'Lấy danh sách activities',
-    isPaginated: true,
-    type: ActivityResDto,
-  })
-  getActivities(@Query() query: QueryActivityDto) {
     return this.activitiesService.findAll(query);
   }
 

@@ -2,6 +2,24 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { DocumentResDto } from './document-res.dto';
 
+class UserBasicDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  name: string;
+
+  @ApiProperty()
+  @Expose()
+  email: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  avatar?: string;
+}
+
 export class DocumentFolderResDto {
   @ApiProperty()
   @Expose()
@@ -23,9 +41,14 @@ export class DocumentFolderResDto {
   @Expose()
   updatedAt: Date;
 
-  @ApiProperty()
+  @ApiProperty({ type: UserBasicDto, description: 'Thông tin người tạo' })
   @Expose()
-  createdBy: string;
+  @Type(() => UserBasicDto)
+  createdBy: UserBasicDto;
+
+  @ApiProperty({ description: 'Tổng số tài liệu trong folder' })
+  @Expose()
+  totalDocuments: number;
 }
 
 export class DocumentFolderWithDocumentsDto extends DocumentFolderResDto {
@@ -36,9 +59,4 @@ export class DocumentFolderWithDocumentsDto extends DocumentFolderResDto {
   @Expose()
   @Type(() => DocumentResDto)
   documents: DocumentResDto[];
-
-  @ApiProperty({ description: 'Tổng số tài liệu trong folder' })
-  @Expose()
-  totalDocuments: number;
 }
-

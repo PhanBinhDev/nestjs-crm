@@ -137,7 +137,7 @@ export class UserController {
   @ApiAuth({
     summary: 'Import users from Excel file',
     description:
-      'Upload Excel file to import users in bulk. Returns import results with success/failure counts and detailed error messages.',
+      'Upload Excel file to import users in bulk. Hỗ trợ cả tên cột tiếng Việt và tiếng Anh. Trả về kết quả import với số lượng thành công/thất bại và danh sách lỗi chi tiết.',
     type: ImportUsersResponseDto,
   })
   @ApiConsumes('multipart/form-data')
@@ -149,7 +149,7 @@ export class UserController {
           type: 'string',
           format: 'binary',
           description:
-            'Excel file (.xlsx, .xls) with columns: Name, Email, Phone, Role, DateOfBirth (optional), Major (optional), Avatar (optional)',
+            'File Excel (.xlsx, .xls) với các cột: Họ và tên/Name, Email, Số điện thoại/Phone, Vai trò/Role, Ngày sinh/DateOfBirth (optional), Chuyên ngành/Major (optional), Avatar (optional), Username (optional)',
         },
       },
     },
@@ -163,7 +163,7 @@ export class UserController {
   @ApiAuth({
     summary: 'Import users from Google Sheets URL',
     description:
-      'Import users from a Google Sheets URL (must be in export format: /export?format=xlsx). Returns import results with success/failure counts and detailed error messages.',
+      'Import users từ URL Google Sheets. Nếu URL có gid (sheet ID), sẽ export sheet được chỉ định. Nếu không có gid, sẽ export sheet đầu tiên (Sheet1) mặc định. Hỗ trợ cả tên cột tiếng Việt và tiếng Anh. Trả về kết quả import với số lượng thành công/thất bại và danh sách lỗi chi tiết.',
     type: ImportUsersResponseDto,
   })
   @ApiConsumes('application/json')
@@ -174,9 +174,9 @@ export class UserController {
         url: {
           type: 'string',
           description:
-            'Google Sheets URL in export format (must end with /export?format=xlsx)',
+            'URL Google Sheets. Nếu có gid (sheet ID) trong query params hoặc hash, sẽ export sheet đó. Nếu không có gid, sẽ export sheet đầu tiên. Ví dụ: .../edit?gid=1713901710 hoặc .../edit?usp=sharing',
           example:
-            'https://docs.google.com/spreadsheets/d/192UtoRvF0uO-PYjaTIRUk5EkJCMbJTSAG5pM-V2O_tU/export?format=xlsx',
+            'https://docs.google.com/spreadsheets/d/1crFisuk7tGQuSjCeprSjY1UlkE8mxn_6_r1ypfWmdX4/edit?usp=sharing',
         },
       },
       required: ['url'],

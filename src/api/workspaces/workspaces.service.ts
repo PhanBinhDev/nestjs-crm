@@ -589,7 +589,7 @@ export class WorkspacesService {
       this.membersRepository.create({
         workspaceId,
         userId: user.id,
-        role: WorkspaceRole.MEMBER,
+        role: inviteMemberDto.role as unknown as WorkspaceRole,
         status: WorkspaceMemberStatus.PENDING,
         type: MemberType.INVITE,
         createdBy: userId,
