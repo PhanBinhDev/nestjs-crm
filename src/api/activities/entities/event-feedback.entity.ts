@@ -34,7 +34,9 @@ export class EventFeedbackEntity extends AbstractEntity {
   studentId: string;
 
   @Column({
-    type: 'int',
+    type: 'decimal',
+    precision: 3,
+    scale: 2,
   })
   rating: number;
 

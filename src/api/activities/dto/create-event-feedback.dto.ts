@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
@@ -44,10 +45,11 @@ export class CreateEventFeedbackDto {
   studentId: string;
 
   @ApiProperty({
-    example: 5,
-    description: 'Điểm đánh giá từ 1-5 sao',
+    example: 4.5,
+    description: 'Điểm đánh giá từ 1-5 sao (có thể là số thập phân)',
   })
   @IsNotEmpty()
+  @Type(() => Number)
   @IsNumber()
   @Min(1)
   @Max(5)
