@@ -44,7 +44,6 @@ export class CloudinaryService {
       options.public_id = fileName;
     }
 
-
     return this.uploadFile(file, options);
   }
 
