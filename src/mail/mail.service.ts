@@ -1,4 +1,7 @@
-import { IWorkspaceMemberJob } from '@/common/interfaces/job.interface';
+import {
+  IWorkspaceMemberJob,
+  ITaskAssignedEmailJob,
+} from '@/common/interfaces/job.interface';
 import { AllConfigType } from '@/config/config.type';
 import { MailerService } from '@nestjs-modules/mailer';
 import { Injectable } from '@nestjs/common';
@@ -45,6 +48,19 @@ export class MailService {
       to,
       subject: `Lời mời tham gia workspace ${data.workspaceName}`,
       template: 'workspace-invitation',
+      context: {
+        ...rest,
+      },
+    });
+  }
+
+  async sendTaskAssignedEmail(data: ITaskAssignedEmailJob) {
+    const { email: to, ...rest } = data;
+
+    await this.mailerService.sendMail({
+      to,
+      subject: `Bạn được giao ${data.activityType} mới: ${data.activityName}`,
+      template: 'task-assigned',
       context: {
         ...rest,
       },

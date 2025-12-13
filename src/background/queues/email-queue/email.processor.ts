@@ -2,6 +2,7 @@ import {
   IEmailJob,
   IVerifyEmailJob,
   IWorkspaceMemberJob,
+  ITaskAssignedEmailJob,
 } from '@/common/interfaces/job.interface';
 import { JobName, QueueName } from '@/constants/job.constant';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
@@ -44,7 +45,10 @@ export class EmailProcessor extends WorkerHost {
         return await this.emailQueueService.sendWorkspaceInvitation(
           job.data as unknown as IWorkspaceMemberJob,
         );
-        break;
+      case JobName.TASK_ASSIGNED_EMAIL:
+        return await this.emailQueueService.sendTaskAssignedEmail(
+          job.data as unknown as ITaskAssignedEmailJob,
+        );
       default:
         throw new Error(`Unknown job name: ${job.name}`);
     }

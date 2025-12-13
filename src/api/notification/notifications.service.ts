@@ -3,10 +3,12 @@ import { UserService } from '@/api/users/user.service';
 import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagination.dto';
 import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
+import { ResponseDto } from '@/common/dto/response/response.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { Uuid } from '@/common/types/common.type';
 import { JobName, QueueName } from '@/constants/job.constant';
 import { NotificationType } from '@/database/enum/notifications.enum';
+import { NotificationPreferenceType } from '@/database/enum/notification-preference.enum';
 import { buildPaginator } from '@/utils/cursor-pagination';
 import { upperCaseFirst } from '@/utils/index.util';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -23,9 +25,12 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { CreateReminderReqDto } from './dto/create-reminder.req.dto';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
+import { NotificationPreferencesListResDto, NotificationPreferenceResDto } from './dto/notification-preference-res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
 import { SendPushNotificationDto } from './dto/send-push-notification.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preference.dto';
 import { NotificationEntity } from './entities/notification.entity';
+import { NotificationPreference } from './entities/notification-preference.entity';
 
 @Injectable()
 export class NotificationsService {
@@ -36,6 +41,8 @@ export class NotificationsService {
     private readonly firebaseAdmin: admin.app.App,
     @InjectRepository(NotificationEntity)
     private readonly notificationRepo: Repository<NotificationEntity>,
+    @InjectRepository(NotificationPreference)
+    private readonly preferenceRepo: Repository<NotificationPreference>,
     private readonly userServices: UserService,
     private readonly deviceTokenServices: DeviceTokensService,
     @InjectQueue(QueueName.NOTIFICATION) private notiQueue: Queue,
@@ -367,6 +374,15 @@ export class NotificationsService {
   }
 
   async sendPushNotification(dto: SendPushNotificationDto) {
+    const shouldSend = await this.shouldSendNotification(dto.userId, dto.type);
+    
+    if (!shouldSend) {
+      this.logger.log(
+        `Notification ${dto.type} is disabled for user ${dto.userId}, skipping push notification...`,
+      );
+      return null;
+    }
+
     const userReceivedNoti = await this.userServices.findOne(dto.userId);
 
     const deviceTokens = await this.deviceTokenServices.findAllByUserId(
@@ -460,5 +476,106 @@ export class NotificationsService {
       // Xóa từng token không hợp lệ khỏi DB
       await this.deviceTokenServices.removeToken(targetUserId, token);
     }
+  }
+
+  private mapNotificationTypeToPreferenceType(
+    notificationType: string,
+  ): NotificationPreferenceType | null {
+    const mapping: Record<string, NotificationPreferenceType> = {
+      [NotificationType.ACTIVITY]: NotificationPreferenceType.TASK_ASSIGNED,
+      [NotificationType.COMMENT]: NotificationPreferenceType.TASK_COMMENT,
+      [NotificationType.REMINDER]: NotificationPreferenceType.TASK_DUE,
+      [NotificationType.WORKSPACE]: NotificationPreferenceType.WORKSPACE_MEMBER,
+    };
+    return mapping[notificationType] || null;
+  }
+
+  private async shouldSendNotification(
+    userId: Uuid,
+    notificationType: string,
+  ): Promise<boolean> {
+    const preferenceType = this.mapNotificationTypeToPreferenceType(notificationType);
+    
+    if (!preferenceType) {
+      return true;
+    }
+
+    const preference = await this.preferenceRepo.findOne({
+      where: {
+        userId,
+        type: preferenceType,
+      },
+    });
+
+    if (!preference) {
+      return true;
+    }
+
+    return preference.enabled;
+  }
+
+  async getPreferences(userId: Uuid): Promise<ResponseDto<NotificationPreferencesListResDto>> {
+    let preferences = await this.preferenceRepo.find({
+      where: { userId },
+    });
+
+    if (preferences.length === 0) {
+      const defaultPreferences = Object.values(NotificationPreferenceType).map(type =>
+        this.preferenceRepo.create({
+          userId,
+          type,
+          enabled: true,
+        })
+      );
+      preferences = await this.preferenceRepo.save(defaultPreferences);
+    }
+
+    return new ResponseDto({
+      data: {
+        preferences: plainToInstance(NotificationPreferenceResDto, preferences, {
+          excludeExtraneousValues: true,
+        }),
+      },
+      message: 'Lấy cài đặt thông báo thành công',
+    });
+  }
+
+  async updatePreferences(
+    dto: UpdateNotificationPreferencesDto,
+    userId: Uuid,
+  ): Promise<ResponseDto<NotificationPreferencesListResDto>> {
+    for (const pref of dto.preferences) {
+      const existing = await this.preferenceRepo.findOne({
+        where: {
+          userId,
+          type: pref.type,
+        },
+      });
+
+      if (existing) {
+        existing.enabled = pref.enabled;
+        await this.preferenceRepo.save(existing);
+      } else {
+        const newPreference = this.preferenceRepo.create({
+          userId,
+          type: pref.type,
+          enabled: pref.enabled,
+        });
+        await this.preferenceRepo.save(newPreference);
+      }
+    }
+
+    const preferences = await this.preferenceRepo.find({
+      where: { userId },
+    });
+
+    return new ResponseDto({
+      data: {
+        preferences: plainToInstance(NotificationPreferenceResDto, preferences, {
+          excludeExtraneousValues: true,
+        }),
+      },
+      message: 'Cập nhật cài đặt thông báo thành công',
+    });
   }
 }

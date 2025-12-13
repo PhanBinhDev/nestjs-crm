@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DeviceTokensModule } from '../device-token/device-tokens.module';
 import { FileEntity } from '../files/entities/files.entity';
 import { NotificationEntity } from './entities/notification.entity';
+import { NotificationPreference } from './entities/notification-preference.entity';
 import { FirebaseModule } from './firebase.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
@@ -15,7 +16,7 @@ import { NotificationsService } from './notifications.service';
     FirebaseModule,
     UserModule,
     DeviceTokensModule,
-    TypeOrmModule.forFeature([NotificationEntity, FileEntity]),
+    TypeOrmModule.forFeature([NotificationEntity, NotificationPreference, FileEntity]),
     forwardRef(() => NotificationQueueModule),
     CloudinaryModule,
   ],

@@ -6,8 +6,11 @@ export interface IVerifyEmailJob extends IEmailJob {
   token: string;
 }
 
-export interface IAssigneeEmailJob extends IEmailJob {
-  activityId: string;
+export interface ITaskAssignedEmailJob extends IEmailJob {
+  activityName: string;
+  activityLink: string;
+  assignerName: string;
+  activityType: string; // 'công việc' hoặc 'sự kiện'
 }
 
 export interface IWorkspaceMemberJob extends IEmailJob {

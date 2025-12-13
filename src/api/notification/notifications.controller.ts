@@ -16,7 +16,9 @@ import {
 import { ApiConsumes, ApiParam, ApiTags } from '@nestjs/swagger';
 import { MarkReadDto } from './dto/mark-read.dto';
 import { NotificationResDto } from './dto/notification.res.dto';
+import { NotificationPreferencesListResDto } from './dto/notification-preference-res.dto';
 import { QueryNotificationDto } from './dto/query-notification.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preference.dto';
 import { NotificationsService } from './notifications.service';
 
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -97,5 +99,26 @@ export class NotificationsController {
       attachments,
       userId,
     );
+  }
+
+  @Get('preferences')
+  @ApiAuth({
+    summary: 'Lấy cài đặt thông báo của user',
+    type: NotificationPreferencesListResDto,
+  })
+  async getPreferences(@CurrentUser('id') userId: Uuid) {
+    return this.notificationService.getPreferences(userId);
+  }
+
+  @Patch('preferences')
+  @ApiAuth({
+    summary: 'Cập nhật cài đặt thông báo',
+    type: NotificationPreferencesListResDto,
+  })
+  async updatePreferences(
+    @Body() dto: UpdateNotificationPreferencesDto,
+    @CurrentUser('id') userId: Uuid,
+  ) {
+    return this.notificationService.updatePreferences(dto, userId);
   }
 }

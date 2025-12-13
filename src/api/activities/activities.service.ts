@@ -6,6 +6,7 @@ import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
 import { Uuid } from '@/common/types/common.type';
 import { ErrorCode } from '@/constants/error-code.constant';
+import { JobName, QueueName } from '@/constants/job.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
@@ -27,12 +28,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
+import { AllConfigType } from '@/config/config.type';
+import { ITaskAssignedEmailJob } from '@/common/interfaces/job.interface';
 import { plainToInstance } from 'class-transformer';
 import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
 import { NotificationEntity } from '../notification/entities/notification.entity';
+import { NotificationPreference } from '../notification/entities/notification-preference.entity';
+import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
+import { NotificationPreferenceType } from '@/database/enum/notification-preference.enum';
+import { NotificationType } from '@/database/enum/notifications.enum';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -121,6 +131,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     private readonly activityChecklistRepo: Repository<ActivityChecklistEntity>,
     @InjectRepository(ActivityFollowEntity)
     private readonly activityFollowRepo: Repository<ActivityFollowEntity>,
+    @InjectRepository(NotificationPreference)
+    private readonly preferenceRepo: Repository<NotificationPreference>,
+    @InjectQueue(QueueName.NOTIFICATION)
+    private readonly notificationQueue: Queue,
+    @InjectQueue(QueueName.EMAIL)
+    private readonly emailQueue: Queue<ITaskAssignedEmailJob, any, string>,
+    private readonly configService: ConfigService<AllConfigType>,
     private readonly linkPreviewService: LinkPreviewService,
   ) {
     super(activityRepo);
@@ -778,6 +795,57 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       await activityLogRepo.save(activityLog);
 
+      // Gửi notification cho assignees (trừ người comment) - giống workspace invite
+      const assigneeRepo = manager.getRepository(ActivityAssigneeEntity);
+      const assignees = await assigneeRepo.find({
+        where: { activityId },
+        relations: ['user'],
+      });
+
+      await Promise.all(
+        assignees
+          .filter((assignee) => assignee.userId !== userId)
+          .map(async (assignee) => {
+            const preference = await this.preferenceRepo.findOne({
+              where: {
+                userId: assignee.userId,
+                type: NotificationPreferenceType.TASK_COMMENT,
+              },
+            });
+
+            if (preference && !preference.enabled) {
+              return;
+            }
+
+            const notificationData: SendPushNotificationDto = {
+              userId: assignee.userId,
+              title: `Có bình luận mới trong "${activity.name}"`,
+              message: `${user.name}: ${createCommentDto.content.substring(0, 100)}${createCommentDto.content.length > 100 ? '...' : ''}`,
+              senderId: user.id,
+              type: NotificationType.COMMENT,
+              data: {
+                activityId: activity.id,
+                activityName: activity.name,
+                commentId: savedComment.id,
+                uri: `/activities/${activity.id}`,
+              },
+            };
+
+            await this.notificationQueue.add(
+              JobName.NOTIFICATION,
+              notificationData,
+              {
+                attempts: 3,
+                backoff: {
+                  type: 'exponential',
+                  delay: 1000,
+                },
+                removeOnComplete: true,
+              },
+            );
+          }),
+      );
+
       const commentWithRelations = await commentRepo.findOne({
         where: { id: savedComment.id },
         relations: ['user', 'reactions', 'reactions.user'],
@@ -1289,24 +1357,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             status: AssignmentStatus.PENDING,
           }),
         );
-
-        const notifications = await Promise.all(
-          dto.assignees.map(async (assigneeDto) => {
-            const userAssignee = await this.userRepo.findOne({
-              where: { id: assigneeDto.userId },
-            });
-
-            return notificationRepo.create({
-              userId: assigneeDto.userId,
-              title: `Có ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} mới`,
-              message: `Bạn được giao ${dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện'} "${dto.name}"`,
-              sender: userCreator,
-              user: userAssignee,
-            });
-          }),
-        );
-
-        await notificationRepo.save(notifications);
       }
 
       // Remove follows from activityData before creating ActivityEntity
@@ -1317,6 +1367,72 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         assignees: assignees,
       });
       const savedActivity = await activityRepo.save(activity);
+
+      // Gửi notification và email cho assignees sau khi activity đã được save (giống workspace invite)
+      if (dto.assignees?.length > 0) {
+        const baseURL = this.configService.getOrThrow('app.frontendUrl', {
+          infer: true,
+        });
+        const activityLink = `${baseURL}/activities/${savedActivity.id}`;
+        const activityType = dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
+
+        await Promise.all(
+          dto.assignees.map(async (assigneeDto) => {
+            const preference = await this.preferenceRepo.findOne({
+              where: {
+                userId: assigneeDto.userId,
+                type: NotificationPreferenceType.TASK_ASSIGNED,
+              },
+            });
+
+            if (preference && !preference.enabled) {
+              return;
+            }
+
+            const userAssignee = await this.userRepo.findOne({
+              where: { id: assigneeDto.userId },
+            });
+
+            // Gửi push notification
+            const notificationData: SendPushNotificationDto = {
+              userId: assigneeDto.userId,
+              title: `Có ${activityType} mới`,
+              message: `Bạn được giao ${activityType} "${dto.name}"`,
+              senderId: userCreator.id,
+              type: NotificationType.ACTIVITY,
+              data: {
+                activityId: savedActivity.id,
+                activityName: dto.name,
+                uri: `/activities/${savedActivity.id}`,
+              },
+            };
+
+            await this.notificationQueue.add(
+              JobName.TASK_CREATED_ASSIGNEE,
+              notificationData,
+              {
+                attempts: 3,
+                backoff: {
+                  type: 'exponential',
+                  delay: 1000,
+                },
+                removeOnComplete: true,
+              },
+            );
+
+            // Gửi email (giống workspace invite)
+            if (userAssignee?.email) {
+              await this.emailQueue.add(JobName.TASK_ASSIGNED_EMAIL, {
+                email: userAssignee.email,
+                activityName: dto.name,
+                activityLink,
+                assignerName: userCreator.name,
+                activityType,
+              });
+            }
+          }),
+        );
+      }
 
       const mainActivityLog = activityLogRepo.create({
         activity: savedActivity,
@@ -2049,6 +2165,42 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             },
           });
           logs.push(assignLog);
+
+          // Gửi notification cho user được assign (nếu là assign mới) - giống workspace invite
+          const preference = await this.preferenceRepo.findOne({
+            where: {
+              userId: userId,
+              type: NotificationPreferenceType.TASK_ASSIGNED,
+            },
+          });
+
+          if (!preference || preference.enabled) {
+            const notificationData: SendPushNotificationDto = {
+              userId: userId,
+              title: `Bạn được giao công việc "${activity.name}"`,
+              message: `${currentUser.name} đã giao công việc này cho bạn`,
+              senderId: currentUser.id,
+              type: NotificationType.ACTIVITY,
+              data: {
+                activityId: activity.id,
+                activityName: activity.name,
+                uri: `/activities/${activity.id}`,
+              },
+            };
+
+            await this.notificationQueue.add(
+              JobName.TASK_CREATED_ASSIGNEE,
+              notificationData,
+              {
+                attempts: 3,
+                backoff: {
+                  type: 'exponential',
+                  delay: 1000,
+                },
+                removeOnComplete: true,
+              },
+            );
+          }
         }
 
         await activityAssigneeRepo.save(assignee);

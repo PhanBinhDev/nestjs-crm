@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ActivityLogEntity } from '../../../api/activities/entities/activity-log.entity';
+import { ActivityAssigneeEntity } from '../../../api/activities/entities/activity-assignee.entity';
 import { ActivityEntity } from '../../../api/activities/entities/activity.entity';
+import { NotificationEntity } from '../../../api/notification/entities/notification.entity';
+import { NotificationPreference } from '../../../api/notification/entities/notification-preference.entity';
+import { NotificationPreferenceType } from '../../../database/enum/notification-preference.enum';
+import { NotificationType } from '../../../database/enum/notifications.enum';
 import { StagesEntity } from '../../../api/stages/entities/stage.entity';
 import { UserEntity } from '../../../api/users/entities/user.entity';
 import {
@@ -23,6 +28,12 @@ export class ActivityOverdueQueueService {
     private readonly activityLogRepo: Repository<ActivityLogEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(ActivityAssigneeEntity)
+    private readonly assigneeRepo: Repository<ActivityAssigneeEntity>,
+    @InjectRepository(NotificationEntity)
+    private readonly notificationRepo: Repository<NotificationEntity>,
+    @InjectRepository(NotificationPreference)
+    private readonly preferenceRepo: Repository<NotificationPreference>,
   ) {}
 
   async processOverdueActivities(): Promise<{
@@ -171,6 +182,53 @@ export class ActivityOverdueQueueService {
                     `Could not create log for activity ${activity.id}: ${logError.message}`,
                   );
                 }
+              }
+
+              // Gửi notification cho assignees
+              try {
+                const assignees = await this.assigneeRepo.find({
+                  where: { activityId: activity.id },
+                  relations: ['user'],
+                });
+
+                const notifications = await Promise.all(
+                  assignees.map(async (assignee) => {
+                    const preference = await this.preferenceRepo.findOne({
+                      where: {
+                        userId: assignee.userId,
+                        type: NotificationPreferenceType.TASK_DUE,
+                      },
+                    });
+
+                    if (preference && !preference.enabled) {
+                      return null;
+                    }
+
+                    return this.notificationRepo.create({
+                      userId: assignee.userId,
+                      title: `Công việc "${activity.name}" đã đến hạn`,
+                      message: `Công việc đã quá hạn vào ${activity.endTime?.toLocaleString('vi-VN')}`,
+                      sender: systemUser,
+                      user: assignee.user,
+                      type: NotificationType.REMINDER,
+                      data: {
+                        activityId: activity.id,
+                        activityName: activity.name,
+                        endTime: activity.endTime?.toISOString(),
+                        uri: `/activities/${activity.id}`,
+                      },
+                    });
+                  }),
+                );
+
+                const validNotifications = notifications.filter((n) => n !== null);
+                if (validNotifications.length > 0) {
+                  await this.notificationRepo.save(validNotifications);
+                }
+              } catch (notiError) {
+                this.logger.warn(
+                  `Could not send notifications for activity ${activity.id}: ${notiError.message}`,
+                );
               }
 
               processedDetails.push({

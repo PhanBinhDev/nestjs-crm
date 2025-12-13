@@ -17,5 +17,6 @@ export enum JobName {
   NOTIFICATION = 'notification',
   TASK_CREATED_ASSIGNEE = 'task-created-assignee',
   TASK_CREATED_FOLLOWED = 'task-created-followed',
+  TASK_ASSIGNED_EMAIL = 'task-assigned-email',
   REMINDER = 'reminder',
 }
