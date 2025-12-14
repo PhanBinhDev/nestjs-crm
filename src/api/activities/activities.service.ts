@@ -38,6 +38,7 @@ import { plainToInstance } from 'class-transformer';
 import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
+import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { NotificationEntity } from '../notification/entities/notification.entity';
 import { NotificationPreference } from '../notification/entities/notification-preference.entity';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
@@ -74,6 +75,7 @@ import { UpdateActivityDto } from './dto/update-activity.dto';
 import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
+import { UploadActivityFileResDto } from './dto/upload-activity-file.res.dto';
 import { ActivityAssigneeEntity } from './entities/activity-assignee.entity';
 import { ActivityCategoryEntity } from './entities/activity-category.entity';
 import {
@@ -138,6 +140,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     @InjectQueue(QueueName.EMAIL)
     private readonly emailQueue: Queue<ITaskAssignedEmailJob, any, string>,
     private readonly configService: ConfigService<AllConfigType>,
+    private readonly cloudinaryService: CloudinaryService,
     private readonly linkPreviewService: LinkPreviewService,
   ) {
     super(activityRepo);
@@ -166,7 +169,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         throw new NotFoundException('Activity không tồn tại');
       }
 
-      const values = userIds.map((uid) => ({ activityId, userId: uid, createdBy: actorId }));
+      const values = userIds.map((uid) => ({ activityId, userId: uid as string }));
 
       if (values.length === 0) {
         return new ResponseDto({ 
@@ -818,7 +821,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             }
 
             const notificationData: SendPushNotificationDto = {
-              userId: assignee.userId,
+              userId: assignee.userId as Uuid,
               title: `Có bình luận mới trong "${activity.name}"`,
               message: `${user.name}: ${createCommentDto.content.substring(0, 100)}${createCommentDto.content.length > 100 ? '...' : ''}`,
               senderId: user.id,
@@ -1605,8 +1608,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
         const follows = dto.follows.map(userId => ({
           activityId: savedActivity.id,
-          userId,
-          createdBy: userId
+          userId: userId,
         }));
         
         await activityFollowRepo
@@ -3518,5 +3520,134 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         completedChecklistItems,
       },
     };
+  }
+
+  async uploadFile(
+    activityId: Uuid,
+    userId: Uuid,
+    file?: Express.Multer.File,
+  ): Promise<ResponseDto<UploadActivityFileResDto>> {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    let uploadedPublicId: string | null = null;
+
+    return await this.dataSource
+      .transaction(async (manager) => {
+        // Kiểm tra activity tồn tại
+        const activity = await manager.findOne(ActivityEntity, {
+          where: { id: activityId },
+        });
+
+        if (!activity) {
+          throw new NotFoundException('Activity not found');
+        }
+
+        // Upload file lên Cloudinary
+        const folder = `activities/${activityId}`;
+        const fileName = file.originalname;
+
+        const uploadResult = await this.cloudinaryService.uploadToFolder(
+          file,
+          folder,
+          fileName,
+        );
+
+        if (!('url' in uploadResult)) {
+          throw new BadRequestException('Upload file thất bại');
+        }
+
+        uploadedPublicId = uploadResult.public_id;
+
+        // Tạo FileEntity
+        const fileRepo = manager.getRepository(FileEntity);
+        const fileEntity = fileRepo.create({
+          url: uploadResult.url,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: uploadResult.bytes,
+          fileName: fileName,
+          uploadedBy: userId,
+          workspaceId: activity.workspaceId,
+          metadata: {
+            public_id: uploadResult.public_id,
+            format: uploadResult.format,
+            resource_type: uploadResult.resource_type,
+            width: uploadResult.width,
+            height: uploadResult.height,
+            bytes: uploadResult.bytes,
+            folder: folder, // Đường dẫn folder trên Cloudinary: activities/{activityId}
+            secure_url: uploadResult.secure_url || uploadResult.url, // HTTPS URL
+            created_at: uploadResult.created_at, // Thời gian tạo trên Cloudinary
+            version: uploadResult.version, // Version của file
+            signature: uploadResult.signature, // Signature để verify
+            etag: uploadResult.etag, // ETag của file
+            ...(uploadResult.asset_id && { asset_id: uploadResult.asset_id }), // Asset ID nếu có
+            ...(uploadResult.pages && { pages: uploadResult.pages }), // Số trang (cho PDF)
+            ...(uploadResult.duration && { duration: uploadResult.duration }), // Thời lượng (cho video/audio)
+          },
+        });
+        const savedFile = await fileRepo.save(fileEntity);
+
+        // Tạo ActivityFileEntity để link file với activity
+        const activityFileRepo = manager.getRepository(ActivityFileEntity);
+        const activityFile = activityFileRepo.create({
+          activityId: activityId,
+          fileId: savedFile.id,
+          createdBy: userId,
+        });
+        const savedActivityFile = await activityFileRepo.save(activityFile);
+
+        // Tạo activity log
+        const user = await manager.findOne(UserEntity, {
+          where: { id: userId },
+        });
+        const activityLogRepo = manager.getRepository(ActivityLogEntity);
+        const fileLog = activityLogRepo.create({
+          activity: activity,
+          user: user,
+          action: ActivityLogActionEnum.CREATED,
+          message: `Đính kèm file: ${file.originalname}`,
+          metadata: {
+            type: 'FILE_ATTACHMENT',
+            fileId: savedFile.id,
+            fileName: file.originalname,
+          },
+        });
+        await activityLogRepo.save(fileLog);
+
+        return new ResponseDto<UploadActivityFileResDto>({
+          data: plainToInstance(
+            UploadActivityFileResDto,
+            {
+              id: savedActivityFile.id,
+              activityId: activityId,
+              url: savedFile.url,
+              originalName: savedFile.originalName,
+              fileName: savedFile.fileName,
+              size: savedFile.size,
+              mimeType: savedFile.mimeType,
+            },
+            {
+              excludeExtraneousValues: true,
+            },
+          ),
+          message: 'Upload file thành công',
+        });
+      })
+      .catch(async (error) => {
+        // Rollback: Xóa file trên Cloudinary nếu có lỗi
+        if (uploadedPublicId) {
+          try {
+            await this.cloudinaryService.deleteFile(uploadedPublicId);
+          } catch {
+            this.logger.warn(
+              `Cannot rollback file on Cloudinary: ${uploadedPublicId}`,
+            );
+          }
+        }
+        throw error;
+      });
   }
 }

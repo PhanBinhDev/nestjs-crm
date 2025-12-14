@@ -16,8 +16,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
 import { ActivityAssigneeResDto } from './dto/activity-assignee.res.dto';
@@ -51,6 +54,7 @@ import { UpdateActivityDto } from './dto/update-activity.dto';
 import { UpdateChecklistDto } from './dto/update-checklist.req.dto';
 import { UpdateActivityCommentDto } from './dto/update-comment.dto';
 import { UpdateParticipantReqDto } from './dto/update-participant.req.dto';
+import { UploadActivityFileResDto } from './dto/upload-activity-file.res.dto';
 
 @ApiTags('activities')
 @Controller('activities')
@@ -744,5 +748,39 @@ export class ActivitiesController {
   })
   batchUnfollow(@Param('id') activityId: Uuid, @Body() dto: FollowUsersDto) {
     return this.activitiesService.batchUnfollow(activityId, dto.userIds);
+  }
+
+  @Post(':id/files')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'File đính kèm (có thể là ảnh hoặc file khác)',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiAuth({
+    summary: 'Upload file đính kèm cho activity',
+    type: UploadActivityFileResDto,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID của activity',
+    type: 'string',
+    format: 'uuid',
+  })
+  uploadFile(
+    @Param('id') activityId: Uuid,
+    @CurrentUser('id') userId: Uuid,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.activitiesService.uploadFile(activityId, userId, file);
   }
 }
