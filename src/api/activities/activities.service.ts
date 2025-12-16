@@ -1362,8 +1362,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         );
       }
 
-      // Remove follows from activityData before creating ActivityEntity
-      const { assignees: _, follows: __, ...activityData } = dto;
+      // Remove follows and files from activityData before creating ActivityEntity
+      const { assignees: _, follows: __, files: ___, ...activityData } = dto;
       const activity = activityRepo.create({
         ...activityData,
         position: count + 1,
@@ -1546,28 +1546,39 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }
       }
 
-      // Handle file attachments
-      if (dto.attachments && dto.attachments.length > 0) {
+      // Handle files from /upload/multi (field files)
+      if (dto.files && dto.files.length > 0) {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
 
-
-        for (const fileId of dto.attachments) {
+        for (const fileUrl of dto.files) {
           try {
-            // Validate fileId format
-            if (!fileId || typeof fileId !== 'string') {
-              console.error('Invalid fileId:', fileId);
+            // Validate fileUrl format
+            if (!fileUrl || typeof fileUrl !== 'string') {
+              this.logger.warn(`Invalid fileUrl: ${fileUrl}`);
               continue;
             }
 
-            // Verify file exists by URL (frontend sends URL, not ID)
+            // Verify file exists by URL (frontend sends URL from /upload/multi)
             const file = await manager.getRepository(FileEntity).findOne({
-              where: { url: fileId },
+              where: { url: fileUrl },
             });
 
             if (!file) {
-              console.error('File not found:', fileId);
+              this.logger.warn(`File not found: ${fileUrl}`);
               continue;
+            }
+
+            // Check if ActivityFileEntity already exists (avoid duplicates)
+            const existingActivityFile = await activityFileRepo.findOne({
+              where: {
+                activityId: savedActivity.id,
+                fileId: file.id,
+              },
+            });
+
+            if (existingActivityFile) {
+              continue; // Skip if already attached
             }
 
             // Create ActivityFileEntity
@@ -1577,8 +1588,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
               createdBy: userId,
             });
 
-            const savedActivityFile = await activityFileRepo.save(activityFile);
-          
+            await activityFileRepo.save(activityFile);
+
             const fileLog = activityLogRepo.create({
               activity: savedActivity,
               user: userCreator,
@@ -1592,9 +1603,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
             });
             fileLogs.push(fileLog);
           } catch (error) {
-            console.error('Error saving activity file:', error);
+            this.logger.error(`Error saving activity file: ${fileUrl}`, error);
             // Don't throw error, just log it and continue
-            console.error('Skipping file attachment due to error');
           }
         }
 
@@ -2008,8 +2018,107 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       Object.assign(activity, {
         ...dto,
         assignees: undefined,
+        files: undefined, // Exclude files from activity update, handle separately
       });
       await activityRepo.save(activity);
+
+      // Handle files from /upload/multi (field files)
+      if (dto.files !== undefined) {
+        const activityFileRepo = manager.getRepository(ActivityFileEntity);
+        const fileLogs: ActivityLogEntity[] = [];
+
+        // Get current files
+        const currentActivityFiles = await activityFileRepo.find({
+          where: { activityId: activity.id },
+        });
+        const currentFileIds = new Set(
+          currentActivityFiles.map((af) => af.fileId),
+        );
+
+        // Process new files
+        const newFileIds = new Set<string>();
+        if (dto.files && dto.files.length > 0) {
+          for (const fileUrl of dto.files) {
+            try {
+              if (!fileUrl || typeof fileUrl !== 'string') {
+                this.logger.warn(`Invalid fileUrl: ${fileUrl}`);
+                continue;
+              }
+
+              const file = await manager.getRepository(FileEntity).findOne({
+                where: { url: fileUrl },
+              });
+
+              if (!file) {
+                this.logger.warn(`File not found: ${fileUrl}`);
+                continue;
+              }
+
+              newFileIds.add(file.id);
+
+              // Only create if not already attached
+              if (!currentFileIds.has(file.id)) {
+                const activityFile = activityFileRepo.create({
+                  activityId: activity.id,
+                  fileId: file.id,
+                  createdBy: userId,
+                });
+                await activityFileRepo.save(activityFile);
+
+                const fileLog = activityLogRepo.create({
+                  activity: activity,
+                  user: user,
+                  action: ActivityLogActionEnum.CREATED,
+                  message: `Đính kèm file: ${file.originalName}`,
+                  metadata: {
+                    type: 'FILE_ATTACHMENT',
+                    fileId: file.id,
+                    fileName: file.originalName,
+                  },
+                });
+                fileLogs.push(fileLog);
+              }
+            } catch (error) {
+              this.logger.error(`Error saving activity file: ${fileUrl}`, error);
+            }
+          }
+        }
+
+        // Remove files that are no longer in the list
+        for (const currentFileId of currentFileIds) {
+          if (!newFileIds.has(currentFileId)) {
+            const activityFileToRemove = currentActivityFiles.find(
+              (af) => af.fileId === currentFileId,
+            );
+            if (activityFileToRemove) {
+              await activityFileRepo.remove(activityFileToRemove);
+
+              const file = await manager.getRepository(FileEntity).findOne({
+                where: { id: currentFileId as Uuid },
+              });
+
+              if (file) {
+                const fileLog = activityLogRepo.create({
+                  activity: activity,
+                  user: user,
+                  action: ActivityLogActionEnum.DELETED,
+                  message: `Xóa file đính kèm: ${file.originalName}`,
+                  metadata: {
+                    type: 'FILE_ATTACHMENT_DELETE',
+                    fileId: file.id,
+                    fileName: file.originalName,
+                  },
+                });
+                fileLogs.push(fileLog);
+              }
+            }
+          }
+        }
+
+        if (fileLogs.length > 0) {
+          await activityLogRepo.save(fileLogs);
+        }
+      }
 
       await this.createActivityUpdateLogs(
         activity,
@@ -2019,8 +2128,21 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         activityLogRepo,
       );
 
+      // Load activity with files relation for response
+      const updatedActivity = await activityRepo.findOne({
+        where: { id: activity.id },
+        relations: [
+          'assignees',
+          'assignees.user',
+          'files',
+          'files.file',
+          'stage',
+          'category',
+        ],
+      });
+
       return new ResponseDto<ActivityResDto>({
-        data: plainToInstance(ActivityResDto, activity, {
+        data: plainToInstance(ActivityResDto, updatedActivity, {
           excludeExtraneousValues: true,
         }),
         message: 'Cập nhật hoạt động thành công',

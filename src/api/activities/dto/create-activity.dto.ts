@@ -170,13 +170,13 @@ export class CreateActivityDto {
     type: [String],
     required: false,
     description:
-      'Danh sách file URL đính kèm cho hoạt động (array string URLs)',
+      'Danh sách file URLs từ API /upload/multi để đính kèm cho hoạt động',
     example: ['/uploads/file1.docx', '/uploads/file2.png'],
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  attachments?: string[];
+  files?: string[];
 
   @UUIDFieldOptional({
     description: 'Danh sách ID người dùng sẽ theo dõi hoạt động này',
