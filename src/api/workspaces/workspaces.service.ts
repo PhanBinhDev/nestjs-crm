@@ -399,6 +399,7 @@ export class WorkspacesService {
   ): Promise<ResponseNoDataDto> {
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
+      relations: ['owner'],
     });
     if (!workspace)
       throw new NotFoundException('Không gian làm việc không tồn tại');
@@ -420,9 +421,9 @@ export class WorkspacesService {
         .createQueryBuilder()
         .delete()
         .from('activity_assignees')
-        .where('userId = :userId', { userId })
+        .where('"userId" = :userId', { userId })
         .andWhere(
-          `activityId IN (SELECT id FROM activities WHERE workspaceId = :workspaceId)`,
+          `"activityId" IN (SELECT "id" FROM "activities" WHERE "workspaceId" = :workspaceId)`,
           { workspaceId },
         )
         .execute();
