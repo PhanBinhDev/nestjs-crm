@@ -17,9 +17,10 @@ import {
   Post,
   Query,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserEntity } from '../users/entities/user.entity';
 import { ActivitiesService } from './activities.service';
@@ -751,24 +752,28 @@ export class ActivitiesController {
   }
 
   @Post(':id/files')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FilesInterceptor('files'))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-          description: 'File đính kèm (có thể là ảnh hoặc file khác)',
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+          description: 'Danh sách file đính kèm (có thể là ảnh hoặc file khác)',
         },
       },
-      required: ['file'],
+      required: ['files'],
     },
   })
   @ApiAuth({
     summary: 'Upload file đính kèm cho activity',
     type: UploadActivityFileResDto,
+    isArray: true,
   })
   @ApiParam({
     name: 'id',
@@ -776,11 +781,11 @@ export class ActivitiesController {
     type: 'string',
     format: 'uuid',
   })
-  uploadFile(
+  uploadFiles(
     @Param('id') activityId: Uuid,
     @CurrentUser('id') userId: Uuid,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.activitiesService.uploadFile(activityId, userId, file);
+    return this.activitiesService.uploadFiles(activityId, userId, files);
   }
 }

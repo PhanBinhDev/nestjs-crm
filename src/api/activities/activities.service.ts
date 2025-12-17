@@ -3644,16 +3644,16 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     };
   }
 
-  async uploadFile(
+  async uploadFiles(
     activityId: Uuid,
     userId: Uuid,
-    file?: Express.Multer.File,
-  ): Promise<ResponseDto<UploadActivityFileResDto>> {
-    if (!file) {
-      throw new BadRequestException('File is required');
+    files?: Express.Multer.File[],
+  ): Promise<ResponseDto<UploadActivityFileResDto[]>> {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Files are required');
     }
 
-    let uploadedPublicId: string | null = null;
+    const uploadedPublicIds: string[] = [];
 
     return await this.dataSource
       .transaction(async (manager) => {
@@ -3666,106 +3666,134 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           throw new NotFoundException('Activity not found');
         }
 
-        // Upload file lên Cloudinary
         const folder = `activities/${activityId}`;
-        const fileName = file.originalname;
-
-        const uploadResult = await this.cloudinaryService.uploadToFolder(
-          file,
-          folder,
-          fileName,
-        );
-
-        if (!('url' in uploadResult)) {
-          throw new BadRequestException('Upload file thất bại');
-        }
-
-        uploadedPublicId = uploadResult.public_id;
-
-        // Tạo FileEntity
         const fileRepo = manager.getRepository(FileEntity);
-        const fileEntity = fileRepo.create({
-          url: uploadResult.url,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: uploadResult.bytes,
-          fileName: fileName,
-          uploadedBy: userId,
-          workspaceId: activity.workspaceId,
-          metadata: {
-            public_id: uploadResult.public_id,
-            format: uploadResult.format,
-            resource_type: uploadResult.resource_type,
-            width: uploadResult.width,
-            height: uploadResult.height,
-            bytes: uploadResult.bytes,
-            folder: folder, // Đường dẫn folder trên Cloudinary: activities/{activityId}
-            secure_url: uploadResult.secure_url || uploadResult.url, // HTTPS URL
-            created_at: uploadResult.created_at, // Thời gian tạo trên Cloudinary
-            version: uploadResult.version, // Version của file
-            signature: uploadResult.signature, // Signature để verify
-            etag: uploadResult.etag, // ETag của file
-            ...(uploadResult.asset_id && { asset_id: uploadResult.asset_id }), // Asset ID nếu có
-            ...(uploadResult.pages && { pages: uploadResult.pages }), // Số trang (cho PDF)
-            ...(uploadResult.duration && { duration: uploadResult.duration }), // Thời lượng (cho video/audio)
-          },
-        });
-        const savedFile = await fileRepo.save(fileEntity);
-
-        // Tạo ActivityFileEntity để link file với activity
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
-        const activityFile = activityFileRepo.create({
-          activityId: activityId,
-          fileId: savedFile.id,
-          createdBy: userId,
-        });
-        const savedActivityFile = await activityFileRepo.save(activityFile);
-
-        // Tạo activity log
+        const activityLogRepo = manager.getRepository(ActivityLogEntity);
         const user = await manager.findOne(UserEntity, {
           where: { id: userId },
         });
-        const activityLogRepo = manager.getRepository(ActivityLogEntity);
-        const fileLog = activityLogRepo.create({
-          activity: activity,
-          user: user,
-          action: ActivityLogActionEnum.CREATED,
-          message: `Đính kèm file: ${file.originalname}`,
-          metadata: {
-            type: 'FILE_ATTACHMENT',
-            fileId: savedFile.id,
-            fileName: file.originalname,
-          },
-        });
-        await activityLogRepo.save(fileLog);
 
-        return new ResponseDto<UploadActivityFileResDto>({
-          data: plainToInstance(
-            UploadActivityFileResDto,
-            {
-              id: savedActivityFile.id,
+        const uploadedFiles: UploadActivityFileResDto[] = [];
+
+        for (const file of files) {
+          try {
+            const fileName = file.originalname;
+
+            // Upload file lên Cloudinary
+            const uploadResult = await this.cloudinaryService.uploadToFolder(
+              file,
+              folder,
+              fileName,
+            );
+
+            if (!('url' in uploadResult)) {
+              this.logger.warn(`Upload file thất bại: ${file.originalname}`);
+              continue;
+            }
+
+            uploadedPublicIds.push(uploadResult.public_id);
+
+            // Tạo FileEntity
+            const fileEntity = fileRepo.create({
+              url: uploadResult.url,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+              size: uploadResult.bytes,
+              fileName: fileName,
+              uploadedBy: userId,
+              workspaceId: activity.workspaceId,
+              metadata: {
+                public_id: uploadResult.public_id,
+                format: uploadResult.format,
+                resource_type: uploadResult.resource_type,
+                width: uploadResult.width,
+                height: uploadResult.height,
+                bytes: uploadResult.bytes,
+                folder: folder,
+                secure_url: uploadResult.secure_url || uploadResult.url,
+                created_at: uploadResult.created_at,
+                version: uploadResult.version,
+                signature: uploadResult.signature,
+                etag: uploadResult.etag,
+                ...(uploadResult.asset_id && { asset_id: uploadResult.asset_id }),
+                ...(uploadResult.pages && { pages: uploadResult.pages }),
+                ...(uploadResult.duration && { duration: uploadResult.duration }),
+              },
+            });
+            const savedFile = await fileRepo.save(fileEntity);
+
+            // Tạo ActivityFileEntity để link file với activity
+            const activityFile = activityFileRepo.create({
               activityId: activityId,
-              url: savedFile.url,
-              originalName: savedFile.originalName,
-              fileName: savedFile.fileName,
-              size: savedFile.size,
-              mimeType: savedFile.mimeType,
-            },
-            {
-              excludeExtraneousValues: true,
-            },
-          ),
-          message: 'Upload file thành công',
+              fileId: savedFile.id,
+              createdBy: userId,
+            });
+            const savedActivityFile = await activityFileRepo.save(activityFile);
+
+            // Tạo activity log
+            const fileLog = activityLogRepo.create({
+              activity: activity,
+              user: user,
+              action: ActivityLogActionEnum.CREATED,
+              message: `Đính kèm file: ${file.originalname}`,
+              metadata: {
+                type: 'FILE_ATTACHMENT',
+                fileId: savedFile.id,
+                fileName: file.originalname,
+              },
+            });
+            await activityLogRepo.save(fileLog);
+
+            uploadedFiles.push(
+              plainToInstance(
+                UploadActivityFileResDto,
+                {
+                  id: savedActivityFile.id,
+                  activityId: activityId,
+                  url: savedFile.url,
+                  originalName: savedFile.originalName,
+                  fileName: savedFile.fileName,
+                  size: savedFile.size,
+                  mimeType: savedFile.mimeType,
+                },
+                {
+                  excludeExtraneousValues: true,
+                },
+              ),
+            );
+          } catch (error) {
+            this.logger.error(
+              `Error uploading file ${file.originalname}:`,
+              error,
+            );
+            // Rollback uploaded files on error
+            for (const publicId of uploadedPublicIds) {
+              try {
+                await this.cloudinaryService.deleteFile(publicId);
+              } catch (deleteError) {
+                this.logger.warn(
+                  `Cannot rollback file on Cloudinary: ${publicId}`,
+                );
+              }
+            }
+            throw error;
+          }
+        }
+
+        return new ResponseDto<UploadActivityFileResDto[]>({
+          data: uploadedFiles,
+          message: `Upload ${uploadedFiles.length} file thành công`,
         });
       })
       .catch(async (error) => {
-        // Rollback: Xóa file trên Cloudinary nếu có lỗi
-        if (uploadedPublicId) {
+        // Rollback: Xóa files trên Cloudinary nếu có lỗi
+        for (const publicId of uploadedPublicIds) {
           try {
-            await this.cloudinaryService.deleteFile(uploadedPublicId);
-          } catch {
+            await this.cloudinaryService.deleteFile(publicId);
+          } catch (deleteError) {
             this.logger.warn(
-              `Cannot rollback file on Cloudinary: ${uploadedPublicId}`,
+              `Cannot rollback file on Cloudinary: ${publicId}`,
             );
           }
         }
