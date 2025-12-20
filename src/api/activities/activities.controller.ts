@@ -319,6 +319,41 @@ export class ActivitiesController {
     return this.activitiesService.create(dto, userId);
   }
 
+  @Get('filter')
+  @ApiAuth({
+    summary: 'Lọc danh sách activities',
+    isPaginated: true,
+    type: ActivityResDto,
+  })
+  @ApiQuery({
+    name: 'queryType',
+    enum: QueryType,
+    required: false,
+    description:
+      'Loại lọc: created_by_me, assigned_to_me, overdue, today, completed, in_progress, todo, all',
+  })
+  @ApiQuery({
+    name: 'assigneeId',
+    required: false,
+    description: 'Lọc activity theo assignee người được giao công việc',
+  })
+  @ApiQuery({
+    name: 'includeSubTasks',
+    required: false,
+    type: Boolean,
+    description: 'Bao gồm các công việc con (sub-tasks)',
+  })
+  filterActivities(
+    @CurrentUser('id') userId: Uuid,
+    @Query() query: QueryActivityDto,
+  ) {
+    return this.activitiesService.findFilteredActivities(
+      userId,
+      query,
+      query.queryType || QueryType.ALL,
+    );
+  }
+
   @Get()
   @ApiAuth({
     summary: 'Lấy danh sách activities',

@@ -155,9 +155,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async getMyFollowedActivities(userId: Uuid) {
     const follows = await this.activityFollowRepo.find({
       where: { userId },
-      relations: ['activity'],
+      relations: ['activity', 'activity.stage', 'activity.assignees', 'activity.assignees.user'],
     });
-    const activities = follows.map((f) => f.activity);
+    const activities = follows
+      .map((f) => f.activity)
+      .filter((activity) => activity && activity.stageId !== null);
     return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
   }
 
@@ -1687,7 +1689,8 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       .leftJoinAndSelect('activity.files', 'files')
       .leftJoinAndSelect('files.file', 'file')
       .leftJoinAndSelect('activity.category', 'category')
-      .leftJoinAndSelect('activity.stage', 'stage');
+      .leftJoinAndSelect('activity.stage', 'stage')
+      .andWhere('activity.stageId IS NOT NULL');
 
     if (!query.includeSubTasks) {
       qb.andWhere('activity.parentId IS NULL');
@@ -1751,7 +1754,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     parentId: Uuid,
   ): Promise<ResponseDto<ActivityResDto[]>> {
     const activities = await this.activityRepo.find({
-      where: { parentId },
+      where: { parentId, stageId: Not(null) },
       relations: [
         'stage',
         'assignees',
@@ -2550,6 +2553,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       whereConditions.push('activity.parentId IS NULL');
     }
 
+    // Filter out activities without stage to avoid null reference errors
+    whereConditions.push('activity.stageId IS NOT NULL');
+
     // Apply queryType filters
     switch (type) {
       case QueryType.CREATED_BY_ME:
@@ -2663,7 +2669,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     // Order and paginate
-    qb.orderBy('activity.createdAt', 'DESC');
+    const sortField = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder || (query.order as 'ASC' | 'DESC') || 'DESC';
+    qb.orderBy(`activity.${sortField}`, sortOrder);
 
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
       skipCount: false,
