@@ -1,16 +1,18 @@
+import { CloudinaryService } from '@/cloudinary/cloudinary.service';
 import { CursorPaginationDto } from '@/common/dto/cursor-pagination/cursor-pagination.dto';
 import { PageOptionsDto } from '@/common/dto/cursor-pagination/page-options.dto';
 import { CursorPaginatedDto } from '@/common/dto/cursor-pagination/paginated.dto';
 import { OffsetPaginatedDto } from '@/common/dto/offset-pagination/paginated.dto';
 import { ResponseNoDataDto } from '@/common/dto/response/response-no-data.dto';
 import { ResponseDto } from '@/common/dto/response/response.dto';
+import { ITaskAssignedEmailJob } from '@/common/interfaces/job.interface';
 import { Uuid } from '@/common/types/common.type';
+import { AllConfigType } from '@/config/config.type';
 import { ErrorCode } from '@/constants/error-code.constant';
 import { JobName, QueueName } from '@/constants/job.constant';
 import {
   ActivityLogActionEnum,
   ActivityLogQueryType,
-  ActivityStatus,
   ActivityType,
   AssigneeRole,
   AssignmentStatus,
@@ -18,32 +20,29 @@ import {
   QueryType,
 } from '@/database/enum/activity.enum';
 import { ReactionType } from '@/database/enum/comments.enum';
+import { NotificationPreferenceType } from '@/database/enum/notification-preference.enum';
+import { NotificationType } from '@/database/enum/notifications.enum';
 import { ValidationException } from '@/exceptions/validation.exception';
 import { BaseService } from '@/services/base.service';
 import { LinkPreviewService } from '@/services/link-preview.service';
 import { buildPaginator } from '@/utils/cursor-pagination';
 import { paginate } from '@/utils/offset-pagination';
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { AllConfigType } from '@/config/config.type';
-import { ITaskAssignedEmailJob } from '@/common/interfaces/job.interface';
 import { plainToInstance } from 'class-transformer';
 import { merge } from 'lodash';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { FileEntity } from '../files/entities/files.entity';
-import { CloudinaryService } from '@/cloudinary/cloudinary.service';
-import { NotificationEntity } from '../notification/entities/notification.entity';
-import { NotificationPreference } from '../notification/entities/notification-preference.entity';
 import { SendPushNotificationDto } from '../notification/dto/send-push-notification.dto';
-import { NotificationPreferenceType } from '@/database/enum/notification-preference.enum';
-import { NotificationType } from '@/database/enum/notifications.enum';
+import { NotificationPreference } from '../notification/entities/notification-preference.entity';
+import { NotificationEntity } from '../notification/entities/notification.entity';
 import { SemesterEntity } from '../semester/entities/semester.entity';
 import { StagesEntity } from '../stages/entities/stage.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -86,11 +85,11 @@ import { ActivityCommentReactionEntity } from './entities/activity-comments-reac
 import { ActivityCommentEntity } from './entities/activity-comments.entity';
 import { ActivityFeedbackEntity } from './entities/activity-feedback.entity';
 import { ActivityFileEntity } from './entities/activity-file.entity';
+import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { ActivityLinkEntity } from './entities/activity-link.entity';
 import { ActivityLogEntity } from './entities/activity-log.entity';
 import { ActivityParticipantEntity } from './entities/activity-participant.entity';
 import { ActivityEntity } from './entities/activity.entity';
-import { ActivityFollowEntity } from './entities/activity-follow.entity';
 import { EventFeedbackEntity } from './entities/event-feedback.entity';
 
 import { Logger } from '@nestjs/common';
@@ -146,37 +145,55 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     super(activityRepo);
   }
 
-
   async getActivityFollowers(activityId: Uuid) {
-    const follows = await this.activityFollowRepo.find({ where: { activityId }, relations: ['user'] });
-    return new ResponseDto({ data: follows, message: 'Lấy danh sách người theo dõi thành công' });
+    const follows = await this.activityFollowRepo.find({
+      where: { activityId },
+      relations: ['user'],
+    });
+    return new ResponseDto({
+      data: follows,
+      message: 'Lấy danh sách người theo dõi thành công',
+    });
   }
 
   async getMyFollowedActivities(userId: Uuid) {
     const follows = await this.activityFollowRepo.find({
       where: { userId },
-      relations: ['activity', 'activity.stage', 'activity.assignees', 'activity.assignees.user'],
+      relations: [
+        'activity',
+        'activity.stage',
+        'activity.assignees',
+        'activity.assignees.user',
+      ],
     });
     const activities = follows
       .map((f) => f.activity)
       .filter((activity) => activity && activity.stageId !== null);
-    return new ResponseDto({ data: activities, message: 'Lấy danh sách activity đã theo dõi thành công' });
+    return new ResponseDto({
+      data: activities,
+      message: 'Lấy danh sách activity đã theo dõi thành công',
+    });
   }
 
   async batchFollow(activityId: Uuid, userIds: Uuid[], actorId: Uuid) {
     try {
       // Validate activity exists
-      const activity = await this.activityRepo.findOne({ where: { id: activityId } });
+      const activity = await this.activityRepo.findOne({
+        where: { id: activityId },
+      });
       if (!activity) {
         throw new NotFoundException('Activity không tồn tại');
       }
 
-      const values = userIds.map((uid) => ({ activityId, userId: uid as string }));
+      const values = userIds.map((uid) => ({
+        activityId,
+        userId: uid as string,
+      }));
 
       if (values.length === 0) {
-        return new ResponseDto({ 
-          data: { activityId, userIds: [] }, 
-          message: 'Không có userId nào' 
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
         });
       }
 
@@ -188,9 +205,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .onConflict('("activityId", "userId") DO NOTHING')
         .execute();
 
-      return new ResponseDto({ 
-        data: { activityId, userIds }, 
-        message: 'Theo dõi thành công' 
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Theo dõi thành công',
       });
     } catch (error) {
       this.logger.error('Error in batchFollow:', error);
@@ -201,9 +218,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
   async batchUnfollow(activityId: Uuid, userIds: Uuid[]) {
     try {
       if (!userIds?.length) {
-        return new ResponseDto({ 
-          data: { activityId, userIds: [] }, 
-          message: 'Không có userId nào' 
+        return new ResponseDto({
+          data: { activityId, userIds: [] },
+          message: 'Không có userId nào',
         });
       }
 
@@ -215,9 +232,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         .andWhere('"userId" IN (:...userIds)', { userIds })
         .execute();
 
-      return new ResponseDto({ 
-        data: { activityId, userIds }, 
-        message: 'Bỏ theo dõi thành công' 
+      return new ResponseDto({
+        data: { activityId, userIds },
+        message: 'Bỏ theo dõi thành công',
       });
     } catch (error) {
       this.logger.error('Error in batchUnfollow:', error);
@@ -1378,8 +1395,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         const baseURL = this.configService.getOrThrow('app.frontendUrl', {
           infer: true,
         });
-        const activityLink = `${baseURL}/activities/${savedActivity.id}`;
-        const activityType = dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
+        const activityLink = `${baseURL}/workspaces/${dto.workspaceId}`;
+        const activityType =
+          dto.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
 
         await Promise.all(
           dto.assignees.map(async (assigneeDto) => {
@@ -1618,11 +1636,11 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       // Handle follows
       if (dto.follows?.length) {
         const activityFollowRepo = manager.getRepository(ActivityFollowEntity);
-        const follows = dto.follows.map(userId => ({
+        const follows = dto.follows.map((userId) => ({
           activityId: savedActivity.id,
           userId: userId,
         }));
-        
+
         await activityFollowRepo
           .createQueryBuilder()
           .insert()
@@ -1639,7 +1657,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           message: `Thêm ${follows.length} người theo dõi`,
           metadata: {
             type: 'FOLLOW',
-            userIds: dto.follows
+            userIds: dto.follows,
           },
         });
         await activityLogRepo.save(followLog);
@@ -1648,13 +1666,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
       const result = await activityRepo.findOne({
         where: { id: savedActivity.id },
         relations: [
-          'subActivities', 
+          'subActivities',
           'assignees',
           'assignees.user',
           'files',
           'files.file',
           'follows',
-          'follows.user'
+          'follows.user',
         ],
       });
 
@@ -2015,17 +2033,17 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           activity.id,
           dto.assignees,
           activityAssigneeRepo,
+          activity.workspaceId,
         );
       }
 
       Object.assign(activity, {
         ...dto,
         assignees: undefined,
-        files: undefined, // Exclude files from activity update, handle separately
+        files: undefined,
       });
       await activityRepo.save(activity);
 
-      // Handle files from /upload/multi (field files)
       if (dto.files !== undefined) {
         const activityFileRepo = manager.getRepository(ActivityFileEntity);
         const fileLogs: ActivityLogEntity[] = [];
@@ -2082,7 +2100,10 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
                 fileLogs.push(fileLog);
               }
             } catch (error) {
-              this.logger.error(`Error saving activity file: ${fileUrl}`, error);
+              this.logger.error(
+                `Error saving activity file: ${fileUrl}`,
+                error,
+              );
             }
           }
         }
@@ -2228,7 +2249,6 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       const userIds = Array.isArray(dto.userId) ? dto.userId : [dto.userId];
       const assignees: ActivityAssigneeEntity[] = [];
-
 
       const activity = await activityRepo.findOneOrFail({ where: { id } });
       const currentUser = await userRepo.findOneOrFail({
@@ -2582,8 +2602,24 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
 
       case QueryType.TODAY: {
         const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
-        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        const startOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          0,
+          0,
+          0,
+          0,
+        );
+        const endOfDay = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          23,
+          59,
+          59,
+          999,
+        );
 
         whereConditions.push(
           '(activity.startTime >= :startOfDay AND activity.startTime <= :endOfDay OR activity.endTime >= :startOfDay AND activity.endTime <= :endOfDay)',
@@ -2618,18 +2654,24 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     // Build main WHERE clause
-    const whereClause = whereConditions.length > 0 ? whereConditions.join(' AND ') : '1=1';
+    const whereClause =
+      whereConditions.length > 0 ? whereConditions.join(' AND ') : '1=1';
     qb.where(whereClause, whereParams);
 
     // Apply additional filters with andWhere
     if (query.assigneeId) {
-      qb.andWhere('assignees.userId = :assigneeId', { assigneeId: query.assigneeId });
+      qb.andWhere('assignees.userId = :assigneeId', {
+        assigneeId: query.assigneeId,
+      });
     }
 
     if (query.q) {
-      qb.andWhere('(activity.name ILIKE :search OR activity.description ILIKE :search)', {
-        search: `%${query.q}%`,
-      });
+      qb.andWhere(
+        '(activity.name ILIKE :search OR activity.description ILIKE :search)',
+        {
+          search: `%${query.q}%`,
+        },
+      );
     }
 
     if (query.type) {
@@ -2637,7 +2679,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     if (query.priority) {
-      qb.andWhere('activity.priority = :priority', { priority: query.priority });
+      qb.andWhere('activity.priority = :priority', {
+        priority: query.priority,
+      });
     }
 
     if (query.stageId) {
@@ -2645,32 +2689,45 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     }
 
     if (query.stageGroupStatus) {
-      qb.andWhere('stage.stageGroup = :stageGroupStatus', { stageGroupStatus: query.stageGroupStatus });
+      qb.andWhere('stage.stageGroup = :stageGroupStatus', {
+        stageGroupStatus: query.stageGroupStatus,
+      });
     }
 
     if (query.categoryId) {
-      qb.andWhere('activity.categoryId = :categoryId', { categoryId: query.categoryId });
+      qb.andWhere('activity.categoryId = :categoryId', {
+        categoryId: query.categoryId,
+      });
     }
 
     if (query.mandatory !== undefined) {
-      qb.andWhere('activity.mandatory = :mandatory', { mandatory: query.mandatory });
+      qb.andWhere('activity.mandatory = :mandatory', {
+        mandatory: query.mandatory,
+      });
     }
 
     if (query.startTimeFrom) {
-      qb.andWhere('activity.startTime >= :startTimeFrom', { startTimeFrom: query.startTimeFrom });
+      qb.andWhere('activity.startTime >= :startTimeFrom', {
+        startTimeFrom: query.startTimeFrom,
+      });
     }
 
     if (query.endTimeTo) {
-      qb.andWhere('activity.endTime <= :endTimeTo', { endTimeTo: query.endTimeTo });
+      qb.andWhere('activity.endTime <= :endTimeTo', {
+        endTimeTo: query.endTimeTo,
+      });
     }
 
     if (query.createdBy) {
-      qb.andWhere('activity.createdBy = :createdBy', { createdBy: query.createdBy });
+      qb.andWhere('activity.createdBy = :createdBy', {
+        createdBy: query.createdBy,
+      });
     }
 
     // Order and paginate
     const sortField = query.sortBy || 'createdAt';
-    const sortOrder = query.sortOrder || (query.order as 'ASC' | 'DESC') || 'DESC';
+    const sortOrder =
+      query.sortOrder || (query.order as 'ASC' | 'DESC') || 'DESC';
     qb.orderBy(`activity.${sortField}`, sortOrder);
 
     const [activities, metaDto] = await paginate<ActivityEntity>(qb, query, {
@@ -3213,7 +3270,9 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
     activityId: Uuid,
     newAssignees: ActivityAssigneeDto[],
     activityAssigneeRepo: Repository<ActivityAssigneeEntity>,
+    workspaceId: Uuid,
   ): Promise<void> {
+    // Xóa hết assignee cũ
     await activityAssigneeRepo.delete({ activityId });
 
     if (newAssignees && newAssignees.length > 0) {
@@ -3225,6 +3284,69 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
         }),
       );
       await activityAssigneeRepo.save(assigneeEntities);
+
+      // Gửi notification và email cho từng assignee mới
+      const activity = await this.activityRepo.findOne({
+        where: { id: activityId },
+      });
+      const activityType =
+        activity?.type === ActivityType.TASK ? 'công việc' : 'sự kiện';
+      const baseURL = this.configService.getOrThrow('app.frontendUrl', {
+        infer: true,
+      });
+      const activityLink = `${baseURL}/workspaces/${workspaceId}`;
+
+      for (const assigneeDto of newAssignees) {
+        // Notification preference
+        const preference = await this.preferenceRepo.findOne({
+          where: {
+            userId: assigneeDto.userId,
+            type: NotificationPreferenceType.TASK_ASSIGNED,
+          },
+        });
+
+        if (!preference || preference.enabled) {
+          const notificationData: SendPushNotificationDto = {
+            userId: assigneeDto.userId,
+            title: `Bạn được giao ${activityType} "${activity?.name}"`,
+            message: `Hệ thống đã giao ${activityType} này cho bạn`,
+            senderId: null,
+            type: NotificationType.ACTIVITY,
+            data: {
+              activityId,
+              activityName: activity?.name,
+              uri: `/activities/${activityId}`,
+            },
+          };
+
+          await this.notificationQueue.add(
+            JobName.TASK_CREATED_ASSIGNEE,
+            notificationData,
+            {
+              attempts: 3,
+              backoff: {
+                type: 'exponential',
+                delay: 1000,
+              },
+              removeOnComplete: true,
+            },
+          );
+        }
+
+        // Gửi email nếu có
+        const userAssignee = await this.userRepo.findOne({
+          where: { id: assigneeDto.userId },
+        });
+        if (userAssignee?.email) {
+          await this.emailQueue.add(JobName.TASK_ASSIGNED_EMAIL, {
+            email: userAssignee.email,
+            activityName: activity?.name,
+            activityLink,
+            assignerName: null,
+            activityType,
+          });
+        }
+      }
     }
   }
 
@@ -3724,9 +3846,13 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
                 version: uploadResult.version,
                 signature: uploadResult.signature,
                 etag: uploadResult.etag,
-                ...(uploadResult.asset_id && { asset_id: uploadResult.asset_id }),
+                ...(uploadResult.asset_id && {
+                  asset_id: uploadResult.asset_id,
+                }),
                 ...(uploadResult.pages && { pages: uploadResult.pages }),
-                ...(uploadResult.duration && { duration: uploadResult.duration }),
+                ...(uploadResult.duration && {
+                  duration: uploadResult.duration,
+                }),
               },
             });
             const savedFile = await fileRepo.save(fileEntity);
@@ -3800,9 +3926,7 @@ export class ActivitiesService extends BaseService<ActivityEntity> {
           try {
             await this.cloudinaryService.deleteFile(publicId);
           } catch (deleteError) {
-            this.logger.warn(
-              `Cannot rollback file on Cloudinary: ${publicId}`,
-            );
+            this.logger.warn(`Cannot rollback file on Cloudinary: ${publicId}`);
           }
         }
         throw error;

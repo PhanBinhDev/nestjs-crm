@@ -1,8 +1,8 @@
 import {
   IEmailJob,
+  ITaskAssignedEmailJob,
   IVerifyEmailJob,
   IWorkspaceMemberJob,
-  ITaskAssignedEmailJob,
 } from '@/common/interfaces/job.interface';
 import { JobName, QueueName } from '@/constants/job.constant';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';

@@ -1,7 +1,7 @@
 import {
+  ITaskAssignedEmailJob,
   IVerifyEmailJob,
   IWorkspaceMemberJob,
-  ITaskAssignedEmailJob,
 } from '@/common/interfaces/job.interface';
 import { MailService } from '@/mail/mail.service';
 import { Injectable, Logger } from '@nestjs/common';
